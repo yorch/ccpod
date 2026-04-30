@@ -29,9 +29,10 @@ CLI tool (TypeScript + Bun, single binary) that runs Claude Code inside Docker c
 |---|---|
 | F-01 | Run `claude` CLI inside a Docker container |
 | F-02 | Mount host project directory (default: `$PWD`) to `/workspace` inside container; working directory set to `/workspace` |
-| F-03 | Support interactive mode (default) and headless mode (`ccpod run "prompt"`) |
+| F-03 | Support interactive mode (default) and headless mode (`ccpod run "prompt"` or `ccpod run --file prompt.txt`) |
 | F-04 | Forward TTY and stdin for interactive sessions |
 | F-05 | Stream stdout/stderr in headless mode; exit with container's exit code |
+| F-06 | If no profile is specified (no `--profile` flag, no `.ccpod.yml` `profile:` key), use profile named `default`; if `default` does not exist, automatically trigger `ccpod init` |
 
 ### Profile System
 
@@ -63,11 +64,11 @@ A **profile** is the core abstraction — it defines the full Claude environment
 
 The `~/.claude/` directory has three distinct categories requiring different persistence strategies:
 
-| Category | Contents | Volume |
+| Category | Contents | Storage |
 |---|---|---|
-| **Config** (read-only) | `settings.json`, `CLAUDE.md`, `skills/`, `hooks/` | Seeded from profile config source |
-| **Credentials** (read-write) | OAuth tokens, session auth, API key cache | `~/.ccpod/credentials/<profile>/` on host |
-| **State** (configurable) | `history.jsonl`, `projects/`, `todos/`, `sessions/` | Named volume or ephemeral |
+| **Config** (read-only) | `settings.json`, `CLAUDE.md`, `skills/`, `hooks/` | Temp dir seeded from profile config source; bind-mounted read-only |
+| **Credentials** (read-write) | OAuth tokens, session auth, API key cache | `~/.ccpod/credentials/<profile>/` on host; bind-mounted read-write |
+| **State** (configurable) | `history.jsonl`, `projects/`, `todos/`, `sessions/` | Named Docker volume (`persistent`) or tmpfs (`ephemeral`) |
 
 | ID | Requirement |
 |---|---|
@@ -102,7 +103,8 @@ The `~/.claude/` directory has three distinct categories requiring different per
 |---|---|
 | F-40 | Official base image: `ghcr.io/ccpod/base` with Claude Code pre-installed |
 | F-41 | Override with `image: my-registry/my-image:tag` in profile |
-| F-42 | `dockerfile: ./Dockerfile` — ccpod auto-builds on first run if no image exists; subsequent runs use the cached image unless `--rebuild` flag is passed |
+| F-42 | `dockerfile:` path is resolved relative to `$PWD` (project dir) at runtime, not relative to the profile dir |
+| F-42a | When `dockerfile:` is set, ccpod auto-builds on first run using tag `ccpod-local-<profile>-<sha256-of-dockerfile-path>`; subsequent runs reuse that tag unless `--rebuild` is passed |
 | F-43 | `ccpod image build [profile]` — explicit local build |
 | F-44 | `ccpod image pull [profile]` — pull latest base or declared image |
 
@@ -128,9 +130,9 @@ The `~/.claude/` directory has three distinct categories requiring different per
 
 | ID | Requirement |
 |---|---|
-| F-70 | Declare port forwards in profile config under `ports:` |
-| F-71 | Auto-detect HTTP/SSE MCPs from `.mcp.json` and expose their ports |
-| F-72 | Port format: `host:container` or shorthand `port` (1:1 mapping) |
+| F-70 | Declare port forwards in profile config under `ports.list:` |
+| F-71 | Auto-detect HTTP/SSE MCPs from `.mcp.json` and expose their ports; controlled by `ports.autoDetectMcp: true` (default: `true`) |
+| F-72 | Port format: `"host:container"` string or shorthand `"port"` (1:1 mapping) |
 
 ### Environment Variable Passthrough
 
@@ -151,7 +153,9 @@ The `~/.claude/` directory has three distinct categories requiring different per
 |---|---|
 | F-80 | Profile supports `services:` section (Docker Compose-style sidecars) |
 | F-81 | Sidecars started before Claude container; shared network |
-| F-82 | `ccpod down` tears down Claude container + all sidecars |
+| F-82 | `ccpod down` tears down Claude container + all sidecars; idempotent (silent if nothing running) |
+| F-83 | `ccpod ps` lists all running ccpod-managed containers (main + sidecars) with profile name and project dir |
+| F-84 | All ccpod-managed containers are labelled with `ccpod.profile`, `ccpod.project` (sha256 of `$PWD`), and `ccpod.type` (`main` or sidecar service name) |
 
 ### First-Run Experience
 
@@ -201,8 +205,9 @@ network:
   allow: []
 
 ports:
-  - "3000:3000"
-  autoDetectMcp: true
+  list:
+    - "3000:3000"
+  autoDetectMcp: true                 # default true; expose ports from .mcp.json HTTP/SSE entries
 
 services:
   postgres:

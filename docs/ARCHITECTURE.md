@@ -64,6 +64,8 @@ src/
 │       │   └── pull.ts
 │       ├── state/
 │       │   └── clear.ts
+│       ├── ps.ts                    # ccpod ps — list running ccpod containers
+│       ├── down.ts                  # ccpod down — stop container + sidecars
 │       └── config/
 │           ├── show.ts
 │           └── validate.ts
@@ -173,7 +175,13 @@ export interface ProfileConfig {
     policy: NetworkPolicy;
     allow: string[];
   };
-  ports: PortMapping[];
+  ports: {
+    list: PortMapping[];
+    autoDetectMcp: boolean;   // default true
+  };
+  mcp?: {
+    autoDetectPorts: boolean;
+  };
   services: Record<string, ServiceConfig>;
   env: string[];        // var names to forward from host
 }
@@ -347,44 +355,53 @@ ccpod run [-- claude-args]
 │          Colima (~/.colima/default/docker.sock)
 │     error if none available
 │
-├─ 2. Load + merge config
+├─ 2. Resolve profile name
+│     --profile flag > .ccpod.yml profile: field > "default"
+│     if resolved profile does not exist → trigger ccpod init, exit
+│
+├─ 3. Load + merge config
 │     load profile → sync config source if needed
 │     load .ccpod.yml (optional) → merge layers
+│     apply --no-state flag (forces state: ephemeral for this run)
 │     → ResolvedConfig
 │
-├─ 3. Ensure image
-│     if dockerfile: check if image tag exists; build if not (or --rebuild)
+├─ 4. Ensure image
+│     if dockerfile: set tag = ccpod-local-<profile>-<sha256(dockerfile-path)>
+│                   dockerfile path resolved relative to $PWD
+│                   build if tag not found locally (or --rebuild)
 │     else: check if image exists locally; pull if not
 │
-├─ 4. Ensure volumes
+├─ 5. Ensure volumes
 │     credentials dir: mkdir -p ~/.ccpod/credentials/<profile>/
 │     plugins volume:  docker volume create ccpod-plugins-<profile> (idempotent)
 │     state volume:    docker volume create ccpod-state-<profile>   (if persistent)
 │                      OR: use --tmpfs /ccpod/state (if ephemeral)
 │
-├─ 5. Plugin delta-install prep
+├─ 6. Plugin delta-install prep
 │     list installed plugins from plugin volume
 │     diff against declared plugins in resolved config
 │     pass delta as CCPOD_PLUGINS_TO_INSTALL env var to container
 │
-├─ 6. Parse .mcp.json (if exists at $PWD)
-│     extract HTTP/SSE MCPs → additional port mappings
+├─ 7. Parse .mcp.json (if exists at $PWD, and ports.autoDetectMcp: true)
+│     extract HTTP/SSE MCP entries → additional port mappings
 │
-├─ 7. Start sidecars (if services: declared)
+├─ 8. Start sidecars (if services: declared)
 │     create shared network: ccpod-<session>-net
 │     start each sidecar container on that network
+│     label each: ccpod.profile=<name>, ccpod.project=<sha256(PWD)>, ccpod.type=<service-name>
 │
-├─ 8. Build ContainerSpec
+├─ 9. Build ContainerSpec
 │     image, workdir, env, mounts, network, ports, tty
+│     labels: ccpod.profile=<name>, ccpod.project=<sha256(PWD)>, ccpod.type=main
 │
-├─ 9. Start Claude container
+├─ 10. Start Claude container
 │     entrypoint assembles ~/.claude/
 │     plugin delta-install runs
 │     exec claude [args]
 │
-└─ 10. Attach
-      interactive: attach stdin/stdout/stderr with raw TTY
-      headless:    pipe stdout/stderr, capture exit code
+└─ 11. Attach
+       interactive: attach stdin/stdout/stderr with raw TTY
+       headless:    pipe stdout/stderr, capture exit code
 ```
 
 ---
@@ -433,7 +450,24 @@ Dockerode accepts a custom socket path, so after detection the rest of the code 
 
 ---
 
-## 8. Network Policy Implementation
+## 8. Container Labeling & Discovery
+
+All ccpod-managed containers (main + sidecars) receive Docker labels so `ccpod ps` and `ccpod down` can find them without tracking state on disk.
+
+| Label | Value | Purpose |
+|---|---|---|
+| `ccpod.profile` | profile name | Which profile spawned this container |
+| `ccpod.project` | `sha256($PWD)` | Which project directory (scopes ps/down per project) |
+| `ccpod.type` | `main` or sidecar service name | Distinguish Claude container from sidecars |
+| `ccpod.version` | ccpod binary version | Debugging / compatibility |
+
+**`ccpod ps`:** `docker ps --filter label=ccpod.profile` (or all ccpod containers if run from any dir)
+
+**`ccpod down`:** `docker ps --filter label=ccpod.project=<sha256(PWD)>` → stop + remove all matches; idempotent if empty.
+
+---
+
+## 9. Network Policy Implementation
 
 **Full mode:** container attached to standard bridge network with full outbound.
 
@@ -455,7 +489,7 @@ export function generateIptablesRules(allowList: string[]): string[] {
 
 ---
 
-## 9. Base Image Strategy
+## 10. Base Image Strategy
 
 **Tagging convention:** `ghcr.io/ccpod/base:<claude-code-version>`
 e.g. `ghcr.io/ccpod/base:2.1.120`, `ghcr.io/ccpod/base:latest`
@@ -487,7 +521,7 @@ CMD ["claude"]
 
 ---
 
-## 10. Directory Layout on Host
+## 11. Directory Layout on Host
 
 ```
 ~/.ccpod/
@@ -514,7 +548,7 @@ Project (in git repo):
 
 ---
 
-## 11. Testing Strategy
+## 12. Testing Strategy
 
 Config merging logic (merger.ts, schema.ts) is pure functions — fully unit-testable without Docker.
 
@@ -541,7 +575,7 @@ tests/
 
 ---
 
-## 12. v1 Build Order
+## 13. v1 Build Order
 
 Recommended implementation sequence (each step independently testable):
 
