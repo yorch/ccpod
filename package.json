@@ -4,6 +4,10 @@
   "description": "Run Claude Code in Docker containers with portable, composable configuration",
   "type": "module",
   "private": true,
+  "engines": {
+    "node": ">=24",
+    "bun": ">=1"
+  },
   "scripts": {
     "dev": "bun run src/cli/index.ts",
     "build": "bun build --compile --minify src/cli/index.ts --outfile dist/ccpod",
