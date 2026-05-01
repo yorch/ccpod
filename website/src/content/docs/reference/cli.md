@@ -51,9 +51,12 @@ ccpod plugins update [profile]      # flush + reinstall every declared plugin
 ## Image commands
 
 ```sh
+ccpod image init [profile]          # download Dockerfile into profile dir for customization
 ccpod image build [profile]         # build from profile's dockerfile
 ccpod image pull [profile]          # pull (or update) the profile's image
 ```
+
+`ccpod image init` downloads the official ccpod Dockerfile to `~/.ccpod/profiles/<profile>/Dockerfile` and sets `image.dockerfile` in `profile.yml`. Use `--from <url>` to download from a custom URL instead. After editing the Dockerfile, run `ccpod image build --apply` to build and activate it.
 
 ## Lifecycle commands
 

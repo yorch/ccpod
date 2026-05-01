@@ -1,5 +1,6 @@
+import { createHash } from 'node:crypto';
 import { existsSync, readFileSync } from 'node:fs';
-import { isAbsolute, join, normalize } from 'node:path';
+import { dirname, isAbsolute, join, normalize } from 'node:path';
 import chalk from 'chalk';
 import { defineCommand } from 'citty';
 import { ZodError } from 'zod';
@@ -162,9 +163,19 @@ export default defineCommand({
       // 7. Resolve image — build locally if use === "build", else pull
       let image = partial.image;
       if (image === 'build') {
-        const tag = `ccpod-local-${profileName}:latest`;
         const dockerfile = partial.dockerfile ?? 'Dockerfile';
-        await ensureLocalImage(tag, dockerfile, cwd, args.rebuild ?? false);
+        const dockerfileHash = createHash('sha256')
+          .update(dockerfile)
+          .digest('hex')
+          .slice(0, 16);
+        const tag = `ccpod-local-${profileName}-${dockerfileHash}:latest`;
+        const contextDir = isAbsolute(dockerfile) ? dirname(dockerfile) : cwd;
+        await ensureLocalImage(
+          tag,
+          dockerfile,
+          contextDir,
+          args.rebuild ?? false,
+        );
         image = tag;
       } else {
         await ensureImage(image, args.rebuild ?? false);
