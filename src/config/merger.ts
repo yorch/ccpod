@@ -8,9 +8,12 @@ export function mergeConfigs(
 ): Omit<ResolvedConfig, "mergedConfigDir" | "claudeArgs"> {
   const strategy = project?.merge ?? "deep";
 
+  // override: project replaces the section using schema defaults for omitted keys,
+  // NOT profile values — spreading from profile would leak profile's allow list.
+  const NETWORK_DEFAULTS: ProfileConfig["network"] = { policy: "full", allow: [] };
   const network =
     strategy === "override" && project?.network
-      ? { ...profile.network, ...project.network }
+      ? { ...NETWORK_DEFAULTS, ...project.network }
       : deepmerge(profile.network, project?.network ?? {});
 
   const ports = {
