@@ -117,7 +117,7 @@ export async function runWizard(profileName = 'default'): Promise<void> {
       message: '     Config directory path',
       validate: (v) => v.trim() !== '' || 'Path cannot be empty',
     });
-    configConfig = { path, source: 'local' };
+    configConfig = { path: path.trim(), source: 'local' };
   } else {
     const repo = await input({
       message: '     Git repo URL',
@@ -135,7 +135,7 @@ export async function runWizard(profileName = 'default'): Promise<void> {
       ],
       message: '     Sync strategy',
     })) as 'always' | 'daily' | 'pin';
-    configConfig = { ref, repo, source: 'git', sync };
+    configConfig = { ref, repo: repo.trim(), source: 'git', sync };
   }
 
   // Step 4 — network policy
