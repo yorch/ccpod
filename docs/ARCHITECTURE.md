@@ -20,7 +20,7 @@
 │  .ccpod.yml (project root)  │  Container Runtime               │    │
 │  ~/.ccpod/credentials/<n>/  │  (Docker / Podman / OrbStack /   │    │
 │  ccpod-plugins-<name>       │   Colima — auto-detected)        │    │
-│  ccpod-state-<name>         └──────────────┬───────────────────┘    │
+│  ~/.ccpod/state/<name>/     └──────────────┬───────────────────┘    │
 │                                            │                         │
 └────────────────────────────────────────────┼─────────────────────────┘
                                              │
@@ -33,7 +33,7 @@
                               │  /ccpod/config   (ro bind)      │
                               │  /ccpod/creds    (rw bind)      │
                               │  /ccpod/plugins  (rw volume) ──►│─► ccpod-plugins-<name>
-                              │  /ccpod/state    (rw volume) ──►│─► ccpod-state-<name>
+                              │  /ccpod/state    (rw bind)   ──►│─► ~/.ccpod/state/<name>/
                               │  /workspace      (rw bind)  ──►│─► $PWD on host
                               │                                 │
                               │  exec: claude [args]            │
@@ -247,11 +247,10 @@ Host mounts                     Inside container         ~/.claude/ result
 ~/.ccpod/creds/<p>/  ──rw──►   /ccpod/credentials/ ──►  *.json auth files (copied,
   *.credentials.json                                      overlays config)
 
-ccpod-plugins-<p>   (volume)►  /ccpod/plugins/     ──►  plugins/  ← symlink
-ccpod-state-<p>     (volume)►  /ccpod/state/       ──►  history.jsonl ← symlink
-                                                         projects/     ← symlink
-                                                         todos/        ← symlink
-                                                         sessions/     ← symlink
+ccpod-plugins-<p>      (volume)►  /ccpod/plugins/  ──►  plugins/  ← symlink
+~/.ccpod/state/<p>/  (bind rw)►  /ccpod/state/    ──►  projects/ ← symlink
+                                                         todos/    ← symlink
+                                                         statsig/  ← symlink
 $PWD                 ──rw──►   /workspace/
 ```
 
@@ -282,7 +281,7 @@ mkdir -p /ccpod/plugins
 rm -rf "${CLAUDE_DIR}/plugins"
 ln -sf /ccpod/plugins "${CLAUDE_DIR}/plugins"
 
-# 4. State — symlink named volume or tmpfs mount
+# 4. State — symlink host bind mount or tmpfs
 mkdir -p /ccpod/state/projects /ccpod/state/todos /ccpod/state/statsig
 for dir in projects todos statsig; do
   rm -rf "${CLAUDE_DIR}/${dir}"
@@ -395,8 +394,8 @@ ccpod run [-- claude-args]
 ├─ 5. Ensure volumes
 │     credentials dir: mkdir -p ~/.ccpod/credentials/<profile>/
 │     plugins volume:  docker volume create ccpod-plugins-<profile> (idempotent)
-│     state volume:    docker volume create ccpod-state-<profile>   (if persistent)
-│                      OR: use --tmpfs /ccpod/state (if ephemeral)
+│     state dir:       mkdir -p ~/.ccpod/state/<profile>/           (if persistent)
+│                      OR: --tmpfs /ccpod/state                     (if ephemeral)
 │
 ├─ 6. Plugin install prep
 │     if profile declares plugins[], set CCPOD_PLUGINS_TO_INSTALL=<comma-list>
@@ -544,15 +543,16 @@ CMD ["claude"]
 │   │   └── .ccpod-sync-lock        # timestamp of last git sync
 │   └── team-frontend/
 │       └── profile.yml
-└── credentials/
-    ├── default/                    # auth files for "default" profile
+├── credentials/
+│   ├── default/                    # auth files for "default" profile
+│   └── team-frontend/
+└── state/
+    ├── default/                    # only if state: persistent
     └── team-frontend/
 
 Docker named volumes (managed by ccpod):
   ccpod-plugins-default
   ccpod-plugins-team-frontend
-  ccpod-state-default              # only if state: persistent
-  ccpod-state-team-frontend
 
 Project (in git repo):
   .ccpod.yml                       # project-level config overrides

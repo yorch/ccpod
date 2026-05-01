@@ -1,5 +1,7 @@
-import { describe, expect, it } from "bun:test";
+import { afterAll, beforeAll, describe, expect, it } from "bun:test";
 import { createHash } from "node:crypto";
+import { mkdtempSync, rmSync } from "node:fs";
+import { tmpdir } from "node:os";
 import { buildContainerSpec } from "../../../src/container/builder.ts";
 import type { ResolvedConfig } from "../../../src/types/index.ts";
 
@@ -29,6 +31,16 @@ const PROJECT_HASH = createHash("sha256")
   .slice(0, 16);
 
 describe("buildContainerSpec", () => {
+  let testDir: string;
+  beforeAll(() => {
+    testDir = mkdtempSync(`${tmpdir()}/ccpod-builder-test-`);
+    process.env.CCPOD_TEST_DIR = testDir;
+  });
+  afterAll(() => {
+    delete process.env.CCPOD_TEST_DIR;
+    rmSync(testDir, { force: true, recursive: true });
+  });
+
   it("produces deterministic container name from profile + project hash", () => {
     const spec = buildContainerSpec(makeConfig(), PROJECT_DIR, true);
     expect(spec.name).toBe(`ccpod-testprof-${PROJECT_HASH}`);
@@ -57,16 +69,18 @@ describe("buildContainerSpec", () => {
       true,
     );
     expect(spec.tmpfs?.["/ccpod/state"]).toBeDefined();
-    expect(spec.binds.some((b) => b.includes("ccpod-state-"))).toBe(false);
+    expect(spec.binds.some((b) => b.includes(":/ccpod/state"))).toBe(false);
   });
 
-  it("persistent state: named volume in binds, no tmpfs", () => {
+  it("persistent state: host path bind in binds, no tmpfs", () => {
     const spec = buildContainerSpec(
       makeConfig({ state: "persistent" }),
       PROJECT_DIR,
       true,
     );
-    expect(spec.binds).toContain("ccpod-state-testprof:/ccpod/state");
+    expect(
+      spec.binds.some((b) => b.endsWith("/state/testprof:/ccpod/state:rw")),
+    ).toBe(true);
     expect(spec.tmpfs?.["/ccpod/state"]).toBeUndefined();
   });
 

@@ -47,6 +47,12 @@ export function getCredentialsDir(profileName: string): string {
   return dir;
 }
 
+export function getStateDir(profileName: string): string {
+  const dir = join(baseDir(), "state", profileName);
+  mkdirSync(dir, { recursive: true });
+  return dir;
+}
+
 export function listProfiles(): string[] {
   const pd = profilesDir();
   if (!existsSync(pd)) return [];

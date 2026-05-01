@@ -1,6 +1,6 @@
 import { createHash } from "node:crypto";
 import { homedir } from "node:os";
-import { getCredentialsDir } from "../profile/manager.ts";
+import { getCredentialsDir, getStateDir } from "../profile/manager.ts";
 import type { ResolvedConfig } from "../types/index.ts";
 import { VERSION } from "../version.ts";
 
@@ -45,7 +45,7 @@ export function buildContainerSpec(
 
   binds.push(`ccpod-plugins-${config.profileName}:/ccpod/plugins`);
   if (config.state === "persistent") {
-    binds.push(`ccpod-state-${config.profileName}:/ccpod/state`);
+    binds.push(`${getStateDir(config.profileName)}:/ccpod/state:rw`);
   }
 
   const tmpfs: Record<string, string> = {};

@@ -1,13 +1,22 @@
+import { rmSync } from "node:fs";
 import { confirm } from "@inquirer/prompts";
 import chalk from "chalk";
 import { defineCommand } from "citty";
 import { loadProjectConfig } from "../../../config/loader.ts";
-import {
-  removeVolume,
-  stateVolumeName,
-  volumeExists,
-} from "../../../plugins/volume.ts";
-import { profileExists } from "../../../profile/manager.ts";
+import { dockerExec } from "../../../runtime/docker.ts";
+import { getStateDir, profileExists } from "../../../profile/manager.ts";
+
+async function hasRunningContainer(profileName: string): Promise<boolean> {
+  const { stdout } = await dockerExec([
+    "ps",
+    "--filter",
+    `label=ccpod.profile=${profileName}`,
+    "--filter",
+    "status=running",
+    "--quiet",
+  ]);
+  return stdout.trim().length > 0;
+}
 
 export default defineCommand({
   args: {
@@ -18,7 +27,7 @@ export default defineCommand({
     },
     profile: { description: "Profile name", type: "string" },
   },
-  meta: { description: "Clear persistent state volume for a profile" },
+  meta: { description: "Clear persistent state for a profile" },
   async run({ args }) {
     const projectConfig = loadProjectConfig(process.cwd());
     const profileName = args.profile ?? projectConfig?.profile ?? "default";
@@ -28,20 +37,19 @@ export default defineCommand({
       process.exit(1);
     }
 
-    const volName = stateVolumeName(profileName);
-    const exists = await volumeExists(volName);
-
-    if (!exists) {
-      console.log(
-        `No persistent state volume for '${profileName}' (profile may use ephemeral state).`,
+    if (await hasRunningContainer(profileName)) {
+      console.error(
+        `A ccpod container for '${profileName}' is still running. Stop it first with: ccpod down`,
       );
-      return;
+      process.exit(1);
     }
+
+    const stateDir = getStateDir(profileName);
 
     if (!args.force) {
       const ok = await confirm({
         default: false,
-        message: `Remove state volume ${chalk.cyan(volName)}? This deletes all saved projects, todos, and conversation history.`,
+        message: `Remove state at ${chalk.cyan(stateDir)}? This deletes all saved projects, todos, and conversation history.`,
       });
       if (!ok) {
         console.log("Aborted.");
@@ -49,8 +57,8 @@ export default defineCommand({
       }
     }
 
-    process.stdout.write(`Removing ${chalk.cyan(volName)}... `);
-    await removeVolume(volName);
+    process.stdout.write(`Removing ${chalk.cyan(stateDir)}... `);
+    rmSync(stateDir, { force: true, recursive: true });
     console.log(chalk.green("done"));
   },
 });

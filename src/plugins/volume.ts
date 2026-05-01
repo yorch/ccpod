@@ -4,10 +4,6 @@ export function pluginsVolumeName(profileName: string): string {
   return `ccpod-plugins-${profileName}`;
 }
 
-export function stateVolumeName(profileName: string): string {
-  return `ccpod-state-${profileName}`;
-}
-
 export async function volumeExists(name: string): Promise<boolean> {
   const { exitCode } = await dockerExec(["volume", "inspect", name]);
   return exitCode === 0;
