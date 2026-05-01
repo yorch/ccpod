@@ -11,17 +11,18 @@ Start an interactive Claude session in the current directory (mounted at `/works
 
 ```sh
 ccpod run                              # interactive session, default profile
+ccpod run "fix all lint errors"        # headless: inline prompt text
+ccpod run --file prompt.txt            # headless: prompt from file
 ccpod run --profile team               # use a specific profile
 ccpod run --env KEY=VALUE              # set/override an env var (repeatable)
 ccpod run --rebuild                    # force image rebuild or repull
 ccpod run --no-state                   # force ephemeral state for this run
-ccpod run --file prompt.txt            # headless: pipe stdout/stderr, exit with container code
 ccpod run -- --dangerously-skip-permissions   # pass flags directly to claude
 ```
 
-`--file` paths are normalized; absolute paths and `..` traversals are rejected.
+`--file` and an inline prompt are mutually exclusive. `--file` paths are normalized; absolute paths and `..` traversals are rejected.
 
-Everything after `--` is forwarded verbatim to the `claude` command inside the container. These runtime flags are appended after any `claudeArgs` declared in the profile or project config.
+Everything after `--` is forwarded verbatim to the `claude` command inside the container and appended after any `claudeArgs` declared in the profile or project config.
 
 ## `ccpod init`
 

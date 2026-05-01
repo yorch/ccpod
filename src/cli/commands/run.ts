@@ -38,6 +38,10 @@ export default defineCommand({
       description: 'Profile name (overrides .ccpod.yml)',
       type: 'string',
     },
+    prompt: {
+      description: 'Headless mode: prompt text passed directly to claude',
+      type: 'positional',
+    },
     rebuild: {
       default: false,
       description: 'Force image rebuild/repull',
@@ -51,7 +55,15 @@ export default defineCommand({
     try {
       const cwd = process.cwd();
 
-      // Validate --file is a relative path within the project directory
+      // Validate headless args — --file and prompt are mutually exclusive
+      const promptArg = args.prompt as string | undefined;
+      if (args.file && promptArg) {
+        console.error(
+          `${chalk.red('error:')} --file and prompt text are mutually exclusive`,
+        );
+        process.exit(1);
+      }
+
       let fileArg: string | undefined;
       if (args.file) {
         const normalized = normalize(args.file);
@@ -119,7 +131,7 @@ export default defineCommand({
 
       // Headless mode requires auth — fail early to avoid a useless container run
       if (
-        fileArg &&
+        (fileArg || promptArg) &&
         profile.auth.type === 'api-key' &&
         Object.keys(authEnv).length === 0
       ) {
@@ -197,6 +209,7 @@ export default defineCommand({
           ...partial.claudeArgs,
           ...(fileArg ? ['--file', `/workspace/${fileArg}`] : []),
           ...passthroughArgs,
+          ...(promptArg ? [promptArg] : []),
         ],
         env,
         image,
@@ -214,7 +227,7 @@ export default defineCommand({
         await startSidecars(config.services, networkName, profileName, hash);
       }
 
-      const tty = !fileArg;
+      const tty = !fileArg && !promptArg;
       const spec = buildContainerSpec(config, cwd, tty, networkName);
       const exitCode = await runContainer(spec);
       process.exit(exitCode);
