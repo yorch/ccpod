@@ -11,11 +11,15 @@ This guide gets you from a fresh install to an interactive Claude session in you
 ccpod init
 ```
 
-The wizard:
+The wizard first asks which mode you want:
 
-- Detects your container runtime (Docker / OrbStack / Colima / Podman)
-- Asks for your auth method (API key or OAuth)
-- Creates a `default` profile at `~/.ccpod/profiles/default/profile.yml`
+- **Quick** — auth only, sensible defaults for everything else. Done in ~3 steps.
+- **Full** — also configures network policy, session state, SSH, and Docker image.
+
+Both modes:
+- Detect your container runtime (Docker / OrbStack / Colima / Podman)
+- Ask for your auth method (API key or OAuth)
+- Create a `default` profile at `~/.ccpod/profiles/default/profile.yml`
 
 The base image is pulled automatically on first `ccpod run`.
 
