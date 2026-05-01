@@ -3,8 +3,8 @@ import { confirm } from "@inquirer/prompts";
 import chalk from "chalk";
 import { defineCommand } from "citty";
 import { loadProjectConfig } from "../../../config/loader.ts";
-import { dockerExec } from "../../../runtime/docker.ts";
 import { getStateDir, profileExists } from "../../../profile/manager.ts";
+import { dockerExec } from "../../../runtime/docker.ts";
 
 async function hasRunningContainer(profileName: string): Promise<boolean> {
   const { stdout } = await dockerExec([
