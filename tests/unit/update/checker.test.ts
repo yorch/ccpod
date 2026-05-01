@@ -1,5 +1,5 @@
-import { afterEach, beforeEach, describe, expect, it, mock } from "bun:test";
-import { mkdirSync, rmSync, writeFileSync } from "node:fs";
+import { afterEach, beforeEach, describe, expect, it } from "bun:test";
+import { mkdirSync, rmSync } from "node:fs";
 import { join } from "node:path";
 import { isNewer } from "../../../src/update/checker.ts";
 
@@ -52,7 +52,7 @@ describe("checkForUpdate() — cache behaviour", () => {
   });
 
   it("returns null when cached version equals current", async () => {
-    const { cachePath, writeCache, checkForUpdate } = await import(
+    const { writeCache, checkForUpdate } = await import(
       "../../../src/update/checker.ts"
     );
     writeCache("v0.1.0");
