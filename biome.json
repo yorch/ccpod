@@ -47,6 +47,16 @@
           "nursery": {}
         }
       }
+    },
+    {
+      "includes": ["**/*.astro"],
+      "linter": {
+        "rules": {
+          "correctness": {
+            "noUnusedVariables": "off"
+          }
+        }
+      }
     }
   ],
   "vcs": {

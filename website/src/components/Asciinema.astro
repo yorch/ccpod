@@ -1,17 +1,17 @@
 ---
 interface Props {
-  src: string;
-  poster?: string;
+  autoplay?: boolean;
   cols?: number;
+  loop?: boolean;
+  poster?: string;
   rows?: number;
   speed?: number;
-  autoplay?: boolean;
-  loop?: boolean;
+  src: string;
 }
 
 const {
   src,
-  poster = 'npt:0:05',
+  poster = "npt:0:05",
   cols = 100,
   rows = 28,
   speed = 1.5,
@@ -20,7 +20,9 @@ const {
 } = Astro.props;
 
 const id = `asciinema-${Math.random().toString(36).slice(2, 9)}`;
-import { withBase } from '../lib/url';
+
+import { withBase } from "../lib/url";
+
 const resolvedSrc = withBase(src);
 ---
 <div class="asciinema-wrapper">

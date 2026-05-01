@@ -44,6 +44,8 @@ function makeLocalRepo(): { repoDir: string; ref: string } {
   git(["init", "-b", "main"], repoDir);
   git(["config", "user.email", "test@test.com"], repoDir);
   git(["config", "user.name", "Test"], repoDir);
+  git(["config", "commit.gpgsign", "false"], repoDir);
+  git(["config", "tag.gpgsign", "false"], repoDir);
   writeFileSync(join(repoDir, "config.txt"), "initial content");
   git(["add", "."], repoDir);
   git(["commit", "-m", "init"], repoDir);

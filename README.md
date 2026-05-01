@@ -6,6 +6,8 @@ Run Claude Code inside Docker containers with portable, composable configuration
 
 Works with Docker, Podman, OrbStack, and Colima — auto-detected.
 
+📖 **Docs:** https://yorch.github.io/ccpod
+
 ---
 
 ## Install

@@ -4,7 +4,7 @@
   --sl-color-accent-high: #c4b5fd;
 }
 
-:root[data-theme='light'] {
+:root[data-theme="light"] {
   --sl-color-accent-low: #ede9fe;
   --sl-color-accent: #6d28d9;
   --sl-color-accent-high: #4c1d95;
@@ -12,16 +12,16 @@
 
 .hero-features {
   display: grid;
-  gap: 1rem;
   grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+  gap: 1rem;
   margin-top: 3rem;
 }
 
 .hero-feature {
+  padding: 1.25rem;
   background: var(--sl-color-bg-nav);
   border: 1px solid var(--sl-color-hairline);
   border-radius: 0.5rem;
-  padding: 1.25rem;
 }
 
 .hero-feature h3 {
@@ -32,35 +32,35 @@
 
 .hero-feature p {
   margin: 0;
-  color: var(--sl-color-gray-3);
   font-size: 0.875rem;
   line-height: 1.5;
+  color: var(--sl-color-gray-3);
 }
 
 .comparison {
   margin: 2rem 0;
+  overflow: hidden;
   border: 1px solid var(--sl-color-hairline);
   border-radius: 0.5rem;
-  overflow: hidden;
 }
 
 .comparison table {
   width: 100%;
-  border-collapse: collapse;
   margin: 0;
+  border-collapse: collapse;
 }
 
 .comparison th,
 .comparison td {
   padding: 0.75rem 1rem;
+  font-size: 0.875rem;
   text-align: left;
   border-bottom: 1px solid var(--sl-color-hairline);
-  font-size: 0.875rem;
 }
 
 .comparison th {
-  background: var(--sl-color-bg-nav);
   font-weight: 600;
+  background: var(--sl-color-bg-nav);
 }
 
 .comparison td:first-child {
@@ -70,7 +70,7 @@
 
 .asciinema-wrapper {
   margin: 2rem 0;
-  border-radius: 0.5rem;
   overflow: hidden;
   border: 1px solid var(--sl-color-hairline);
+  border-radius: 0.5rem;
 }
