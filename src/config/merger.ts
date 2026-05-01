@@ -27,13 +27,14 @@ export function mergeConfigs(
 
   return {
     profileName: profile.name,
-    image: profile.image.use === "build" ? "" : profile.image.use,
+    image: profile.image.use,
     dockerfile: profile.image.dockerfile,
     auth: profile.auth,
     state: overrides.state ?? profile.state,
     ssh: profile.ssh,
     network,
     ports: parsePorts(ports.list),
+    autoDetectMcp: ports.autoDetectMcp,
     services,
     env: {},
   };

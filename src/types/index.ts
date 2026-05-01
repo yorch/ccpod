@@ -76,6 +76,7 @@ export interface ResolvedConfig {
   ssh: ProfileConfig["ssh"];
   network: ProfileConfig["network"];
   ports: PortMapping[];
+  autoDetectMcp: boolean;
   services: Record<string, ServiceConfig>;
   env: Record<string, string>;
   mergedConfigDir: string;

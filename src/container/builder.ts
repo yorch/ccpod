@@ -12,7 +12,6 @@ export interface ContainerSpec {
   workingDir: string;
   env: string[];
   binds: string[];
-  volumes: Record<string, object>;
   portBindings: Record<string, Array<{ HostPort: string }>>;
   networkMode: string;
   tty: boolean;
@@ -39,15 +38,14 @@ export function buildContainerSpec(
     binds.push(`${homedir()}/.ssh:/root/.ssh:ro`);
   }
 
-  const volumes: Record<string, object> = {
-    [`ccpod-plugins-${config.profileName}`]: {},
-  };
+  // Named volumes - Docker accepts `volumeName:/path` in Binds
+  binds.push(`ccpod-plugins-${config.profileName}:/ccpod/plugins`);
+  if (config.state === "persistent") {
+    binds.push(`ccpod-state-${config.profileName}:/ccpod/state`);
+  }
 
   const tmpfs: Record<string, string> = {};
-
-  if (config.state === "persistent") {
-    volumes[`ccpod-state-${config.profileName}`] = {};
-  } else {
+  if (config.state === "ephemeral") {
     tmpfs["/ccpod/state"] = "rw,noexec,nosuid,size=256m";
   }
 
@@ -70,7 +68,6 @@ export function buildContainerSpec(
     workingDir: "/workspace",
     env,
     binds,
-    volumes,
     portBindings,
     networkMode: "bridge",
     tty,
