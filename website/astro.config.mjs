@@ -4,7 +4,7 @@ import starlight from '@astrojs/starlight';
 import { defineConfig } from 'astro/config';
 
 export default defineConfig({
-  base: '/ccpod',
+  base: '/',
   integrations: [
     starlight({
       components: {
@@ -77,5 +77,5 @@ export default defineConfig({
       title: 'ccpod',
     }),
   ],
-  site: 'https://yorch.github.io',
+  site: 'https://ccpod.brnby.com',
 });
