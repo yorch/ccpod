@@ -22,7 +22,7 @@ function credentialsBase(): string {
 
 export function ensureCcpodDirs(): void {
   mkdirSync(profilesDir(), { recursive: true });
-  mkdirSync(credentialsBase(), { recursive: true });
+  mkdirSync(credentialsBase(), { mode: 0o700, recursive: true });
 }
 
 export function profileExists(name: string): boolean {
@@ -35,7 +35,7 @@ export function getProfileDir(name: string): string {
 
 export function getCredentialsDir(profileName: string): string {
   const dir = join(credentialsBase(), profileName);
-  mkdirSync(dir, { recursive: true });
+  mkdirSync(dir, { mode: 0o700, recursive: true });
   return dir;
 }
 
