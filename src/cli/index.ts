@@ -1,5 +1,7 @@
 import chalk from "chalk";
 import { defineCommand, runMain } from "citty";
+import { loadGlobalConfig } from "../global/config.ts";
+import { checkForUpdate } from "../update/checker.ts";
 import { VERSION } from "../version.ts";
 
 function handleFatalError(err: unknown): never {
@@ -10,6 +12,16 @@ function handleFatalError(err: unknown): never {
 
 process.on("unhandledRejection", handleFatalError);
 process.on("uncaughtException", handleFatalError);
+
+const globalConfig = loadGlobalConfig();
+if (globalConfig.autoCheckUpdates) {
+  const newer = checkForUpdate(VERSION);
+  if (newer) {
+    console.log(
+      chalk.yellow(`\nUpdate available: ${newer} — run 'ccpod update'\n`),
+    );
+  }
+}
 
 const main = defineCommand({
   meta: {
@@ -28,6 +40,7 @@ const main = defineCommand({
     ps: () => import("./commands/ps.ts").then((m) => m.default),
     run: () => import("./commands/run.ts").then((m) => m.default),
     state: () => import("./commands/state/index.ts").then((m) => m.default),
+    update: () => import("./commands/update.ts").then((m) => m.default),
   },
 });
 
