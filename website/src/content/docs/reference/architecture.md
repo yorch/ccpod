@@ -135,6 +135,6 @@ All ccpod-managed containers get these labels for discovery (used by `ccpod ps` 
 
 ## See also
 
+- [Internals](/ccpod/reference/internals/) — type definitions, entrypoint assembly, full startup sequence
 - [Storage Layout](/ccpod/reference/storage/)
 - [CLI Reference](/ccpod/reference/cli/)
-- Source: [`yorch/ccpod`](https://github.com/yorch/ccpod) — `docs/ARCHITECTURE.md` has the deeper walkthrough.

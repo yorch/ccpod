@@ -80,7 +80,7 @@ Tests live in `tests/unit/` and `tests/integration/`. Fixtures in `tests/fixture
 Before every commit:
 
 1. **Quality gates** — `bun run typecheck && bun test tests/unit/ && bun run check` must all pass
-2. **Docs** — update `CLAUDE.md`, `docs/ARCHITECTURE.md`, or any affected docs to reflect the change
+2. **Docs** — update `CLAUDE.md`, `website/src/content/docs/reference/internals.md`, or any affected docs to reflect the change
 3. **Code review** — spawn a fresh subagent (`feature-dev:code-reviewer`) to review the diff; address any real bugs or meaningful risks before committing
 
 Commit messages must follow [Conventional Commits](https://www.conventionalcommits.org/):

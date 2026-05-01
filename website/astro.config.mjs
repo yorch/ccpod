@@ -57,6 +57,7 @@ export default defineConfig({
           items: [
             { label: 'CLI Reference', slug: 'reference/cli' },
             { label: 'Architecture', slug: 'reference/architecture' },
+            { label: 'Internals', slug: 'reference/internals' },
             { label: 'Storage Layout', slug: 'reference/storage' },
           ],
           label: 'Reference',
