@@ -1,16 +1,31 @@
 import { dockerExec, dockerSpawn } from "../runtime/docker.ts";
 import type { ContainerSpec } from "./builder.ts";
 
-export async function runContainer(spec: ContainerSpec): Promise<number> {
-  const state = await containerState(spec.name);
+type DockerExecFn = typeof dockerExec;
+type DockerSpawnFn = typeof dockerSpawn;
+
+export interface RunnerDeps {
+  dockerExec: DockerExecFn;
+  dockerSpawn: DockerSpawnFn;
+}
+
+function defaultDeps(): RunnerDeps {
+  return { dockerExec, dockerSpawn };
+}
+
+export async function runContainer(
+  spec: ContainerSpec,
+  deps: RunnerDeps = defaultDeps(),
+): Promise<number> {
+  const state = await containerState(spec.name, deps.dockerExec);
 
   if (state === "running") {
     console.log(`Reattaching to running container: ${spec.name}`);
-    return dockerSpawn(["attach", spec.name]);
+    return deps.dockerSpawn(["attach", spec.name]);
   }
 
   if (state === "stopped") {
-    const { exitCode, stderr } = await dockerExec(["rm", spec.name]);
+    const { exitCode, stderr } = await deps.dockerExec(["rm", spec.name]);
     if (exitCode !== 0) {
       throw new Error(
         `Failed to remove stopped container '${spec.name}': ${stderr}`,
@@ -18,20 +33,24 @@ export async function runContainer(spec: ContainerSpec): Promise<number> {
     }
   }
 
-  return dockerSpawn(buildRunArgs(spec));
+  return deps.dockerSpawn(buildRunArgs(spec));
 }
 
-export async function stopContainer(name: string): Promise<void> {
-  const state = await containerState(name);
+export async function stopContainer(
+  name: string,
+  deps: RunnerDeps = defaultDeps(),
+): Promise<void> {
+  const state = await containerState(name, deps.dockerExec);
   if (state === "not_found") return;
-  if (state === "running") await dockerExec(["stop", "-t", "5", name]);
-  await dockerExec(["rm", name]);
+  if (state === "running") await deps.dockerExec(["stop", "-t", "5", name]);
+  await deps.dockerExec(["rm", name]);
 }
 
 async function containerState(
   name: string,
+  dockerExecFn: DockerExecFn,
 ): Promise<"running" | "stopped" | "not_found"> {
-  const { exitCode, stdout } = await dockerExec([
+  const { exitCode, stdout } = await dockerExecFn([
     "inspect",
     "--format",
     "{{.State.Status}}",

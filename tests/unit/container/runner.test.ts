@@ -1,22 +1,9 @@
 import { beforeEach, describe, expect, it, mock } from "bun:test";
-
-const mockDockerExec = mock(
-  async (_args: string[]) =>
-    ({ exitCode: 0, stderr: "", stdout: "" }) as {
-      exitCode: number;
-      stdout: string;
-      stderr: string;
-    },
-);
-const mockDockerSpawn = mock(async (_args: string[]) => 0 as number);
-
-mock.module("../../../src/runtime/docker.ts", () => ({
-  dockerExec: mockDockerExec,
-  dockerSpawn: mockDockerSpawn,
-}));
-
 import type { ContainerSpec } from "../../../src/container/builder.ts";
+import type { RunnerDeps } from "../../../src/container/runner.ts";
 import { runContainer } from "../../../src/container/runner.ts";
+
+type ExecResult = { exitCode: number; stdout: string; stderr: string };
 
 function makeSpec(overrides: Partial<ContainerSpec> = {}): ContainerSpec {
   return {
@@ -34,104 +21,102 @@ function makeSpec(overrides: Partial<ContainerSpec> = {}): ContainerSpec {
   };
 }
 
-beforeEach(() => {
-  mockDockerExec.mockReset();
-  mockDockerExec.mockImplementation(async () => ({
-    exitCode: 0,
-    stderr: "",
-    stdout: "",
-  }));
-  mockDockerSpawn.mockReset();
-  mockDockerSpawn.mockImplementation(async () => 0);
-});
+function makeDeps(
+  execResults: ExecResult[] = [],
+  spawnResult = 0,
+): {
+  deps: RunnerDeps;
+  execMock: ReturnType<typeof mock>;
+  spawnMock: ReturnType<typeof mock>;
+} {
+  let execCallIndex = 0;
+  const execMock = mock(async (_args: string[]): Promise<ExecResult> => {
+    const result = execResults[execCallIndex] ?? {
+      exitCode: 0,
+      stderr: "",
+      stdout: "",
+    };
+    execCallIndex++;
+    return result;
+  });
+  const spawnMock = mock(
+    async (_args: string[]): Promise<number> => spawnResult,
+  );
+  return {
+    deps: {
+      dockerExec: execMock as RunnerDeps["dockerExec"],
+      dockerSpawn: spawnMock as RunnerDeps["dockerSpawn"],
+    },
+    execMock,
+    spawnMock,
+  };
+}
 
 describe("runContainer", () => {
   it("starts a new container when not found", async () => {
-    // inspect: container not found
-    mockDockerExec.mockImplementationOnce(async () => ({
-      exitCode: 1,
-      stderr: "Error: No such container",
-      stdout: "",
-    }));
+    const { deps, spawnMock } = makeDeps([
+      { exitCode: 1, stderr: "Error: No such container", stdout: "" },
+    ]);
 
-    const code = await runContainer(makeSpec());
+    const code = await runContainer(makeSpec(), deps);
 
     expect(code).toBe(0);
-    expect(mockDockerSpawn).toHaveBeenCalledTimes(1);
-    const spawnArgs = mockDockerSpawn.mock.calls[0][0] as string[];
+    expect(spawnMock).toHaveBeenCalledTimes(1);
+    const spawnArgs = (spawnMock.mock.calls[0] as [string[]])[0];
     expect(spawnArgs[0]).toBe("run");
     expect(spawnArgs).toContain("test-image:latest");
   });
 
   it("reattaches when container is already running", async () => {
-    mockDockerExec.mockImplementationOnce(async () => ({
-      exitCode: 0,
-      stderr: "",
-      stdout: "running",
-    }));
+    const { deps, spawnMock, execMock } = makeDeps([
+      { exitCode: 0, stderr: "", stdout: "running" },
+    ]);
 
-    await runContainer(makeSpec());
+    await runContainer(makeSpec(), deps);
 
-    const spawnArgs = mockDockerSpawn.mock.calls[0][0] as string[];
+    const spawnArgs = (spawnMock.mock.calls[0] as [string[]])[0];
     expect(spawnArgs[0]).toBe("attach");
-    // rm must NOT be called
-    const execArgs = mockDockerExec.mock.calls.map((c) => c[0] as string[]);
+    const execArgs = (execMock.mock.calls as [string[]][]).map((c) => c[0]);
     expect(execArgs.some((a) => a.includes("rm"))).toBe(false);
   });
 
   it("removes stopped container then starts fresh", async () => {
-    // inspect: stopped
-    mockDockerExec.mockImplementationOnce(async () => ({
-      exitCode: 0,
-      stderr: "",
-      stdout: "exited",
-    }));
-    // rm: success
-    mockDockerExec.mockImplementationOnce(async () => ({
-      exitCode: 0,
-      stderr: "",
-      stdout: "",
-    }));
+    const { deps, spawnMock, execMock } = makeDeps([
+      { exitCode: 0, stderr: "", stdout: "exited" },
+      { exitCode: 0, stderr: "", stdout: "" },
+    ]);
 
-    await runContainer(makeSpec());
+    await runContainer(makeSpec(), deps);
 
-    const execArgs = mockDockerExec.mock.calls.map((c) => c[0] as string[]);
+    const execArgs = (execMock.mock.calls as [string[]][]).map((c) => c[0]);
     expect(execArgs.some((a) => a.includes("rm"))).toBe(true);
-    const spawnArgs = mockDockerSpawn.mock.calls[0][0] as string[];
+    const spawnArgs = (spawnMock.mock.calls[0] as [string[]])[0];
     expect(spawnArgs[0]).toBe("run");
   });
 
   it("throws when docker rm fails on a stopped container", async () => {
-    // inspect: stopped
-    mockDockerExec.mockImplementationOnce(async () => ({
-      exitCode: 0,
-      stderr: "",
-      stdout: "exited",
-    }));
-    // rm: fails
-    mockDockerExec.mockImplementationOnce(async () => ({
-      exitCode: 1,
-      stderr: "permission denied",
-      stdout: "",
-    }));
+    const { deps, spawnMock } = makeDeps([
+      { exitCode: 0, stderr: "", stdout: "exited" },
+      { exitCode: 1, stderr: "permission denied", stdout: "" },
+    ]);
 
-    await expect(runContainer(makeSpec())).rejects.toThrow(
+    await expect(runContainer(makeSpec(), deps)).rejects.toThrow(
       "Failed to remove stopped container",
     );
-    expect(mockDockerSpawn).not.toHaveBeenCalled();
+    expect(spawnMock).not.toHaveBeenCalled();
   });
 
   it("passes --name, -w, and image to docker run args", async () => {
-    // inspect: not found
-    mockDockerExec.mockImplementationOnce(async () => ({
-      exitCode: 1,
-      stderr: "",
-      stdout: "",
-    }));
+    const { deps, spawnMock } = makeDeps([
+      { exitCode: 1, stderr: "", stdout: "" },
+    ]);
 
-    await runContainer(makeSpec({ image: "my-img:v1", name: "my-container" }));
+    await runContainer(
+      makeSpec({ image: "my-img:v1", name: "my-container" }),
+      deps,
+    );
 
-    const spawnArgs = mockDockerSpawn.mock.calls[0][0] as string[];
+    const spawnArgs = (spawnMock.mock.calls[0] as [string[]])[0];
     expect(spawnArgs).toContain("--name");
     expect(spawnArgs).toContain("my-container");
     expect(spawnArgs).toContain("-w");
@@ -140,15 +125,16 @@ describe("runContainer", () => {
   });
 
   it("appends cmd to run args when spec.cmd is set", async () => {
-    mockDockerExec.mockImplementationOnce(async () => ({
-      exitCode: 1,
-      stderr: "",
-      stdout: "",
-    }));
+    const { deps, spawnMock } = makeDeps([
+      { exitCode: 1, stderr: "", stdout: "" },
+    ]);
 
-    await runContainer(makeSpec({ cmd: ["--file", "/workspace/prompt.md"] }));
+    await runContainer(
+      makeSpec({ cmd: ["--file", "/workspace/prompt.md"] }),
+      deps,
+    );
 
-    const spawnArgs = mockDockerSpawn.mock.calls[0][0] as string[];
+    const spawnArgs = (spawnMock.mock.calls[0] as [string[]])[0];
     expect(spawnArgs).toContain("--file");
     expect(spawnArgs).toContain("/workspace/prompt.md");
   });
