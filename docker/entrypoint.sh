@@ -36,4 +36,13 @@ if [ -n "${CCPOD_PLUGINS_TO_INSTALL}" ]; then
   done
 fi
 
-exec "$@"
+"$@" &
+CHILD_PID=$!
+trap "kill -TERM $CHILD_PID 2>/dev/null" TERM INT
+wait $CHILD_PID || STATUS=$?
+STATUS=${STATUS:-0}
+
+# Write credentials back so they persist across container restarts
+cp -f "${CLAUDE_DIR}/.credentials.json" /ccpod/credentials/.credentials.json 2>/dev/null || true
+
+exit $STATUS
