@@ -1,3 +1,4 @@
+import { dirname, isAbsolute } from 'node:path';
 import chalk from 'chalk';
 import { defineCommand } from 'citty';
 import {
@@ -43,8 +44,11 @@ export default defineCommand({
       args.dockerfile ?? profile.image.dockerfile ?? 'Dockerfile';
     const tag = args.tag ?? `ccpod-local-${profileName}:latest`;
 
+    const contextDir = isAbsolute(dockerfile)
+      ? dirname(dockerfile)
+      : process.cwd();
     console.log(chalk.dim(`Building ${dockerfile} → ${tag}`));
-    await buildImage(dockerfile, tag, process.cwd());
+    await buildImage(dockerfile, tag, contextDir);
     console.log(chalk.green(`\n✓ Built: ${tag}`));
 
     if (args.apply) {

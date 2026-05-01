@@ -61,6 +61,7 @@ src/
 │       │   └── update.ts
 │       ├── image/
 │       │   ├── build.ts
+│       │   ├── init.ts
 │       │   └── pull.ts
 │       ├── state/
 │       │   └── clear.ts
@@ -387,7 +388,8 @@ ccpod run [-- claude-args]
 │
 ├─ 4. Ensure image
 │     if dockerfile: set tag = ccpod-local-<profile>-<sha256(dockerfile-path)>
-│                   dockerfile path resolved relative to $PWD
+│                   if dockerfile is absolute: context dir = dirname(dockerfile)
+│                   else: context dir = $PWD
 │                   build if tag not found locally (or --rebuild)
 │     else: check if image exists locally; pull if not
 │

@@ -75,3 +75,15 @@ export function updateProfileImage(profileName: string, tag: string): void {
   doc.setIn(['image', 'use'], tag);
   writeFileSync(profilePath, doc.toString(), 'utf8');
 }
+
+export function updateProfileDockerfile(
+  profileName: string,
+  dockerfilePath: string,
+): void {
+  const profilePath = join(profilesDir(), profileName, 'profile.yml');
+  if (!existsSync(profilePath))
+    throw new Error(`Profile not found: ${profileName}`);
+  const doc = parseDocument(readFileSync(profilePath, 'utf8'));
+  doc.setIn(['image', 'dockerfile'], dockerfilePath);
+  writeFileSync(profilePath, doc.toString(), 'utf8');
+}
