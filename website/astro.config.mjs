@@ -24,6 +24,20 @@ gtag('js', new Date());
 gtag('config', 'G-VJXW4GZXT6');
 `,
         },
+        {
+          tag: 'script',
+          attrs: {
+            src: 'https://plausible.brnby.com/js/pa-eRH3SRTdLLQukpA4zRNB1.js',
+            async: true,
+          },
+        },
+        {
+          tag: 'script',
+          content: `
+window.plausible=window.plausible||function(){(plausible.q=plausible.q||[]).push(arguments)},plausible.init=plausible.init||function(i){plausible.o=i||{}};
+plausible.init()
+`,
+        },
       ],
       components: {
         Footer: './src/components/Footer.astro',
