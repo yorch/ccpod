@@ -3,6 +3,7 @@ import { existsSync, readFileSync } from 'node:fs';
 import { dirname, isAbsolute, join, normalize } from 'node:path';
 import chalk from 'chalk';
 import { defineCommand } from 'citty';
+import deepmerge from 'deepmerge';
 import { ZodError } from 'zod';
 import { resolveAuth, resolveEnvForwarding } from '../../auth/resolver.ts';
 import { loadProfileConfig, loadProjectConfig } from '../../config/loader.ts';
@@ -38,6 +39,10 @@ export default defineCommand({
       description: 'Profile name (overrides .ccpod.yml)',
       type: 'string',
     },
+    prompt: {
+      description: 'Headless mode: prompt text passed directly to claude',
+      type: 'positional',
+    },
     rebuild: {
       default: false,
       description: 'Force image rebuild/repull',
@@ -51,7 +56,15 @@ export default defineCommand({
     try {
       const cwd = process.cwd();
 
-      // Validate --file is a relative path within the project directory
+      // Validate headless args — --file and prompt are mutually exclusive
+      const promptArg = args.prompt as string | undefined;
+      if (args.file && promptArg) {
+        console.error(
+          `${chalk.red('error:')} --file and prompt text are mutually exclusive`,
+        );
+        process.exit(1);
+      }
+
       let fileArg: string | undefined;
       if (args.file) {
         const normalized = normalize(args.file);
@@ -119,7 +132,7 @@ export default defineCommand({
 
       // Headless mode requires auth — fail early to avoid a useless container run
       if (
-        fileArg &&
+        (fileArg || promptArg) &&
         profile.auth.type === 'api-key' &&
         Object.keys(authEnv).length === 0
       ) {
@@ -154,10 +167,27 @@ export default defineCommand({
 
       const profileSettings =
         readJsonIfExists(join(configSourceDir, 'settings.json')) ?? {};
+      const projectClaudeDir = join(cwd, '.claude');
+      // Trust boundary: project .claude/settings.json is treated as untrusted
+      // (repo-provided). It deep-merges into profile settings with project winning
+      // on conflicts — same trust level as claudeArgs passthrough. Only run ccpod
+      // against repos you trust; do not use with third-party repos in CI without
+      // reviewing their .claude/settings.json.
+      const projectSettings =
+        readJsonIfExists(join(projectClaudeDir, 'settings.json')) ?? {};
+      const mergedSettings = deepmerge(profileSettings, projectSettings, {
+        arrayMerge: (dest: unknown[], src: unknown[]) => {
+          const combined = [...dest, ...src];
+          return combined.every((item) => typeof item === 'string')
+            ? [...new Set(combined as string[])]
+            : combined;
+        },
+      }) as object;
       const mergedConfigDir = writeMergedConfig(
         configSourceDir,
         mergedClaudeMd,
-        profileSettings,
+        mergedSettings,
+        projectClaudeDir,
       );
 
       // 7. Resolve image — build locally if use === "build", else pull
@@ -191,12 +221,20 @@ export default defineCommand({
       const passthroughArgs =
         passthroughIdx >= 0 ? process.argv.slice(passthroughIdx + 1) : [];
 
+      if (promptArg && passthroughArgs.some((a) => !a.startsWith('-'))) {
+        console.error(
+          `${chalk.red('error:')} cannot combine inline prompt with bare positional args after --`,
+        );
+        process.exit(1);
+      }
+
       const config: ResolvedConfig = {
         ...partial,
         claudeArgs: [
           ...partial.claudeArgs,
           ...(fileArg ? ['--file', `/workspace/${fileArg}`] : []),
           ...passthroughArgs,
+          ...(promptArg ? [promptArg] : []),
         ],
         env,
         image,
@@ -214,7 +252,7 @@ export default defineCommand({
         await startSidecars(config.services, networkName, profileName, hash);
       }
 
-      const tty = !fileArg;
+      const tty = !fileArg && !promptArg;
       const spec = buildContainerSpec(config, cwd, tty, networkName);
       const exitCode = await runContainer(spec);
       process.exit(exitCode);

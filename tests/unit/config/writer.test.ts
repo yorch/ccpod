@@ -1,6 +1,7 @@
 import { afterEach, describe, expect, it } from 'bun:test';
 import {
   existsSync,
+  mkdirSync,
   mkdtempSync,
   readFileSync,
   rmSync,
@@ -25,8 +26,13 @@ function makeTempDir(): string {
   return dir;
 }
 
-function run(profileDir: string, claudeMd: string, settings: object): string {
-  const out = writeMergedConfig(profileDir, claudeMd, settings);
+function run(
+  profileDir: string,
+  claudeMd: string,
+  settings: object,
+  projectDir?: string,
+): string {
+  const out = writeMergedConfig(profileDir, claudeMd, settings, projectDir);
   cleanup.push(out);
   return out;
 }
@@ -126,5 +132,65 @@ describe('writeMergedConfig', () => {
     const settingsMode = statSync(join(out, 'settings.json')).mode & 0o777;
     expect(claudeMdMode).toBe(0o600);
     expect(settingsMode).toBe(0o600);
+  });
+
+  it('copies assets from project claude dir after profile (project wins on conflict)', () => {
+    const profileDir = makeTempDir();
+    const projectDir = makeTempDir();
+    writeFileSync(join(profileDir, 'skill.js'), 'profile-version');
+    writeFileSync(join(projectDir, 'skill.js'), 'project-version');
+    const out = run(profileDir, '', {}, projectDir);
+    expect(readFileSync(join(out, 'skill.js'), 'utf8')).toBe('project-version');
+  });
+
+  it('merges assets from both dirs — project adds files profile lacks', () => {
+    const profileDir = makeTempDir();
+    const projectDir = makeTempDir();
+    writeFileSync(join(profileDir, 'profile-only.js'), 'p');
+    writeFileSync(join(projectDir, 'project-only.js'), 'q');
+    const out = run(profileDir, '', {}, projectDir);
+    expect(existsSync(join(out, 'profile-only.js'))).toBe(true);
+    expect(existsSync(join(out, 'project-only.js'))).toBe(true);
+  });
+
+  it('skips symlinks in project claude dir', () => {
+    const profileDir = makeTempDir();
+    const projectDir = makeTempDir();
+    writeFileSync(join(projectDir, 'real.js'), 'real');
+    symlinkSync(join(projectDir, 'real.js'), join(projectDir, 'link.js'));
+    const out = run(profileDir, '', {}, projectDir);
+    expect(existsSync(join(out, 'link.js'))).toBe(false);
+    expect(existsSync(join(out, 'real.js'))).toBe(true);
+  });
+
+  it('cache invalidates when project dir contents change', () => {
+    const profileDir = makeTempDir();
+    const projectDir = makeTempDir();
+    const a = run(profileDir, 'x', {}, projectDir);
+    writeFileSync(join(projectDir, 'new-skill.js'), 'new');
+    const b = run(profileDir, 'x', {}, projectDir);
+    expect(a).not.toBe(b);
+    expect(existsSync(join(b, 'new-skill.js'))).toBe(true);
+  });
+
+  it('works when project claude dir does not exist', () => {
+    const out = run(
+      makeTempDir(),
+      'no-project',
+      {},
+      '/nonexistent/project/.claude',
+    );
+    expect(readFileSync(join(out, 'CLAUDE.md'), 'utf8')).toBe('no-project');
+  });
+
+  it('skips nested symlinks inside subdirectories', () => {
+    const profileDir = makeTempDir();
+    const skillsDir = join(profileDir, 'skills');
+    mkdirSync(skillsDir);
+    writeFileSync(join(skillsDir, 'real.md'), 'skill');
+    symlinkSync(join(skillsDir, 'real.md'), join(skillsDir, 'link.md'));
+    const out = run(profileDir, '', {});
+    expect(existsSync(join(out, 'skills', 'real.md'))).toBe(true);
+    expect(existsSync(join(out, 'skills', 'link.md'))).toBe(false);
   });
 });

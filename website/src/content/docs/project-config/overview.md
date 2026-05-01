@@ -13,6 +13,7 @@ A profile is global to your machine. A **project config** lives in a repo and ov
 - Forward extra env vars.
 - Add sidecar services that only this project needs.
 - Append to (or replace) `CLAUDE.md`.
+- Pass extra flags to `claude` on every run (`claudeArgs`).
 
 ## Example
 
@@ -20,6 +21,9 @@ A profile is global to your machine. A **project config** lives in a repo and ov
 # .ccpod.yml at the repo root
 profile: personal              # which profile to base on
 merge: deep                    # "deep" (default) | "override"
+
+claudeArgs:
+  - "--dangerously-skip-permissions"
 
 config:
   claudeMd: append             # "append" (default) | "override"
@@ -50,6 +54,7 @@ services:
 |---|---|---|
 | `profile` | string | Which profile to use. Falls back to `default`. |
 | `merge` | `deep` \| `override` | How to combine with the profile (see [Merge Strategies](/ccpod/project-config/merge/)). |
+| `claudeArgs` | string[] | Extra CLI flags passed to `claude`. Deep: appended after profile args. Override: replaces. |
 | `config.claudeMd` | `append` \| `override` | How to combine `CLAUDE.md` files. |
 | `network` | partial network block | Adds to (or replaces) the profile's network config. |
 | `ports` | array | Extra port mappings. |
