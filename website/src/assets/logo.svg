@@ -1,0 +1,15 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" width="64" height="64" role="img" aria-label="ccpod logo">
+  <title>ccpod</title>
+  <defs>
+    <linearGradient id="ccpod-bg" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0%" stop-color="#7c3aed"/>
+      <stop offset="100%" stop-color="#06b6d4"/>
+    </linearGradient>
+  </defs>
+  <rect x="2" y="2" width="60" height="60" rx="14" fill="url(#ccpod-bg)"/>
+  <rect x="2.5" y="2.5" width="59" height="59" rx="13.5" fill="none" stroke="rgba(255,255,255,0.18)" stroke-width="1"/>
+  <g fill="none" stroke="#ffffff" stroke-width="6" stroke-linecap="round">
+    <path d="M 30 24 A 9 9 0 1 0 30 40"/>
+    <path d="M 48 24 A 9 9 0 1 0 48 40"/>
+  </g>
+</svg>

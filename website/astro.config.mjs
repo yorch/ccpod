@@ -1,0 +1,77 @@
+// @ts-check
+
+import starlight from "@astrojs/starlight";
+import { defineConfig } from "astro/config";
+
+export default defineConfig({
+  base: "/ccpod",
+  integrations: [
+    starlight({
+      customCss: ["./src/styles/custom.css"],
+      description: "Run Claude Code in Docker. Portable, composable profiles.",
+      editLink: {
+        baseUrl: "https://github.com/yorch/ccpod/edit/main/website/",
+      },
+      logo: {
+        replacesTitle: false,
+        src: "./src/assets/logo.svg",
+      },
+      sidebar: [
+        {
+          items: [
+            { label: "Introduction", slug: "getting-started/introduction" },
+            { label: "Installation", slug: "getting-started/installation" },
+            { label: "Quick Start", slug: "getting-started/quick-start" },
+          ],
+          label: "Getting Started",
+        },
+        {
+          items: [
+            { label: "Overview", slug: "profiles/overview" },
+            { label: "Configuration", slug: "profiles/configuration" },
+            { label: "Shared Team Profile", slug: "profiles/team" },
+          ],
+          label: "Profiles",
+        },
+        {
+          items: [
+            { label: "Overview", slug: "project-config/overview" },
+            { label: "Merge Strategies", slug: "project-config/merge" },
+          ],
+          label: "Project Config",
+        },
+        {
+          items: [
+            { label: "State Persistence", slug: "features/state" },
+            { label: "MCP Auto-detection", slug: "features/mcp" },
+            { label: "Network Policy", slug: "features/network" },
+            { label: "Sidecar Services", slug: "features/sidecars" },
+            { label: "SSH Forwarding", slug: "features/ssh" },
+          ],
+          label: "Features",
+        },
+        {
+          items: [
+            { label: "CLI Reference", slug: "reference/cli" },
+            { label: "Architecture", slug: "reference/architecture" },
+            { label: "Storage Layout", slug: "reference/storage" },
+          ],
+          label: "Reference",
+        },
+        {
+          items: [{ label: "Watch a Session", slug: "demo" }],
+          label: "Demo",
+        },
+      ],
+      social: [
+        {
+          href: "https://github.com/yorch/ccpod",
+          icon: "github",
+          label: "GitHub",
+        },
+      ],
+      title: "ccpod",
+    }),
+  ],
+  site: "https://yorch.github.io",
+});

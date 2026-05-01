@@ -1,0 +1,11 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" role="img" aria-label="ccpod">
+  <title>ccpod</title>
+  <defs>
+    <linearGradient id="g" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0%" stop-color="#7c3aed"/>
+      <stop offset="100%" stop-color="#06b6d4"/>
+    </linearGradient>
+  </defs>
+  <rect x="2" y="2" width="60" height="60" rx="14" fill="url(#g)"/>
+  <path d="M 45 16 A 18 18 0 1 0 45 48" fill="none" stroke="#ffffff" stroke-width="10" stroke-linecap="round"/>
+</svg>

@@ -1,0 +1,40 @@
+---
+const rows = [
+  [
+    "Portable config across machines",
+    "Per-machine ~/.claude only",
+    "Built into profile",
+  ],
+  ["Versioned via git", "Manual sync", "config: source: git"],
+  ["Reproducible base image", "Drift between teammates", "Pinned image tag"],
+  ["Network policy", "Trusts host network", "full or restricted allow-list"],
+  [
+    "Sidecar services (DBs, queues)",
+    "docker compose alongside",
+    "Declared in profile.yml",
+  ],
+  ["MCP port forwarding", "Manual port flags", "Auto-detected from .mcp.json"],
+  ["Plugin install", "Per-machine", "Volume per profile, delta-installed"],
+  ["Auth handling", "Files in ~/.claude", "Profile-scoped credentials dir"],
+];
+---
+<div class="comparison">
+  <table>
+    <thead>
+      <tr>
+        <th>Concern</th>
+        <th>Bare Claude Code</th>
+        <th>ccpod</th>
+      </tr>
+    </thead>
+    <tbody>
+      {rows.map(([concern, bare, ccpod]) => (
+        <tr>
+          <td>{concern}</td>
+          <td>{bare}</td>
+          <td>{ccpod}</td>
+        </tr>
+      ))}
+    </tbody>
+  </table>
+</div>

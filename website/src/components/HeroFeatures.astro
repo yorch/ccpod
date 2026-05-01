@@ -1,0 +1,36 @@
+---
+const features = [
+  {
+    body: "A profile bundles your Claude config, plugins, CLAUDE.md, MCPs, and image into a single versionable unit.",
+    title: "Portable profiles",
+  },
+  {
+    body: "Every ccpod run boots a clean container from a pinned image — no drift between machines or teammates.",
+    title: "Reproducible sessions",
+  },
+  {
+    body: ".ccpod.yml sits in your repo and merges with the profile: deep-merge settings, append CLAUDE.md, add sidecars.",
+    title: "Project-level overrides",
+  },
+  {
+    body: "Declare a Postgres, Redis, or queue alongside Claude. ccpod wires them onto a shared network automatically.",
+    title: "Sidecar services",
+  },
+  {
+    body: "HTTP/SSE MCP servers from .mcp.json are exposed without manual port flags.",
+    title: "MCP auto-detection",
+  },
+  {
+    body: "Works with Docker, OrbStack, Colima, and Podman. ccpod auto-detects the socket.",
+    title: "Runtime-agnostic",
+  },
+];
+---
+<div class="hero-features">
+  {features.map((f) => (
+    <div class="hero-feature">
+      <h3>{f.title}</h3>
+      <p>{f.body}</p>
+    </div>
+  ))}
+</div>

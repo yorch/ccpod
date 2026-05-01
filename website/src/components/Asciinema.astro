@@ -1,0 +1,78 @@
+---
+import { withBase } from "../lib/url";
+
+interface Props {
+  autoplay?: boolean;
+  cols?: number;
+  loop?: boolean;
+  poster?: string;
+  rows?: number;
+  speed?: number;
+  src: string;
+}
+
+const {
+  src,
+  poster = "npt:0:05",
+  cols = 100,
+  rows = 28,
+  speed = 1.5,
+  autoplay = false,
+  loop = false,
+} = Astro.props;
+
+const id = `asciinema-${Math.random().toString(36).slice(2, 9)}`;
+const resolvedSrc = withBase(src);
+
+const PLAYER_VERSION = "3.15.1";
+const playerCss = `https://cdn.jsdelivr.net/npm/asciinema-player@${PLAYER_VERSION}/dist/bundle/asciinema-player.css`;
+const playerJs = `https://cdn.jsdelivr.net/npm/asciinema-player@${PLAYER_VERSION}/dist/bundle/asciinema-player.min.js`;
+---
+<link rel="stylesheet" href={playerCss} />
+
+<div class="asciinema-wrapper">
+  <div id={id} data-src={resolvedSrc}></div>
+</div>
+
+<script is:inline define:vars={{ playerJs }}>
+  if (!window.__ccpodAsciinemaLoad) {
+    window.__ccpodAsciinemaLoad = new Promise((resolve, reject) => {
+      const s = document.createElement("script");
+      s.src = playerJs;
+      s.async = true;
+      s.onload = () => resolve();
+      s.onerror = (e) => reject(e);
+      document.head.appendChild(s);
+    });
+  }
+</script>
+<script
+  is:inline
+  define:vars={{
+    id,
+    src: resolvedSrc,
+    poster,
+    cols,
+    rows,
+    speed,
+    autoplay,
+    loop,
+  }}
+>
+  window.__ccpodAsciinemaLoad
+    .then(() => {
+      const target = document.getElementById(id);
+      if (!target || !window.AsciinemaPlayer) return;
+      window.AsciinemaPlayer.create(src, target, {
+        poster,
+        cols,
+        rows,
+        speed,
+        autoPlay: autoplay,
+        loop,
+        theme: "asciinema",
+        fit: "width",
+      });
+    })
+    .catch(() => {});
+</script>

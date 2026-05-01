@@ -1,0 +1,70 @@
+---
+title: ccpod
+description: ccpod runs Claude Code inside a container with a portable, versioned profile — share, reproduce, and pin your Claude environment across machines and teams.
+template: splash
+hero:
+  tagline: Run Claude Code in Docker. Portable, composable profiles for your Claude environment.
+  image:
+    file: ../../assets/logo.svg
+  actions:
+    - text: Quick start
+      link: /ccpod/getting-started/quick-start/
+      icon: right-arrow
+      variant: primary
+    - text: View on GitHub
+      link: https://github.com/yorch/ccpod
+      icon: external
+      variant: minimal
+---
+
+import HeroFeatures from '../../components/HeroFeatures.astro';
+import Comparison from '../../components/Comparison.astro';
+import Asciinema from '../../components/Asciinema.astro';
+
+## What is ccpod?
+
+Your Claude environment — settings, plugins, skills, `CLAUDE.md`, MCP servers — is usually pinned to one machine. **ccpod** wraps it in a *profile*: a versioned, portable config that travels with you, your team, or your open-source project. Every `ccpod run` drops you into a clean, reproducible Claude session inside a container.
+
+<HeroFeatures />
+
+## See it in action
+
+<Asciinema src="/casts/ccpod-demo.cast" poster="npt:0:02" />
+
+> Don't have a recording yet? Drop a `.cast` file in `website/public/casts/` and rebuild. See the [demo page](/ccpod/demo/) for instructions.
+
+## Why ccpod vs. plain Claude Code?
+
+<Comparison />
+
+## 30-second taste
+
+```sh
+# Install
+curl -fsSL https://github.com/yorch/ccpod/releases/latest/download/ccpod-$(uname -s)-$(uname -m) -o /usr/local/bin/ccpod
+chmod +x /usr/local/bin/ccpod
+
+# First-run wizard: detect runtime, set up auth, create default profile
+ccpod init
+
+# Drop into Claude in the current directory
+ccpod run
+```
+
+Want to share an environment with your team? Point a profile at a git repo and everyone gets the same `CLAUDE.md`, settings, and plugin set — synced daily.
+
+```yaml
+# ~/.ccpod/profiles/team/profile.yml
+config:
+  source: git
+  repo: https://github.com/your-org/claude-config
+  sync: daily
+```
+
+## Where to next
+
+- [**Quick start**](/ccpod/getting-started/quick-start/) — install, init, run.
+- [**Profiles**](/ccpod/profiles/overview/) — the unit of portability.
+- [**Project config**](/ccpod/project-config/overview/) — overlay a profile per repo.
+- [**CLI reference**](/ccpod/reference/cli/) — every command and flag.
+- [**Architecture**](/ccpod/reference/architecture/) — how the pipeline works.
