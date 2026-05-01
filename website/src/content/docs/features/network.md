@@ -27,11 +27,13 @@ network:
 
 What happens:
 
-1. ccpod creates an isolated Docker network with `--internal`, blocking the default internet route.
-2. The container's entrypoint resolves each `allow` entry to IP addresses **at startup** and writes iptables rules:
-   - `ACCEPT` for each resolved IP.
-   - `DROP` for everything else.
-3. DNS still resolves via the bridge gateway, but only the allowed IPs are reachable.
+1. ccpod adds `--cap-add NET_ADMIN` to the container so the entrypoint can write iptables rules.
+2. At container start, the entrypoint applies these OUTPUT rules **before** launching Claude:
+   - `ACCEPT` loopback and established/related connections
+   - `ACCEPT` DNS (UDP + TCP port 53) so hostname resolution works
+   - For each entry in `allow`: resolve hostname → IPs via `getent hosts`, then `ACCEPT` each IP. IPs and CIDRs are used directly.
+   - `DROP` all other outbound
+3. The resolution happens once at startup — if a domain's IPs rotate during your session, reconnection to new IPs will be blocked until you restart the container.
 
 ## Combining with project config
 
@@ -49,7 +51,7 @@ Under deep merge, `allow` lists are concatenated. Under `merge: override`, the p
 
 ## Caveats
 
-- Allow-list resolution is done **once at container start**. If a domain's IPs rotate during your session, you'll lose connectivity to the new ones until you restart.
-- IPv6 is allow-listed alongside IPv4 when the resolver returns AAAA records.
-- `localhost` and the bridge gateway are always reachable so MCP servers and sidecars work.
-- Restricted mode is a defense-in-depth tool, not a sandbox. Combine it with other isolation (separate profile, ephemeral state, no SSH agent forward) for sensitive work.
+- Resolution is done **once at container start**. IPs resolved at startup remain allowed even if DNS changes; new IPs for the same hostname are blocked until container restart.
+- `getent hosts` returns both IPv4 and IPv6 addresses — both are allowed when present.
+- Loopback (`lo`) is always allowed, so MCP servers and sidecar containers on the same network remain reachable.
+- Restricted mode is a defense-in-depth tool, not a sandbox. Combine with ephemeral state and no SSH agent forwarding for sensitive work.

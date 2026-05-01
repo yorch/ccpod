@@ -48,9 +48,9 @@ ccpod profile delete experiment
     └── <name>/                  # auth tokens for this profile
 ```
 
-Plus per-profile Docker volumes (managed automatically):
+Plus per-profile storage managed automatically:
 
-- `ccpod-plugins-<name>` — installed Claude plugins
-- `ccpod-state-<name>` — history, projects, sessions (only when `state: persistent`)
+- `ccpod-plugins-<name>` Docker volume — installed Claude plugins
+- `~/.ccpod/state/<name>/` host directory — history, projects, sessions (only when `state: persistent`)
 
 ## Next: [Configuration reference](/ccpod/profiles/configuration/)

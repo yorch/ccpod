@@ -16,7 +16,8 @@ The wizard:
 - Detects your container runtime (Docker / OrbStack / Colima / Podman)
 - Asks for your auth method (API key or OAuth)
 - Creates a `default` profile at `~/.ccpod/profiles/default/profile.yml`
-- Pulls the base image `ghcr.io/yorch/ccpod:latest`
+
+The base image is pulled automatically on first `ccpod run`.
 
 You can re-run `ccpod init` later to add another profile.
 
@@ -28,6 +29,8 @@ ccpod run
 ```
 
 The current directory is mounted at `/workspace` inside the container. Claude starts there. Exit the session and the container shuts down (state is wiped unless your profile sets `state: persistent`).
+
+> **Tip:** If you skip `ccpod init`, running `ccpod run` from any directory automatically launches the wizard when no `default` profile exists.
 
 ## 3. Use a different profile
 

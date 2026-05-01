@@ -80,6 +80,9 @@ ports:
     - "3000:3000"            # host:container
   autoDetectMcp: true        # expose HTTP/SSE MCP ports from .mcp.json
 
+plugins:
+  - mcp-server-brave-search  # delta-installed on first run; skipped if already present
+
 env:
   - DATABASE_URL             # host env vars to forward into container
 
@@ -168,11 +171,11 @@ ccpod config validate            Validate .ccpod.yml
 | Mode | History & memory | Survives restart |
 |------|-----------------|-----------------|
 | `ephemeral` (default) | tmpfs — wiped on exit | No |
-| `persistent` | Docker volume `ccpod-state-<profile>` | Yes |
+| `persistent` | `~/.ccpod/state/<profile>/` on host | Yes |
 
 Switch for a single run: `ccpod run --no-state`
 
-Reset: `ccpod state clear [profile]`
+Reset: `ccpod state clear [profile]` — deletes `~/.ccpod/state/<profile>/`
 
 ---
 
@@ -184,10 +187,10 @@ Reset: `ccpod state clear [profile]`
     profile.yml
     .ccpod-sync-lock        # timestamp of last git sync
   credentials/<name>/       # auth tokens — persist across container restarts
+  state/<name>/             # history, projects, todos (persistent mode only)
 
-Docker volumes (managed by ccpod):
+Docker named volumes (managed by ccpod):
   ccpod-plugins-<profile>   # installed Claude plugins
-  ccpod-state-<profile>     # history, projects, sessions (persistent mode only)
 ```
 
 ---

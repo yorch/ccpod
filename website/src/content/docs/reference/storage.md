@@ -16,9 +16,12 @@ ccpod stores everything under `~/.ccpod/` plus a small set of Docker named volum
 │   │   └── config/                 # cloned Claude config (only if source: git)
 │   └── team/
 │       └── profile.yml
-└── credentials/
-    ├── default/                    # auth tokens for "default" profile
-    └── team/                       # auth tokens for "team" profile
+├── credentials/
+│   ├── default/                    # auth tokens for "default" profile
+│   └── team/                       # auth tokens for "team" profile
+└── state/                          # only when state: persistent
+    ├── default/                    # projects, todos, history for "default"
+    └── team/
 ```
 
 In tests this can be redirected with `CCPOD_TEST_DIR`.
@@ -28,9 +31,18 @@ In tests this can be redirected with `CCPOD_TEST_DIR`.
 | Name | Purpose | Lifetime |
 |---|---|---|
 | `ccpod-plugins-<profile>` | Installed Claude plugins | Persists across runs; recreated by `ccpod plugins update` |
-| `ccpod-state-<profile>` | History, projects, todos, sessions | Persists across runs; only created when `state: persistent`; wiped by `ccpod state clear` |
 
 Plus per-project networks for sidecars: `ccpod-net-<sha256($PWD)>`.
+
+## Host state directory
+
+When `state: persistent`, Claude's history, projects, todos, and sessions are stored on the host at:
+
+```
+~/.ccpod/state/<profile>/
+```
+
+This is a plain host directory (not a Docker volume), so it survives host reboots and is easy to back up or inspect. Wiped by `ccpod state clear`.
 
 ## Container mounts
 
@@ -42,7 +54,7 @@ Inside a Claude container:
 | `/ccpod/config` | `/tmp/ccpod-<hash>/` (merged config) | ro bind |
 | `/ccpod/credentials` | `~/.ccpod/credentials/<profile>/` | rw bind |
 | `/ccpod/plugins` | `ccpod-plugins-<profile>` | volume |
-| `/ccpod/state` | `ccpod-state-<profile>` *or* tmpfs | volume / tmpfs |
+| `/ccpod/state` | `~/.ccpod/state/<profile>/` *or* tmpfs | rw bind / tmpfs |
 
 ## Project files
 

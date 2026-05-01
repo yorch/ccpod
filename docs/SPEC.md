@@ -68,14 +68,14 @@ The `~/.claude/` directory has three distinct categories requiring different per
 |---|---|---|
 | **Config** (read-only) | `settings.json`, `CLAUDE.md`, `skills/`, `hooks/` | Temp dir seeded from profile config source; bind-mounted read-only |
 | **Credentials** (read-write) | OAuth tokens, session auth, API key cache | `~/.ccpod/credentials/<profile>/` on host; bind-mounted read-write |
-| **State** (configurable) | `history.jsonl`, `projects/`, `todos/`, `sessions/` | Named Docker volume (`persistent`) or tmpfs (`ephemeral`) |
+| **State** (configurable) | `history.jsonl`, `projects/`, `todos/`, `sessions/` | `~/.ccpod/state/<profile>/` bind mount (`persistent`) or tmpfs (`ephemeral`) |
 
 | ID | Requirement |
 |---|---|
 | F-26 | State persistence configurable via profile: `state: ephemeral` (default) or `state: persistent` |
-| F-27 | `persistent` mode: state stored in named Docker volume `ccpod-state-<profile>` — survives container restarts |
+| F-27 | `persistent` mode: state stored in `~/.ccpod/state/<profile>/` on host, bind-mounted into container — survives container restarts |
 | F-28 | `ephemeral` mode: state lives only for the container lifetime — fresh slate each run |
-| F-29 | `ccpod state clear [profile]` — delete state volume (reset history/memory for a profile) |
+| F-29 | `ccpod state clear [profile]` — delete state directory (reset history/memory for a profile) |
 
 ### Authentication & Credentials
 

@@ -10,7 +10,7 @@ Claude Code keeps history, projects, todos, and sessions in `~/.claude/`. ccpod 
 | Mode | Storage | Survives container exit? | Survives host reboot? |
 |---|---|---|---|
 | `ephemeral` *(default)* | tmpfs inside the container | No | No |
-| `persistent` | Docker volume `ccpod-state-<profile>` | Yes | Yes |
+| `persistent` | `~/.ccpod/state/<profile>/` on the host | Yes | Yes |
 
 Configure in the profile:
 
@@ -37,14 +37,14 @@ Settings, plugins, skills, `CLAUDE.md`, and credentials are *not* in this volume
 
 ## Resetting
 
-To wipe the state volume for a profile:
+To wipe the state directory for a profile:
 
 ```sh
 ccpod state clear              # current profile
 ccpod state clear team         # specific profile
 ```
 
-This deletes `ccpod-state-<profile>`. The next `ccpod run` recreates an empty volume.
+This deletes `~/.ccpod/state/<profile>/`. The next `ccpod run` recreates it empty.
 
 ## When to choose which
 

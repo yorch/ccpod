@@ -44,6 +44,9 @@ ports:
     - "3000:3000"               # host:container
   autoDetectMcp: true           # expose HTTP/SSE MCP ports from .mcp.json
 
+plugins:
+  - mcp-server-brave-search     # delta-installed on first run
+
 env:
   - DATABASE_URL                # host env vars to forward
 
@@ -93,7 +96,17 @@ For `oauth`, ccpod manages tokens in `~/.ccpod/credentials/<name>/`.
 
 ### `state`
 
-`ephemeral` (default) wipes Claude history and session state when the container exits. `persistent` mounts a Docker volume `ccpod-state-<name>` that survives across runs. Override per run with `--no-state`.
+`ephemeral` (default) wipes Claude history and session state when the container exits. `persistent` binds `~/.ccpod/state/<name>/` on the host into the container — history, projects, and todos survive across runs. Override per run with `--no-state`.
+
+### `plugins`
+
+A list of Claude Code plugin names to install on first run. ccpod passes them to the container entrypoint, which delta-installs only the ones not already present — subsequent runs are fast.
+
+```yaml
+plugins:
+  - mcp-server-brave-search
+  - mcp-server-filesystem
+```
 
 ### `ssh`
 

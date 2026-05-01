@@ -60,7 +60,7 @@ ccpod image pull [profile]          # pull (or update) the profile's image
 ```sh
 ccpod ps                            # list running ccpod containers (any profile/project)
 ccpod down                          # stop Claude container + sidecars for $PWD
-ccpod state clear [profile]         # delete persistent state volume
+ccpod state clear [profile]         # delete persistent state directory (~/.ccpod/state/<profile>/)
 ```
 
 `ccpod down` matches by `ccpod.project=sha256($PWD)` label. Run it from the project directory.
