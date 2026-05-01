@@ -13,9 +13,13 @@ export default defineConfig({
         src: './src/assets/logo.svg',
         replacesTitle: false,
       },
-      social: {
-        github: 'https://github.com/yorch/ccpod',
-      },
+      social: [
+        {
+          icon: 'github',
+          label: 'GitHub',
+          href: 'https://github.com/yorch/ccpod',
+        },
+      ],
       editLink: {
         baseUrl: 'https://github.com/yorch/ccpod/edit/main/website/',
       },
@@ -25,7 +29,7 @@ export default defineConfig({
           tag: 'link',
           attrs: {
             rel: 'stylesheet',
-            href: 'https://cdn.jsdelivr.net/npm/asciinema-player@3.8.0/dist/bundle/asciinema-player.css',
+            href: 'https://cdn.jsdelivr.net/npm/asciinema-player@3.15.1/dist/bundle/asciinema-player.css',
           },
         },
       ],
