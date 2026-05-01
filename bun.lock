@@ -19,8 +19,6 @@
         "@types/bun": "latest",
         "@types/dockerode": "^4.0.1",
         "@types/node": "^25.6.0",
-      },
-      "peerDependencies": {
         "typescript": "^5",
       },
     },
