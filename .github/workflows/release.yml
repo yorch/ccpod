@@ -1,0 +1,47 @@
+name: Release
+
+on:
+  push:
+    tags:
+      - "v*"
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    name: Build and release
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: latest
+
+      - run: bun install --frozen-lockfile
+
+      - run: bun run typecheck
+
+      - run: bun test
+
+      - name: Build binaries
+        run: |
+          mkdir -p dist
+          bun build --compile --minify --target=bun-linux-x64   src/cli/index.ts --outfile dist/ccpod-linux-x64
+          bun build --compile --minify --target=bun-linux-arm64  src/cli/index.ts --outfile dist/ccpod-linux-arm64
+          bun build --compile --minify --target=bun-darwin-x64   src/cli/index.ts --outfile dist/ccpod-darwin-x64
+          bun build --compile --minify --target=bun-darwin-arm64 src/cli/index.ts --outfile dist/ccpod-darwin-arm64
+
+      - name: Create release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG: ${{ github.ref_name }}
+        run: |
+          gh release create "$TAG" \
+            --title "$TAG" \
+            --generate-notes \
+            dist/ccpod-linux-x64 \
+            dist/ccpod-linux-arm64 \
+            dist/ccpod-darwin-x64 \
+            dist/ccpod-darwin-arm64
