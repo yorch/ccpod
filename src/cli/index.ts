@@ -1,5 +1,15 @@
+import chalk from "chalk";
 import { defineCommand, runMain } from "citty";
 import { VERSION } from "../version.ts";
+
+function handleFatalError(err: unknown): never {
+  const msg = err instanceof Error ? err.message : String(err);
+  process.stderr.write(`${chalk.red("error:")} ${msg}\n`);
+  process.exit(1);
+}
+
+process.on("unhandledRejection", handleFatalError);
+process.on("uncaughtException", handleFatalError);
 
 const main = defineCommand({
   meta: {
