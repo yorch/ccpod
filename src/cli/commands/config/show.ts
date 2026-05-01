@@ -31,13 +31,23 @@ export default defineCommand({
     const profile = loadProfileConfig(getProfileDir(profileName));
     const merged = mergeConfigs(profile, projectConfig);
 
-    // Mask sensitive env values
+    // Display env forwarding keys (values are resolved at run time from the host env)
+    const envKeys = [
+      ...new Set([...profile.env, ...(projectConfig?.env ?? [])]),
+    ];
     const envDisplay: Record<string, string> = {};
-    for (const [k, v] of Object.entries(merged.env)) {
-      envDisplay[k] =
-        k.toLowerCase().includes("key") || k.toLowerCase().includes("token")
-          ? `${"*".repeat(Math.min(v.length, 8))} (${v.length} chars)`
-          : v;
+    for (const key of envKeys) {
+      const eqIdx = key.indexOf("=");
+      if (eqIdx !== -1) {
+        const k = key.slice(0, eqIdx);
+        const v = key.slice(eqIdx + 1);
+        envDisplay[k] =
+          k.toLowerCase().includes("key") || k.toLowerCase().includes("token")
+            ? `${"*".repeat(Math.min(v.length, 8))} (${v.length} chars)`
+            : v;
+      } else {
+        envDisplay[key] = "<forwarded from host env>";
+      }
     }
 
     const display = {

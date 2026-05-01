@@ -37,7 +37,12 @@ export const profileConfigSchema = z.object({
       use: z.string().default("ghcr.io/yorch/ccpod:latest"),
     })
     .default({ use: "ghcr.io/yorch/ccpod:latest" }),
-  name: z.string(),
+  name: z
+    .string()
+    .regex(
+      /^[a-zA-Z0-9_-]{1,64}$/,
+      "Profile name may only contain letters, digits, hyphens, and underscores (max 64 chars)",
+    ),
   network: z
     .object({
       allow: z.array(z.string()).default([]),
@@ -75,7 +80,13 @@ export const projectConfigSchema = z.object({
       list: z.array(z.string()).optional(),
     })
     .optional(),
-  profile: z.string().optional(),
+  profile: z
+    .string()
+    .regex(
+      /^[a-zA-Z0-9_-]{1,64}$/,
+      "Profile name may only contain letters, digits, hyphens, and underscores (max 64 chars)",
+    )
+    .optional(),
   services: z.record(z.string(), serviceConfigSchema).optional(),
 });
 

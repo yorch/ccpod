@@ -10,7 +10,12 @@ export async function runContainer(spec: ContainerSpec): Promise<number> {
   }
 
   if (state === "stopped") {
-    await dockerExec(["rm", spec.name]);
+    const { exitCode, stderr } = await dockerExec(["rm", spec.name]);
+    if (exitCode !== 0) {
+      throw new Error(
+        `Failed to remove stopped container '${spec.name}': ${stderr}`,
+      );
+    }
   }
 
   return dockerSpawn(buildRunArgs(spec));

@@ -1,6 +1,7 @@
 import { beforeEach, describe, expect, it } from "bun:test";
-import { mkdtempSync } from "node:fs";
+import { mkdtempSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
+import { join } from "node:path";
 import {
   getLastSync,
   shouldSync,
@@ -29,6 +30,12 @@ describe("shouldSync", () => {
   it("returns false when synced today for strategy=daily", () => {
     writeSyncLock(tmpDir);
     expect(shouldSync(tmpDir, "daily")).toBe(false);
+  });
+
+  it("returns true when synced yesterday for strategy=daily", () => {
+    const yesterday = Date.now() - 24 * 60 * 60 * 1000;
+    writeFileSync(join(tmpDir, ".ccpod-sync-lock"), String(yesterday));
+    expect(shouldSync(tmpDir, "daily")).toBe(true);
   });
 });
 

@@ -1,11 +1,5 @@
 import { afterEach, describe, expect, it } from "bun:test";
-import {
-  existsSync,
-  mkdirSync,
-  mkdtempSync,
-  rmSync,
-  writeFileSync,
-} from "node:fs";
+import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { detectRuntime } from "../../../src/runtime/detector.ts";
@@ -71,22 +65,22 @@ describe("detectRuntime", () => {
   });
 
   it("detects Colima when its socket exists and Docker absent", () => {
-    if (existsSync("/var/run/docker.sock")) return; // absolute path we can't suppress
-    saveEnv("HOME");
+    saveEnv("HOME", "DOCKER_SOCKET_PATH");
     const home = makeFakeHome();
     process.env.HOME = home;
+    process.env.DOCKER_SOCKET_PATH = join(home, "nonexistent-docker.sock");
     touchFile(join(home, ".colima/default/docker.sock"));
 
     expect(detectRuntime().name).toBe("colima");
   });
 
   it("detects Podman via XDG_RUNTIME_DIR socket", () => {
-    if (existsSync("/var/run/docker.sock")) return;
-    saveEnv("HOME", "XDG_RUNTIME_DIR");
+    saveEnv("HOME", "XDG_RUNTIME_DIR", "DOCKER_SOCKET_PATH");
     const home = makeFakeHome();
     const xdg = makeFakeHome();
     process.env.HOME = home;
     process.env.XDG_RUNTIME_DIR = xdg;
+    process.env.DOCKER_SOCKET_PATH = join(home, "nonexistent-docker.sock");
     touchFile(join(xdg, "podman/podman.sock"));
 
     const result = detectRuntime();
@@ -95,11 +89,11 @@ describe("detectRuntime", () => {
   });
 
   it("throws descriptive error when no sockets exist", () => {
-    if (existsSync("/var/run/docker.sock")) return;
-    saveEnv("HOME", "XDG_RUNTIME_DIR");
+    saveEnv("HOME", "XDG_RUNTIME_DIR", "DOCKER_SOCKET_PATH");
     const home = makeFakeHome();
     process.env.HOME = home;
     process.env.XDG_RUNTIME_DIR = home;
+    process.env.DOCKER_SOCKET_PATH = join(home, "nonexistent-docker.sock");
 
     expect(() => detectRuntime()).toThrow("No container runtime detected");
   });

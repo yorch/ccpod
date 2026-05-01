@@ -4,6 +4,7 @@ import type { DetectedRuntime } from "../types/index.ts";
 export function detectRuntime(): DetectedRuntime {
   const home = process.env.HOME ?? "";
   const xdgRuntimeDir = process.env.XDG_RUNTIME_DIR ?? "";
+  const dockerSock = process.env.DOCKER_SOCKET_PATH ?? "/var/run/docker.sock";
 
   const candidates = [
     {
@@ -12,7 +13,7 @@ export function detectRuntime(): DetectedRuntime {
     },
     {
       name: "docker",
-      sockets: ["/var/run/docker.sock", `${home}/.docker/run/docker.sock`],
+      sockets: [dockerSock, `${home}/.docker/run/docker.sock`],
     },
     {
       name: "colima",

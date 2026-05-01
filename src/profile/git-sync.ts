@@ -21,7 +21,7 @@ export async function syncGitConfig(
   if (!shouldSync(profileDir, strategy)) return;
 
   const git = simpleGit(configDir);
-  await git.fetch("origin", ref);
+  await git.fetch("origin", ref, { "--depth": "1" });
   await git.reset(["--hard", `origin/${ref}`]);
   writeSyncLock(profileDir);
 }

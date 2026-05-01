@@ -14,7 +14,11 @@ interface McpConfig {
 export function parseMcpJson(projectDir: string): McpConfig | null {
   const mcpPath = join(projectDir, ".mcp.json");
   if (!existsSync(mcpPath)) return null;
-  return JSON.parse(readFileSync(mcpPath, "utf8")) as McpConfig;
+  try {
+    return JSON.parse(readFileSync(mcpPath, "utf8")) as McpConfig;
+  } catch {
+    return null;
+  }
 }
 
 export function extractHttpMcpPorts(config: McpConfig): number[] {

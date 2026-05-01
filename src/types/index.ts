@@ -88,15 +88,10 @@ export interface DetectedRuntime {
   socketPath: string;
 }
 
-export interface PluginDiff {
-  alreadyInstalled: string[];
-  toInstall: string[];
-  toRemove: string[];
-}
-
 export interface ContainerLabels {
   "ccpod.profile": string;
   "ccpod.project": string;
   "ccpod.type": "main" | string;
   "ccpod.version": string;
+  "ccpod.workdir": string;
 }

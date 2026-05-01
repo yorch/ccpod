@@ -8,7 +8,10 @@ export default defineCommand({
   args: { name: { description: "Profile name", type: "positional" } },
   meta: { description: "Force-sync a profile's config source" },
   async run({ args }) {
-    if (!args.name) throw new Error("Profile name required");
+    if (!args.name) {
+      console.error("Profile name required");
+      process.exit(1);
+    }
 
     if (!profileExists(args.name)) {
       console.error(`Profile '${args.name}' not found.`);

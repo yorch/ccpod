@@ -24,7 +24,7 @@ export default defineCommand({
   meta: { description: "List ccpod containers" },
   async run({ args }) {
     const filterArgs = args.all ? ["-a"] : [];
-    const { stdout } = await dockerExec([
+    const { exitCode, stderr, stdout } = await dockerExec([
       "ps",
       ...filterArgs,
       "--filter",
@@ -32,6 +32,13 @@ export default defineCommand({
       "--format",
       "{{json .}}",
     ]);
+
+    if (exitCode !== 0) {
+      console.error(
+        `${chalk.red("error:")} docker ps failed: ${stderr || "unknown error"}`,
+      );
+      process.exit(1);
+    }
 
     if (!stdout) {
       console.log(

@@ -74,12 +74,30 @@ describe("mergeConfigs", () => {
     expect(result.autoDetectMcp).toBe(false);
   });
 
-  it("env list deduplicates across profile and project", () => {
+  it("env:{} — resolution deferred to run time (resolveEnvForwarding)", () => {
+    // mergeConfigs intentionally returns env:{} — env forwarding keys are resolved
+    // at run time by resolveEnvForwarding in run.ts, not at merge time.
     const profile = makeProfile({ env: ["FOO", "BAR"] });
     const result = mergeConfigs(profile, { env: ["BAR", "BAZ"] });
-    const _envKeys = result.env; // env is Record<string,string> here — raw keys stay empty
-    // mergeConfigs returns env:{} (resolution happens at run time); verify no error thrown
-    expect(result).toBeDefined();
+    expect(result.env).toEqual({});
+  });
+
+  it("parsePorts rejects malformed entries", () => {
+    const profile = makeProfile({
+      ports: { autoDetectMcp: false, list: [":3000"] },
+    });
+    expect(() => mergeConfigs(profile, null)).toThrow(
+      'Invalid port mapping ":3000"',
+    );
+  });
+
+  it("parsePorts rejects zero port values", () => {
+    const profile = makeProfile({
+      ports: { autoDetectMcp: false, list: ["0:3000"] },
+    });
+    expect(() => mergeConfigs(profile, null)).toThrow(
+      'Invalid port mapping "0:3000"',
+    );
   });
 });
 

@@ -1,10 +1,8 @@
 import { createHash } from "node:crypto";
 import { homedir } from "node:os";
-import { join } from "node:path";
+import { getCredentialsDir } from "../profile/manager.ts";
 import type { ResolvedConfig } from "../types/index.ts";
 import { VERSION } from "../version.ts";
-
-const CCPOD_DIR = join(homedir(), ".ccpod");
 
 export interface ContainerSpec {
   binds: string[];
@@ -30,7 +28,7 @@ export function buildContainerSpec(
     .update(projectDir)
     .digest("hex")
     .slice(0, 16);
-  const credentialsDir = join(CCPOD_DIR, "credentials", config.profileName);
+  const credentialsDir = getCredentialsDir(config.profileName);
 
   const binds = [
     `${projectDir}:/workspace:rw`,
@@ -62,10 +60,11 @@ export function buildContainerSpec(
   env.push(`CCPOD_STATE=${config.state}`);
 
   if (config.ssh.agentForward && process.env.SSH_AUTH_SOCK) {
-    env.push(`SSH_AUTH_SOCK=/run/host-services/ssh-auth.sock`);
-    binds.push(
-      `${process.env.SSH_AUTH_SOCK}:/run/host-services/ssh-auth.sock:ro`,
-    );
+    const sshSock = process.env.SSH_AUTH_SOCK;
+    if (!sshSock.includes(":")) {
+      env.push(`SSH_AUTH_SOCK=/run/host-services/ssh-auth.sock`);
+      binds.push(`${sshSock}:/run/host-services/ssh-auth.sock:ro`);
+    }
   }
 
   return {

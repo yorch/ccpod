@@ -4,6 +4,7 @@ import {
   mkdtempSync,
   readFileSync,
   rmSync,
+  statSync,
   symlinkSync,
   writeFileSync,
 } from "node:fs";
@@ -107,5 +108,23 @@ describe("writeMergedConfig", () => {
   it("works when profileConfigDir does not exist", () => {
     const out = run("/nonexistent/path/abc123", "no profile dir", {});
     expect(readFileSync(join(out, "CLAUDE.md"), "utf8")).toBe("no profile dir");
+  });
+
+  it("returns different path when a new file is added to profile dir", () => {
+    const profileDir = makeTempDir();
+    const a = run(profileDir, "stale-test", { v: 1 });
+    // Add a new file to profileDir after first write
+    writeFileSync(join(profileDir, "new-hook.json"), '{"new":true}');
+    const b = run(profileDir, "stale-test", { v: 1 });
+    expect(a).not.toBe(b);
+    expect(existsSync(join(b, "new-hook.json"))).toBe(true);
+  });
+
+  it("outputs CLAUDE.md and settings.json with restricted permissions", () => {
+    const out = run(makeTempDir(), "perm-test", { key: "val" });
+    const claudeMdMode = statSync(join(out, "CLAUDE.md")).mode & 0o777;
+    const settingsMode = statSync(join(out, "settings.json")).mode & 0o777;
+    expect(claudeMdMode).toBe(0o600);
+    expect(settingsMode).toBe(0o600);
   });
 });

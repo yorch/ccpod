@@ -33,8 +33,6 @@ export function mergeConfigs(
       ? project.services
       : { ...profile.services, ...(project?.services ?? {}) };
 
-  const _env = [...new Set([...profile.env, ...(project?.env ?? [])])];
-
   return {
     auth: profile.auth,
     autoDetectMcp: ports.autoDetectMcp,
@@ -55,7 +53,19 @@ function parsePorts(
 ): Array<{ host: number; container: number }> {
   return list.map((entry) => {
     const [hostStr = entry, containerStr = entry] = entry.split(":");
-    return { container: Number(containerStr), host: Number(hostStr) };
+    const host = Number(hostStr);
+    const container = Number(containerStr);
+    if (
+      !Number.isInteger(host) ||
+      host <= 0 ||
+      !Number.isInteger(container) ||
+      container <= 0
+    ) {
+      throw new Error(
+        `Invalid port mapping "${entry}": expected "host:container" with positive integers`,
+      );
+    }
+    return { container, host };
   });
 }
 

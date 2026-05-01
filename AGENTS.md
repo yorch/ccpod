@@ -61,6 +61,14 @@ Docker volumes:
 - `/ccpod/plugins` — named volume for plugins
 - `/ccpod/state` — named volume (persistent) or tmpfs (ephemeral)
 
+### Security invariants
+
+- **Profile names** are validated by Zod regex `/^[a-zA-Z0-9_-]{1,64}$/` — enforced at parse time in `schema.ts`.
+- **`--file` arg** in `run.ts` is normalized and rejected if it starts with `..` or is absolute.
+- **Config temp dirs** are written mode `0o700`, files mode `0o600`.
+- **`SSH_AUTH_SOCK`** is rejected if it contains `:` (would corrupt Docker bind spec).
+- **`DOCKER_SOCKET_PATH`** env var overrides the hardcoded `/var/run/docker.sock` path (useful in tests and non-standard Docker setups).
+
 ### Testing
 
-Tests live in `tests/unit/` and `tests/integration/`. Fixtures in `tests/fixtures/`. Unit tests use `bun:test` directly; no mocking framework needed.
+Tests live in `tests/unit/` and `tests/integration/`. Fixtures in `tests/fixtures/`. Unit tests use `bun:test`; `mock.module()` is used for Docker subprocess isolation in container tests.

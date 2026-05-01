@@ -59,13 +59,23 @@ export default defineCommand({
       ]);
       if (statusOut === "running") {
         process.stdout.write(`Stopping ${chalk.cyan(name)}... `);
-        await dockerExec(["stop", "-t", "5", id]);
+        const stopResult = await dockerExec(["stop", "-t", "5", id]);
+        if (stopResult.exitCode !== 0) {
+          console.log(chalk.red("failed"));
+          console.error(`  ${stopResult.stderr}`);
+          continue;
+        }
         console.log(chalk.green("done"));
       }
 
       process.stdout.write(`Removing ${chalk.cyan(name)}... `);
-      await dockerExec(["rm", id]);
-      console.log(chalk.green("done"));
+      const rmResult = await dockerExec(["rm", id]);
+      if (rmResult.exitCode !== 0) {
+        console.log(chalk.red("failed"));
+        console.error(`  ${rmResult.stderr}`);
+      } else {
+        console.log(chalk.green("done"));
+      }
     }
   },
 });
