@@ -18,6 +18,7 @@ export interface ContainerSpec {
   openStdin: boolean;
   labels: Record<string, string>;
   tmpfs?: Record<string, string>;
+  cmd?: string[];
 }
 
 export function buildContainerSpec(
@@ -80,5 +81,6 @@ export function buildContainerSpec(
       "ccpod.version": VERSION,
     },
     ...(Object.keys(tmpfs).length > 0 ? { tmpfs } : {}),
+    ...(config.claudeArgs.length > 0 ? { cmd: config.claudeArgs } : {}),
   };
 }

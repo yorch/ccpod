@@ -1,7 +1,7 @@
 import { defineCommand } from "citty";
 import { createHash } from "node:crypto";
 import chalk from "chalk";
-import { getDockerClient } from "../../runtime/client.ts";
+import { dockerExec } from "../../runtime/docker.ts";
 
 export default defineCommand({
   meta: { description: "Stop and remove ccpod containers for the current project" },
@@ -10,39 +10,37 @@ export default defineCommand({
     profile: { type: "string", description: "Limit to a specific profile" },
   },
   async run({ args }) {
-    const docker = await getDockerClient();
     const projectHash = createHash("sha256").update(process.cwd()).digest("hex").slice(0, 16);
 
-    const labelFilters: string[] = args.all
-      ? ["ccpod.profile"]
-      : [`ccpod.project=${projectHash}`];
+    const filterArgs: string[] = args.all
+      ? ["--filter", "label=ccpod.profile"]
+      : ["--filter", `label=ccpod.project=${projectHash}`];
 
     if (!args.all && args.profile) {
-      labelFilters.push(`ccpod.profile=${args.profile}`);
+      filterArgs.push("--filter", `label=ccpod.profile=${args.profile}`);
     }
 
-    const containers = await docker.listContainers({
-      all: true,
-      filters: JSON.stringify({ label: labelFilters }),
-    });
+    const { stdout } = await dockerExec(["ps", "-a", "-q", ...filterArgs]);
+    const ids = stdout.split("\n").map((s) => s.trim()).filter(Boolean);
 
-    if (containers.length === 0) {
+    if (ids.length === 0) {
       console.log("No ccpod containers found" + (args.all ? "." : " for this project."));
       return;
     }
 
-    for (const c of containers) {
-      const name = (c.Names[0] ?? c.Id.slice(0, 12)).replace(/^\//, "");
-      const container = docker.getContainer(c.Id);
+    for (const id of ids) {
+      const { stdout: nameOut } = await dockerExec(["inspect", "--format", "{{.Name}}", id]);
+      const name = nameOut.replace(/^\//, "") || id.slice(0, 12);
 
-      if (c.State === "running") {
+      const { stdout: statusOut } = await dockerExec(["inspect", "--format", "{{.State.Status}}", id]);
+      if (statusOut === "running") {
         process.stdout.write(`Stopping ${chalk.cyan(name)}... `);
-        await container.stop({ t: 5 });
+        await dockerExec(["stop", "-t", "5", id]);
         console.log(chalk.green("done"));
       }
 
       process.stdout.write(`Removing ${chalk.cyan(name)}... `);
-      await container.remove();
+      await dockerExec(["rm", id]);
       console.log(chalk.green("done"));
     }
   },

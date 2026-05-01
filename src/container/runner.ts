@@ -1,115 +1,65 @@
-import type Docker from "dockerode";
-import { getDockerClient } from "../runtime/client.ts";
+import { dockerExec, dockerSpawn } from "../runtime/docker.ts";
 import type { ContainerSpec } from "./builder.ts";
 
 export async function runContainer(spec: ContainerSpec): Promise<number> {
-  const docker = await getDockerClient();
+  const state = await containerState(spec.name);
 
-  // Reuse if already running, clean up if stopped
-  const existing = await findContainer(docker, spec.name);
-  if (existing) {
-    const info = await existing.inspect();
-    if (info.State.Running) {
-      console.log(`Reattaching to running container: ${spec.name}`);
-      return attach(existing, spec.tty);
-    }
-    await existing.remove();
+  if (state === "running") {
+    console.log(`Reattaching to running container: ${spec.name}`);
+    return dockerSpawn(["attach", spec.name]);
   }
 
-  const container = await docker.createContainer({
-    Image: spec.image,
-    name: spec.name,
-    WorkingDir: spec.workingDir,
-    Env: spec.env,
-    Tty: spec.tty,
-    OpenStdin: spec.openStdin,
-    AttachStdin: spec.openStdin,
-    AttachStdout: true,
-    AttachStderr: true,
-    Labels: spec.labels,
-    HostConfig: {
-      Binds: spec.binds,
-      PortBindings: spec.portBindings,
-      NetworkMode: spec.networkMode,
-      Tmpfs: spec.tmpfs ?? {},
-    },
-  });
+  if (state === "stopped") {
+    await dockerExec(["rm", spec.name]);
+  }
 
-  return spec.tty ? runInteractive(container) : runHeadless(container);
+  return dockerSpawn(buildRunArgs(spec));
 }
 
 export async function stopContainer(name: string): Promise<void> {
-  const docker = await getDockerClient();
-  const container = await findContainer(docker, name);
-  if (!container) return;
-  const info = await container.inspect();
-  if (info.State.Running) await container.stop();
-  await container.remove();
+  const state = await containerState(name);
+  if (state === "not_found") return;
+  if (state === "running") await dockerExec(["stop", "-t", "5", name]);
+  await dockerExec(["rm", name]);
 }
 
-async function runInteractive(container: Docker.Container): Promise<number> {
-  const stream = await container.attach({
-    stream: true,
-    stdin: true,
-    stdout: true,
-    stderr: true,
-    hijack: true,
-  });
+async function containerState(name: string): Promise<"running" | "stopped" | "not_found"> {
+  const { exitCode, stdout } = await dockerExec(["inspect", "--format", "{{.State.Status}}", name]);
+  if (exitCode !== 0) return "not_found";
+  return stdout === "running" ? "running" : "stopped";
+}
 
-  await container.start();
+function buildRunArgs(spec: ContainerSpec): string[] {
+  const args: string[] = ["run"];
 
-  if (process.stdout.columns && process.stdout.rows) {
-    await container.resize({ w: process.stdout.columns, h: process.stdout.rows }).catch(() => {});
+  if (spec.tty) args.push("-it");
+
+  args.push("--name", spec.name, "-w", spec.workingDir);
+
+  for (const e of spec.env) args.push("-e", e);
+  for (const b of spec.binds) args.push("-v", b);
+
+  for (const [key, val] of Object.entries(spec.labels)) {
+    args.push("--label", `${key}=${val}`);
   }
 
-  if (process.stdin.isTTY) process.stdin.setRawMode?.(true);
-  process.stdin.resume();
-  process.stdin.pipe(stream as NodeJS.WritableStream);
-  (stream as NodeJS.ReadableStream).pipe(process.stdout);
-
-  const onResize = () => {
-    if (process.stdout.columns && process.stdout.rows) {
-      container.resize({ w: process.stdout.columns, h: process.stdout.rows }).catch(() => {});
+  for (const [containerPort, bindings] of Object.entries(spec.portBindings)) {
+    for (const hb of bindings) {
+      args.push("-p", `${hb.HostPort}:${containerPort.replace("/tcp", "")}`);
     }
-  };
-  process.stdout.on("resize", onResize);
-
-  const { StatusCode } = await container.wait();
-
-  process.stdout.removeListener("resize", onResize);
-  if (process.stdin.isTTY) process.stdin.setRawMode?.(false);
-
-  return StatusCode;
-}
-
-async function runHeadless(container: Docker.Container): Promise<number> {
-  await container.start();
-
-  const logStream = await container.logs({
-    follow: true,
-    stdout: true,
-    stderr: true,
-  });
-
-  container.modem.demuxStream(logStream as NodeJS.ReadableStream, process.stdout, process.stderr);
-
-  const { StatusCode } = await container.wait();
-  return StatusCode;
-}
-
-async function attach(container: Docker.Container, tty: boolean): Promise<number> {
-  return tty ? runInteractive(container) : runHeadless(container);
-}
-
-async function findContainer(
-  docker: Docker,
-  name: string,
-): Promise<Docker.Container | null> {
-  try {
-    const c = docker.getContainer(name);
-    await c.inspect();
-    return c;
-  } catch {
-    return null;
   }
+
+  if (spec.networkMode && spec.networkMode !== "bridge") {
+    args.push("--network", spec.networkMode);
+  }
+
+  for (const [path, opts] of Object.entries(spec.tmpfs ?? {})) {
+    args.push("--tmpfs", `${path}:${opts}`);
+  }
+
+  args.push(spec.image);
+
+  if (spec.cmd && spec.cmd.length > 0) args.push(...spec.cmd);
+
+  return args;
 }

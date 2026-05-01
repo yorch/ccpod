@@ -1,6 +1,17 @@
 import { defineCommand } from "citty";
 import chalk from "chalk";
-import { getDockerClient } from "../../runtime/client.ts";
+import { dockerExec } from "../../runtime/docker.ts";
+
+type PsRow = { Names: string; Image: string; Status: string; Labels: string };
+
+function parseLabels(raw: string): Record<string, string> {
+  const out: Record<string, string> = {};
+  for (const pair of raw.split(",")) {
+    const eq = pair.indexOf("=");
+    if (eq >= 0) out[pair.slice(0, eq)] = pair.slice(eq + 1);
+  }
+  return out;
+}
 
 export default defineCommand({
   meta: { description: "List ccpod containers" },
@@ -8,11 +19,23 @@ export default defineCommand({
     all: { type: "boolean", description: "Include stopped containers", default: false },
   },
   async run({ args }) {
-    const docker = await getDockerClient();
-    const containers = await docker.listContainers({
-      all: args.all ?? false,
-      filters: JSON.stringify({ label: ["ccpod.profile"] }),
-    });
+    const filterArgs = args.all ? ["-a"] : [];
+    const { stdout } = await dockerExec([
+      "ps",
+      ...filterArgs,
+      "--filter", "label=ccpod.profile",
+      "--format", "{{json .}}",
+    ]);
+
+    if (!stdout) {
+      console.log("No ccpod containers" + (args.all ? "." : " running. Use --all to include stopped."));
+      return;
+    }
+
+    const containers = stdout
+      .split("\n")
+      .filter(Boolean)
+      .map((line) => JSON.parse(line) as PsRow);
 
     if (containers.length === 0) {
       console.log("No ccpod containers" + (args.all ? "." : " running. Use --all to include stopped."));
@@ -25,21 +48,17 @@ export default defineCommand({
     console.log(chalk.dim("─".repeat(HEADER.length)));
 
     for (const c of containers) {
-      const labels = c.Labels ?? {};
-      const name = (c.Names[0] ?? "").replace(/^\//, "");
+      const labels = parseLabels(c.Labels);
+      const name = c.Names.replace(/^\//, "");
       const profile = labels["ccpod.profile"] ?? "-";
       const workdir = labels["ccpod.workdir"] ?? labels["ccpod.project"] ?? "-";
-      const image = c.Image;
-
-      const stateRaw = c.State;
-      const stateColored =
-        stateRaw === "running"
-          ? chalk.green(stateRaw)
-          : chalk.yellow(stateRaw);
+      const isRunning = c.Status.startsWith("Up");
+      const stateRaw = isRunning ? "running" : "stopped";
+      const stateColored = isRunning ? chalk.green(stateRaw) : chalk.yellow(stateRaw);
       const statePad = " ".repeat(Math.max(0, 10 - stateRaw.length));
 
       console.log(
-        `${col(name, 32)} ${col(profile, 16)} ${stateColored}${statePad} ${col(image, 34)} ${workdir}`,
+        `${col(name, 32)} ${col(profile, 16)} ${stateColored}${statePad} ${col(c.Image, 34)} ${workdir}`,
       );
     }
   },
