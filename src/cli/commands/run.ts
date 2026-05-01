@@ -14,6 +14,7 @@ import {
 import { runContainer } from "../../container/runner.ts";
 import { sidecarNetworkName, startSidecars } from "../../container/sidecars.ts";
 import { ensureImage, ensureLocalImage } from "../../image/manager.ts";
+import { runWizard } from "../../init/wizard.ts";
 import { extractHttpMcpPorts, parseMcpJson } from "../../mcp/parser.ts";
 import { syncGitConfig } from "../../profile/git-sync.ts";
 import { getProfileDir, profileExists } from "../../profile/manager.ts";
@@ -64,13 +65,21 @@ export default defineCommand({
 
       // 1. Load project config first to get profile hint
       const projectConfig = loadProjectConfig(cwd);
-      const profileName = args.profile ?? projectConfig?.profile ?? "default";
+      const explicitProfile = args.profile ?? projectConfig?.profile;
+      const profileName = explicitProfile ?? "default";
 
       if (!profileExists(profileName)) {
-        console.error(
-          `Profile '${profileName}' not found. Run 'ccpod init' to create one.`,
-        );
-        process.exit(1);
+        if (!explicitProfile) {
+          console.log(
+            chalk.dim("No default profile found. Starting setup wizard...\n"),
+          );
+          await runWizard("default");
+        } else {
+          console.error(
+            `${chalk.red("error:")} Profile '${profileName}' not found. Run 'ccpod init --profile ${profileName}'.`,
+          );
+          process.exit(1);
+        }
       }
 
       // 2. Load + sync profile

@@ -57,6 +57,16 @@
           }
         }
       }
+    },
+    {
+      "includes": ["website/src/**/*.css"],
+      "linter": {
+        "rules": {
+          "complexity": {
+            "noImportantStyles": "off"
+          }
+        }
+      }
     }
   ],
   "vcs": {
