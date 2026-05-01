@@ -9,8 +9,10 @@ import {
   updateProfileDockerfile,
 } from '../../../profile/manager.ts';
 
-const OFFICIAL_DOCKERFILE_URL =
-  'https://raw.githubusercontent.com/yorch/ccpod/main/docker/Dockerfile';
+const DOCKER_BASE_URL =
+  'https://raw.githubusercontent.com/yorch/ccpod/main/docker';
+const OFFICIAL_DOCKERFILE_URL = `${DOCKER_BASE_URL}/Dockerfile`;
+const OFFICIAL_ENTRYPOINT_URL = `${DOCKER_BASE_URL}/entrypoint.sh`;
 
 export default defineCommand({
   args: {
@@ -74,9 +76,31 @@ export default defineCommand({
     const content = await res.text();
     writeFileSync(destPath, content, { mode: 0o644 });
 
+    const entrypointPath = join(profileDir, 'entrypoint.sh');
+    const entrypointUrl = args.from ? null : OFFICIAL_ENTRYPOINT_URL;
+
+    if (entrypointUrl) {
+      console.log(
+        chalk.dim(`Downloading entrypoint.sh from ${entrypointUrl}...`),
+      );
+      const entrypointRes = await fetch(entrypointUrl);
+      if (!entrypointRes.ok) {
+        console.error(
+          `Failed to download entrypoint.sh: HTTP ${entrypointRes.status}`,
+        );
+        process.exit(1);
+      }
+      writeFileSync(entrypointPath, await entrypointRes.text(), {
+        mode: 0o755,
+      });
+    }
+
     updateProfileDockerfile(profileName, destPath);
 
     console.log(chalk.green(`✓ Dockerfile saved to ${destPath}`));
+    if (entrypointUrl) {
+      console.log(chalk.green(`✓ entrypoint.sh saved to ${entrypointPath}`));
+    }
     console.log(
       chalk.green(`✓ Profile '${profileName}' image.dockerfile updated`),
     );
