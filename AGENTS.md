@@ -26,8 +26,9 @@ bun test tests/unit/config/merger.test.ts  # single test file
 3. **Merge** — `src/config/merger.ts` combines profile + project using `merge: deep|override` strategy. CLAUDE.md files are merged separately via `mergeClaudes()` (append or override).
 4. **Auth** — `src/auth/resolver.ts` resolves API key or OAuth credentials into env vars.
 5. **Config write** — `src/config/writer.ts` writes merged config to a temp dir mounted as `/ccpod/config` in the container.
-6. **Container spec** — `src/container/builder.ts` builds the `ContainerSpec` (binds, env, ports, labels, tmpfs).
-7. **Run** — `src/container/runner.ts` creates/reattaches/starts the container via `docker` CLI (`Bun.spawn`). TTY mode = interactive; headless mode (`--file`) streams logs.
+6. **Container spec** — `src/container/builder.ts` builds the `ContainerSpec` (binds, env, ports, labels, tmpfs). Exports `computeProjectHash(dir)`.
+7. **Sidecars** — `src/container/sidecars.ts` creates shared Docker network `ccpod-net-<hash>` and starts declared `services:` containers before the main container.
+8. **Run** — `src/container/runner.ts` creates/reattaches/starts the container via `docker` CLI (`Bun.spawn`). TTY mode = interactive; headless mode (`--file`) streams logs.
 
 ### Key modules
 
@@ -39,6 +40,7 @@ bun test tests/unit/config/merger.test.ts  # single test file
 | `src/profile/manager.ts` | `~/.ccpod/` directory layout, profile CRUD |
 | `src/mcp/parser.ts` | Reads `.mcp.json` to auto-expose MCP HTTP ports |
 | `src/image/manager.ts` | Pull or `docker build` the container image |
+| `src/container/sidecars.ts` | Shared network creation and sidecar container lifecycle |
 
 ### Storage layout
 

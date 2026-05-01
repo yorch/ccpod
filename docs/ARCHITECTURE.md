@@ -77,40 +77,30 @@ src/
 │   └── schema.ts                # Zod schemas for both config files
 │
 ├── profile/
-│   ├── manager.ts               # CRUD for ~/.ccpod/profiles/
+│   ├── manager.ts               # CRUD for ~/.ccpod/profiles/; CCPOD_TEST_DIR override
 │   ├── git-sync.ts              # Clone/pull git-based config sources
-│   ├── local-sync.ts            # Validate/copy local config sources
 │   └── lock.ts                  # .ccpod-sync-lock timestamp management
 │
 ├── runtime/
-│   ├── detector.ts              # Socket auto-detection per runtime
-│   └── docker.ts                # dockerExec (capture) / dockerSpawn (inherit stdio)
+│   ├── detector.ts              # Socket auto-detection (OrbStack/Docker/Colima/Podman)
+│   └── docker.ts                # dockerExec (capture stdout/stderr) / dockerSpawn (inherit stdio)
 │
 ├── container/
-│   ├── builder.ts               # ResolvedConfig → ContainerSpec
-│   ├── runner.ts                # Create / start / attach / stop
-│   ├── mounts.ts                # Assemble bind mounts + volumes
-│   └── sidecars.ts              # Start/stop sidecar services
+│   ├── builder.ts               # ResolvedConfig → ContainerSpec; computeProjectHash()
+│   ├── runner.ts                # Reattach-or-create-and-run via docker CLI
+│   └── sidecars.ts              # Shared network + sidecar lifecycle
 │
 ├── plugins/
-│   ├── volume.ts                # Ensure volume exists, list installed
-│   └── installer.ts             # Delta-install: declared vs installed diff
+│   └── volume.ts                # Volume exists check, list entries, remove
 │
 ├── mcp/
-│   ├── parser.ts                # Parse .mcp.json at project root
-│   └── ports.ts                 # Extract ports from HTTP/SSE MCP entries
-│
-├── network/
-│   ├── policy.ts                # NetworkPolicy type + validation
-│   └── rules.ts                 # iptables rule generation for restricted mode
+│   └── parser.ts                # Parse .mcp.json; extract HTTP/SSE port list
 │
 ├── image/
-│   ├── manager.ts               # Pull / tag / exists check
-│   └── builder.ts               # docker build wrapper
+│   └── manager.ts               # ensureImage (pull if absent), buildImage
 │
 ├── auth/
-│   ├── resolver.ts              # Resolve API key (env var → secret file)
-│   └── credentials.ts           # Ensure ~/.ccpod/credentials/<profile>/ exists
+│   └── resolver.ts              # Resolve API key or OAuth creds → env vars
 │
 ├── init/
 │   └── wizard.ts                # Step-by-step first-run wizard
@@ -386,9 +376,10 @@ ccpod run [-- claude-args]
 │     extract HTTP/SSE MCP entries → additional port mappings
 │
 ├─ 8. Start sidecars (if services: declared)
-│     create shared network: ccpod-<session>-net
-│     start each sidecar container on that network
-│     label each: ccpod.profile=<name>, ccpod.project=<sha256(PWD)>, ccpod.type=<service-name>
+│     create shared network: ccpod-net-<projectHash>
+│     start each sidecar with docker run -d --network <network>
+│     label each: ccpod.profile=<name>, ccpod.project=<projectHash>, ccpod.type=<service-name>
+│     sidecars reachable inside network by service name as hostname
 │
 ├─ 9. Build ContainerSpec
 │     image, workdir, env, mounts, network, ports, tty
