@@ -8,9 +8,9 @@ import {
   profileExists,
   updateProfileDockerfile,
 } from '../../../profile/manager.ts';
+import { VERSION } from '../../../version.ts';
 
-const DOCKER_BASE_URL =
-  'https://raw.githubusercontent.com/yorch/ccpod/main/docker';
+const DOCKER_BASE_URL = `https://raw.githubusercontent.com/yorch/ccpod/v${VERSION}/docker`;
 const OFFICIAL_DOCKERFILE_URL = `${DOCKER_BASE_URL}/Dockerfile`;
 const OFFICIAL_ENTRYPOINT_URL = `${DOCKER_BASE_URL}/entrypoint.sh`;
 
