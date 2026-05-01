@@ -1,0 +1,59 @@
+---
+title: Demo
+description: Watch a recorded ccpod session.
+---
+
+import Asciinema from '../../components/Asciinema.astro';
+
+A short recorded session of `ccpod init` followed by `ccpod run` in a project.
+
+<Asciinema src="/casts/ccpod-demo.cast" poster="npt:0:02" />
+
+## Recording your own
+
+[asciinema](https://asciinema.org) records terminal sessions to a small `.cast` JSON file that plays back natively in the browser.
+
+```sh
+# Install
+brew install asciinema           # macOS
+pipx install asciinema           # Linux
+
+# Record
+asciinema rec website/public/casts/ccpod-demo.cast \
+  --idle-time-limit 2 \
+  --title "ccpod quick start"
+
+# Play locally to verify
+asciinema play website/public/casts/ccpod-demo.cast
+```
+
+Drop the `.cast` file at `website/public/casts/ccpod-demo.cast` and rebuild — the embed above picks it up automatically.
+
+### Tips for a clean recording
+
+- Set a wide terminal (`stty cols 100 rows 28`) — matches the player's default.
+- Use a clean shell prompt (no per-prompt git status).
+- `--idle-time-limit 2` collapses long pauses so the playback feels brisk.
+- Use `# this is a comment` lines liberally — they double as on-screen narration.
+
+### Embed your own cast
+
+Use the `<Asciinema />` component in any MDX page:
+
+```mdx
+import Asciinema from '../../components/Asciinema.astro';
+
+<Asciinema src="/casts/my-demo.cast" autoplay loop />
+```
+
+Props:
+
+| Prop | Default | Notes |
+|---|---|---|
+| `src` | required | Path under `website/public/` (or absolute URL). |
+| `poster` | `npt:0:05` | Time mark to show before play (`npt:M:S`). |
+| `cols` | `100` | Terminal width. |
+| `rows` | `28` | Terminal height. |
+| `speed` | `1.5` | Playback speed multiplier. |
+| `autoplay` | `false` | Start automatically. |
+| `loop` | `false` | Restart at end. |

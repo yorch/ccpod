@@ -1,0 +1,57 @@
+---
+interface Props {
+  src: string;
+  poster?: string;
+  cols?: number;
+  rows?: number;
+  speed?: number;
+  autoplay?: boolean;
+  loop?: boolean;
+}
+
+const {
+  src,
+  poster = 'npt:0:05',
+  cols = 100,
+  rows = 28,
+  speed = 1.5,
+  autoplay = false,
+  loop = false,
+} = Astro.props;
+
+const id = `asciinema-${Math.random().toString(36).slice(2, 9)}`;
+import { withBase } from '../lib/url';
+const resolvedSrc = withBase(src);
+---
+<div class="asciinema-wrapper">
+  <div id={id} data-src={resolvedSrc}></div>
+</div>
+
+<script
+  is:inline
+  src="https://cdn.jsdelivr.net/npm/asciinema-player@3.8.0/dist/bundle/asciinema-player.min.js"
+></script>
+<script
+  is:inline
+  define:vars={{ id, src: resolvedSrc, poster, cols, rows, speed, autoplay, loop }}
+>
+  function init() {
+    const target = document.getElementById(id);
+    if (!target || !window.AsciinemaPlayer) return;
+    window.AsciinemaPlayer.create(src, target, {
+      poster,
+      cols,
+      rows,
+      speed,
+      autoPlay: autoplay,
+      loop,
+      theme: 'asciinema',
+      fit: 'width',
+    });
+  }
+  if (document.readyState === 'loading') {
+    document.addEventListener('DOMContentLoaded', init);
+  } else {
+    init();
+  }
+</script>
