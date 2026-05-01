@@ -257,50 +257,58 @@ $PWD                 ──rw──►   /workspace/
 
 **Entrypoint (`docker/entrypoint.sh`):**
 
-```bash
-#!/usr/bin/env bash
-set -euo pipefail
+```sh
+#!/bin/sh
+set -e
 
-CLAUDE_HOME="${HOME}/.claude"
-mkdir -p "$CLAUDE_HOME"
+CLAUDE_DIR="${HOME}/.claude"
+mkdir -p "${CLAUDE_DIR}"
 
-# 1. Seed from profile config (base layer, -n = no-overwrite)
-cp -rn /ccpod/config/. "$CLAUDE_HOME/"
-
-# 2. Overlay credentials (auth tokens overwrite config defaults if same filename)
-if [[ -d /ccpod/credentials && -n "$(ls -A /ccpod/credentials 2>/dev/null)" ]]; then
-  cp -r /ccpod/credentials/. "$CLAUDE_HOME/"
+# 1. Seed config (CLAUDE.md, settings.json, skills, extensions) — ro source → rw dest
+if [ -d /ccpod/config ]; then
+  cp -r /ccpod/config/. "${CLAUDE_DIR}/"
 fi
 
-# 3. Symlink plugin volume (avoids copying large plugin data)
-rm -rf "$CLAUDE_HOME/plugins"
+# 2. Overlay credentials (.credentials.json, OAuth tokens, etc.)
+if [ -d /ccpod/credentials ] && [ "$(ls -A /ccpod/credentials 2>/dev/null)" ]; then
+  cp -r /ccpod/credentials/. "${CLAUDE_DIR}/"
+fi
+
+# 3. Plugins — symlink named volume so installs persist across runs
 mkdir -p /ccpod/plugins
-ln -sf /ccpod/plugins "$CLAUDE_HOME/plugins"
+rm -rf "${CLAUDE_DIR}/plugins"
+ln -sf /ccpod/plugins "${CLAUDE_DIR}/plugins"
 
-# 4. Symlink state items (persistent mode only)
-if [[ "${CCPOD_STATE:-ephemeral}" == "persistent" ]]; then
-  for item in history.jsonl projects todos sessions; do
-    rm -rf "$CLAUDE_HOME/$item"
-    # Create placeholder so symlink target exists even on first run
-    if [[ "$item" == "history.jsonl" ]]; then
-      touch "/ccpod/state/$item"
-    else
-      mkdir -p "/ccpod/state/$item"
+# 4. State — symlink named volume or tmpfs mount
+mkdir -p /ccpod/state/projects /ccpod/state/todos /ccpod/state/statsig
+for dir in projects todos statsig; do
+  rm -rf "${CLAUDE_DIR}/${dir}"
+  ln -sf "/ccpod/state/${dir}" "${CLAUDE_DIR}/${dir}"
+done
+
+# 5. Delta-install missing plugins (comma-separated list from env)
+if [ -n "${CCPOD_PLUGINS_TO_INSTALL}" ]; then
+  for plugin in $(printf '%s' "${CCPOD_PLUGINS_TO_INSTALL}" | tr ',' '\n'); do
+    if [ -n "${plugin}" ] && [ ! -d "${CLAUDE_DIR}/plugins/${plugin}" ]; then
+      claude plugin install "${plugin}" 2>/dev/null || true
     fi
-    ln -sf "/ccpod/state/$item" "$CLAUDE_HOME/$item"
   done
 fi
 
-# 5. Delta-install missing plugins (populated by ccpod before exec)
-if [[ -n "${CCPOD_PLUGINS_TO_INSTALL:-}" ]]; then
-  IFS=',' read -ra PLUGINS <<< "$CCPOD_PLUGINS_TO_INSTALL"
-  for plugin in "${PLUGINS[@]}"; do
-    claude plugin install "$plugin" --yes 2>/dev/null || true
-  done
-fi
-
-exec "$@"
+# Run claude (or custom cmd) as a background job so the shell stays alive for cleanup.
+# Signal forwarding ensures docker stop/-t works correctly.
+# On exit, write credentials back to the host-mounted /ccpod/credentials so they
+# survive container removal and are available on the next run.
+"$@" &
+CHILD_PID=$!
+trap "kill -TERM $CHILD_PID 2>/dev/null" TERM INT HUP
+wait $CHILD_PID || STATUS=$?
+STATUS=${STATUS:-0}
+cp -f "${CLAUDE_DIR}/.credentials.json" /ccpod/credentials/.credentials.json 2>/dev/null || true
+exit $STATUS
 ```
+
+**Credential persistence:** on startup, credentials are copied from `/ccpod/credentials` (host-mounted `~/.ccpod/credentials/<profile>/`) into `~/.claude/`. On exit, `.credentials.json` is written back to `/ccpod/credentials/` so OAuth tokens survive across container restarts. The signal-forwarding wrapper (background job + `trap`) ensures the write-back runs even when `docker stop` sends `SIGTERM`.
 
 ---
 

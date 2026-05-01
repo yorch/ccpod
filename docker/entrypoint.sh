@@ -38,7 +38,7 @@ fi
 
 "$@" &
 CHILD_PID=$!
-trap "kill -TERM $CHILD_PID 2>/dev/null" TERM INT
+trap "kill -TERM $CHILD_PID 2>/dev/null" TERM INT HUP
 wait $CHILD_PID || STATUS=$?
 STATUS=${STATUS:-0}
 
