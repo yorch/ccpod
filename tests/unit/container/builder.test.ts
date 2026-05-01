@@ -12,6 +12,7 @@ function makeConfig(overrides: Partial<ResolvedConfig> = {}): ResolvedConfig {
     image: "ghcr.io/ccpod/base:latest",
     mergedConfigDir: "/tmp/ccpod-config-abc",
     network: { allow: [], policy: "full" },
+    plugins: [],
     ports: [],
     profileName: "testprof",
     services: {},

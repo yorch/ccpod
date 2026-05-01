@@ -49,6 +49,7 @@ export const profileConfigSchema = z.object({
       policy: z.enum(["full", "restricted"]).default("full"),
     })
     .default({ allow: [], policy: "full" }),
+  plugins: z.array(z.string()).default([]),
   ports: portsConfigSchema,
   services: z.record(z.string(), serviceConfigSchema).default({}),
   ssh: z

@@ -6,6 +6,7 @@ import { VERSION } from "../version.ts";
 
 export interface ContainerSpec {
   binds: string[];
+  capAdd?: string[];
   cmd?: string[];
   env: string[];
   image: string;
@@ -60,6 +61,19 @@ export function buildContainerSpec(
   const env = Object.entries(config.env).map(([k, v]) => `${k}=${v}`);
   env.push(`CCPOD_STATE=${config.state}`);
 
+  if (config.plugins.length > 0) {
+    env.push(`CCPOD_PLUGINS_TO_INSTALL=${config.plugins.join(",")}`);
+  }
+
+  const capAdd: string[] = [];
+  if (config.network.policy === "restricted") {
+    capAdd.push("NET_ADMIN");
+    env.push("CCPOD_NETWORK_POLICY=restricted");
+    if (config.network.allow.length > 0) {
+      env.push(`CCPOD_ALLOWED_HOSTS=${config.network.allow.join(",")}`);
+    }
+  }
+
   if (config.ssh.agentForward && process.env.SSH_AUTH_SOCK) {
     const sshSock = process.env.SSH_AUTH_SOCK;
     if (!sshSock.includes(":")) {
@@ -79,6 +93,7 @@ export function buildContainerSpec(
       "ccpod.version": VERSION,
       "ccpod.workdir": projectDir,
     },
+    ...(capAdd.length > 0 ? { capAdd } : {}),
     name: `ccpod-${config.profileName}-${hash}`,
     networkMode: networkName ?? "bridge",
     openStdin: tty,

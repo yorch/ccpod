@@ -41,6 +41,36 @@ if [ -n "${CCPOD_PLUGINS_TO_INSTALL}" ]; then
   done
 fi
 
+# 6. Network restriction — apply iptables rules before launching claude
+if [ "${CCPOD_NETWORK_POLICY}" = "restricted" ]; then
+  # Allow loopback and established connections
+  iptables -A OUTPUT -o lo -j ACCEPT 2>/dev/null || true
+  iptables -A OUTPUT -m conntrack --ctstate ESTABLISHED,RELATED -j ACCEPT 2>/dev/null || \
+    iptables -A OUTPUT -m state --state ESTABLISHED,RELATED -j ACCEPT 2>/dev/null || true
+  # Allow DNS so hostname resolution works
+  iptables -A OUTPUT -p udp --dport 53 -j ACCEPT 2>/dev/null || true
+  iptables -A OUTPUT -p tcp --dport 53 -j ACCEPT 2>/dev/null || true
+  # Allow declared hosts (resolve domains to IPs at startup)
+  for host in $(printf '%s' "${CCPOD_ALLOWED_HOSTS:-}" | tr ',' '\n'); do
+    [ -z "$host" ] && continue
+    case "$host" in
+      *.*.*.*|*:*|*/*)
+        # IP address or CIDR — use directly
+        iptables -A OUTPUT -d "$host" -j ACCEPT 2>/dev/null || true
+        ;;
+      *)
+        # Hostname — resolve to IPs
+        for ip in $(getent hosts "$host" 2>/dev/null | awk '{print $1}'); do
+          iptables -A OUTPUT -d "$ip" -j ACCEPT 2>/dev/null || true
+        done
+        ;;
+    esac
+  done
+  # Drop all other outbound
+  iptables -A OUTPUT -j DROP 2>/dev/null || true
+  echo "ccpod: restricted network active (allowed: ${CCPOD_ALLOWED_HOSTS:-none})"
+fi
+
 "$@" &
 CHILD_PID=$!
 trap "kill -TERM $CHILD_PID 2>/dev/null" TERM INT HUP

@@ -143,6 +143,7 @@ export async function runWizard(profileName = "default"): Promise<void> {
     image: { use: "ghcr.io/yorch/ccpod:latest" },
     name: profileName,
     network: { allow: [], policy: networkPolicy },
+    plugins: [],
     ports: { autoDetectMcp: true, list: [] },
     services: {},
     ssh: { agentForward: true, mountSshDir: false },
@@ -238,6 +239,13 @@ export function buildAnnotatedProfileYaml(profile: ProfileConfigInput): string {
   s.push("network:");
   s.push(`  policy: ${profile.network?.policy ?? "full"}`);
   s.push(`  allow: []`);
+  s.push("");
+
+  s.push(
+    "# Claude Code plugins to install on first run (delta-installed; no reinstall if already present).",
+  );
+  s.push('# Example: ["mcp-server-brave-search", "mcp-server-filesystem"]');
+  s.push(`plugins: []`);
   s.push("");
 
   s.push("# Port mappings and MCP server discovery.");

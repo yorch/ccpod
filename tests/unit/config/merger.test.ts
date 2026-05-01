@@ -10,6 +10,7 @@ function makeProfile(overrides: Partial<ProfileConfig> = {}): ProfileConfig {
     image: { use: "ghcr.io/ccpod/base:latest" },
     name: "base",
     network: { allow: [], policy: "full" },
+    plugins: [],
     ports: { autoDetectMcp: true, list: [] },
     services: {},
     ssh: { agentForward: true, mountSshDir: false },

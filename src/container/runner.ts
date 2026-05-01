@@ -80,6 +80,10 @@ function buildRunArgs(spec: ContainerSpec): string[] {
     }
   }
 
+  for (const cap of spec.capAdd ?? []) {
+    args.push("--cap-add", cap);
+  }
+
   if (spec.networkMode && spec.networkMode !== "bridge") {
     args.push("--network", spec.networkMode);
   }

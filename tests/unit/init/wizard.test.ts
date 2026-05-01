@@ -13,6 +13,7 @@ const baseProfile: ProfileConfigInput = {
   image: { use: "ghcr.io/yorch/ccpod:latest" },
   name: "default",
   network: { allow: [], policy: "full" },
+  plugins: [],
   ports: { autoDetectMcp: true, list: [] },
   services: {},
   ssh: { agentForward: true, mountSshDir: false },

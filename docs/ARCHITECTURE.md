@@ -269,9 +269,12 @@ if [ -d /ccpod/config ]; then
   cp -r /ccpod/config/. "${CLAUDE_DIR}/"
 fi
 
-# 2. Overlay credentials (.credentials.json, OAuth tokens, etc.)
-if [ -d /ccpod/credentials ] && [ "$(ls -A /ccpod/credentials 2>/dev/null)" ]; then
-  cp -r /ccpod/credentials/. "${CLAUDE_DIR}/"
+# 2. Restore persisted auth files
+if [ -f /ccpod/credentials/.credentials.json ]; then
+  cp -f /ccpod/credentials/.credentials.json "${CLAUDE_DIR}/.credentials.json"
+fi
+if [ -f /ccpod/credentials/.claude.json ]; then
+  cp -f /ccpod/credentials/.claude.json "${HOME}/.claude.json"
 fi
 
 # 3. Plugins — symlink named volume so installs persist across runs
@@ -293,6 +296,18 @@ if [ -n "${CCPOD_PLUGINS_TO_INSTALL}" ]; then
       claude plugin install "${plugin}" 2>/dev/null || true
     fi
   done
+fi
+
+# 6. Network restriction — apply iptables OUTPUT rules when policy=restricted
+#    (container needs --cap-add NET_ADMIN; iptables installed in base image)
+if [ "${CCPOD_NETWORK_POLICY}" = "restricted" ]; then
+  iptables -A OUTPUT -o lo -j ACCEPT
+  iptables -A OUTPUT -m conntrack --ctstate ESTABLISHED,RELATED -j ACCEPT
+  iptables -A OUTPUT -p udp --dport 53 -j ACCEPT
+  iptables -A OUTPUT -p tcp --dport 53 -j ACCEPT
+  # resolve each allowed host to IPs and add ACCEPT rules
+  for host in $(printf '%s' "${CCPOD_ALLOWED_HOSTS:-}" | tr ',' '\n'); do ...done
+  iptables -A OUTPUT -j DROP
 fi
 
 # Run claude (or custom cmd) as a background job so the shell stays alive for cleanup.
@@ -383,10 +398,9 @@ ccpod run [-- claude-args]
 │     state volume:    docker volume create ccpod-state-<profile>   (if persistent)
 │                      OR: use --tmpfs /ccpod/state (if ephemeral)
 │
-├─ 6. Plugin delta-install prep
-│     list installed plugins from plugin volume
-│     diff against declared plugins in resolved config
-│     pass delta as CCPOD_PLUGINS_TO_INSTALL env var to container
+├─ 6. Plugin install prep
+│     if profile declares plugins[], set CCPOD_PLUGINS_TO_INSTALL=<comma-list>
+│     entrypoint does the actual delta-install (skips already-installed dirs)
 │
 ├─ 7. Parse .mcp.json (if exists at $PWD, and ports.autoDetectMcp: true)
 │     extract HTTP/SSE MCP entries → additional port mappings
@@ -478,21 +492,14 @@ All ccpod-managed containers (main + sidecars) receive Docker labels so `ccpod p
 
 **Full mode:** container attached to standard bridge network with full outbound.
 
-**Restricted mode:**
-1. Create an isolated Docker network (`--internal` flag blocks default internet)
-2. The entrypoint runs an iptables setup script that:
-   - Adds rules to ACCEPT traffic to declared allowed domains (resolved at startup)
-   - Drops everything else
-3. DNS still works via the bridge gateway
-
-```typescript
-// network/rules.ts
-export function generateIptablesRules(allowList: string[]): string[] {
-  // resolves each domain → IPs at container start time
-  // generates ACCEPT rules for each IP
-  // final rule: DROP all other outbound
-}
-```
+**Restricted mode** (`network.policy: restricted` in profile):
+- `buildContainerSpec` adds `--cap-add NET_ADMIN` and sets `CCPOD_NETWORK_POLICY=restricted` + `CCPOD_ALLOWED_HOSTS=<comma-list>` env vars.
+- The entrypoint (step 6) applies iptables OUTPUT rules before launching claude:
+  1. ACCEPT loopback and established/related connections
+  2. ACCEPT DNS (UDP/TCP port 53)
+  3. For each entry in `CCPOD_ALLOWED_HOSTS`: if IP/CIDR add directly; else resolve hostname via `getent hosts` and add each resolved IP
+  4. DROP all other outbound
+- `iptables` is installed in the base image (`docker/Dockerfile`).
 
 ---
 

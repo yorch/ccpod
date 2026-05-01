@@ -40,6 +40,7 @@ export function mergeConfigs(
     env: {},
     image: profile.image.use,
     network,
+    plugins: profile.plugins,
     ports: parsePorts(ports.list),
     profileName: profile.name,
     services,

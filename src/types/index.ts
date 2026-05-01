@@ -34,6 +34,7 @@ export interface ProfileConfig {
     policy: NetworkPolicy;
     allow: string[];
   };
+  plugins: string[];
   ports: PortsConfig;
   services: Record<string, ServiceConfig>;
   ssh: {
@@ -76,6 +77,7 @@ export interface ResolvedConfig {
   image: string;
   mergedConfigDir: string;
   network: ProfileConfig["network"];
+  plugins: string[];
   ports: PortMapping[];
   profileName: string;
   services: Record<string, ServiceConfig>;
