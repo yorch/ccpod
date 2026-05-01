@@ -117,7 +117,7 @@ All ccpod-managed containers get these labels for discovery (used by `ccpod ps` 
 | Label | Value |
 |---|---|
 | `ccpod.profile` | profile name |
-| `ccpod.project` | `sha256($PWD)` |
+| `ccpod.project` | `sha256($PWD)`, first 16 hex chars |
 | `ccpod.type` | `main` or sidecar service name |
 | `ccpod.version` | ccpod binary version |
 

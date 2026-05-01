@@ -99,7 +99,7 @@ For `oauth`, ccpod manages tokens in `~/.ccpod/credentials/<name>/`.
 
 | Field | Default | Notes |
 |---|---|---|
-| `agentForward` | `false` | Forwards `SSH_AUTH_SOCK` into the container. Rejected if the value contains `:`. |
+| `agentForward` | `true` | Forwards `SSH_AUTH_SOCK` into the container. Rejected if the value contains `:`. |
 | `mountSshDir` | `false` | Mounts `~/.ssh` read-only. |
 
 ### `network`

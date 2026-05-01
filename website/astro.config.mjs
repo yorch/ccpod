@@ -12,15 +12,6 @@ export default defineConfig({
       editLink: {
         baseUrl: "https://github.com/yorch/ccpod/edit/main/website/",
       },
-      head: [
-        {
-          attrs: {
-            href: "https://cdn.jsdelivr.net/npm/asciinema-player@3.15.1/dist/bundle/asciinema-player.css",
-            rel: "stylesheet",
-          },
-          tag: "link",
-        },
-      ],
       logo: {
         replacesTitle: false,
         src: "./src/assets/logo.svg",

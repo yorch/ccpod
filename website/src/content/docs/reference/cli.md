@@ -11,7 +11,6 @@ Start an interactive Claude session in the current directory (mounted at `/works
 
 ```sh
 ccpod run                              # interactive session, default profile
-ccpod run -- --resume                  # forward args after `--` to claude
 ccpod run --profile team               # use a specific profile
 ccpod run --env KEY=VALUE              # set/override an env var (repeatable)
 ccpod run --rebuild                    # force image rebuild or repull

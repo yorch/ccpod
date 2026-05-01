@@ -49,7 +49,7 @@
       }
     },
     {
-      "includes": ["**/*.astro"],
+      "includes": ["website/src/**/*.astro"],
       "linter": {
         "rules": {
           "correctness": {

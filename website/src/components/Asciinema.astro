@@ -1,4 +1,6 @@
 ---
+import { withBase } from "../lib/url";
+
 interface Props {
   autoplay?: boolean;
   cols?: number;
@@ -20,40 +22,57 @@ const {
 } = Astro.props;
 
 const id = `asciinema-${Math.random().toString(36).slice(2, 9)}`;
-
-import { withBase } from "../lib/url";
-
 const resolvedSrc = withBase(src);
+
+const PLAYER_VERSION = "3.15.1";
+const playerCss = `https://cdn.jsdelivr.net/npm/asciinema-player@${PLAYER_VERSION}/dist/bundle/asciinema-player.css`;
+const playerJs = `https://cdn.jsdelivr.net/npm/asciinema-player@${PLAYER_VERSION}/dist/bundle/asciinema-player.min.js`;
 ---
+<link rel="stylesheet" href={playerCss} />
+
 <div class="asciinema-wrapper">
   <div id={id} data-src={resolvedSrc}></div>
 </div>
 
-<script
-  is:inline
-  src="https://cdn.jsdelivr.net/npm/asciinema-player@3.15.1/dist/bundle/asciinema-player.min.js"
-></script>
-<script
-  is:inline
-  define:vars={{ id, src: resolvedSrc, poster, cols, rows, speed, autoplay, loop }}
->
-  function init() {
-    const target = document.getElementById(id);
-    if (!target || !window.AsciinemaPlayer) return;
-    window.AsciinemaPlayer.create(src, target, {
-      poster,
-      cols,
-      rows,
-      speed,
-      autoPlay: autoplay,
-      loop,
-      theme: 'asciinema',
-      fit: 'width',
+<script is:inline define:vars={{ playerJs }}>
+  if (!window.__ccpodAsciinemaLoad) {
+    window.__ccpodAsciinemaLoad = new Promise((resolve, reject) => {
+      const s = document.createElement("script");
+      s.src = playerJs;
+      s.async = true;
+      s.onload = () => resolve();
+      s.onerror = (e) => reject(e);
+      document.head.appendChild(s);
     });
   }
-  if (document.readyState === 'loading') {
-    document.addEventListener('DOMContentLoaded', init);
-  } else {
-    init();
-  }
+</script>
+<script
+  is:inline
+  define:vars={{
+    id,
+    src: resolvedSrc,
+    poster,
+    cols,
+    rows,
+    speed,
+    autoplay,
+    loop,
+  }}
+>
+  window.__ccpodAsciinemaLoad
+    .then(() => {
+      const target = document.getElementById(id);
+      if (!target || !window.AsciinemaPlayer) return;
+      window.AsciinemaPlayer.create(src, target, {
+        poster,
+        cols,
+        rows,
+        speed,
+        autoPlay: autoplay,
+        loop,
+        theme: "asciinema",
+        fit: "width",
+      });
+    })
+    .catch(() => {});
 </script>

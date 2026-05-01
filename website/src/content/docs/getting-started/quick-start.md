@@ -29,16 +29,7 @@ ccpod run
 
 The current directory is mounted at `/workspace` inside the container. Claude starts there. Exit the session and the container shuts down (state is wiped unless your profile sets `state: persistent`).
 
-## 3. Pass arguments through to Claude
-
-Anything after `--` is forwarded:
-
-```sh
-ccpod run -- --resume       # Resume the last Claude session
-ccpod run -- "Refactor src/auth.ts"   # Headless: run a single prompt
-```
-
-## 4. Use a different profile
+## 3. Use a different profile
 
 ```sh
 ccpod run --profile team
@@ -53,7 +44,7 @@ profile: team
 
 ccpod walks up from `$PWD` to find this file, so any subdirectory of the repo works.
 
-## 5. Headless mode
+## 4. Headless mode
 
 Pipe a prompt file and exit with the container's status code:
 
