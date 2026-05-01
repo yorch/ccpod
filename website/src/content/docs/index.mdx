@@ -41,8 +41,7 @@ Your Claude environment — settings, plugins, skills, `CLAUDE.md`, MCP servers 
 
 ```sh
 # Install
-curl -fsSL https://github.com/yorch/ccpod/releases/latest/download/ccpod-$(uname -s)-$(uname -m) -o /usr/local/bin/ccpod
-chmod +x /usr/local/bin/ccpod
+curl -fsSL https://raw.githubusercontent.com/yorch/ccpod/main/install.sh | bash
 
 # First-run wizard: detect runtime, set up auth, create default profile
 ccpod init

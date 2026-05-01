@@ -13,13 +13,14 @@ Works with Docker, Podman, OrbStack, and Colima — auto-detected.
 ## Install
 
 ```sh
-# From binary release
-curl -fsSL https://github.com/yorch/ccpod/releases/latest/download/ccpod-$(uname -s)-$(uname -m) -o /usr/local/bin/ccpod
-chmod +x /usr/local/bin/ccpod
+# macOS / Linux — one-liner installer
+curl -fsSL https://raw.githubusercontent.com/yorch/ccpod/main/install.sh | bash
 
 # Or build from source (requires Bun)
 bun run build   # outputs dist/ccpod
 ```
+
+The installer places `ccpod` in `/usr/local/bin` by default. Override with `CCPOD_INSTALL_DIR=~/.local/bin` or pin a version with `CCPOD_VERSION=v0.2.0`.
 
 ---
 

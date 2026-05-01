@@ -8,9 +8,18 @@ ccpod is a single static binary. You need a container runtime — Docker, OrbSta
 ## From a release binary
 
 ```sh
-curl -fsSL https://github.com/yorch/ccpod/releases/latest/download/ccpod-$(uname -s)-$(uname -m) -o /usr/local/bin/ccpod
-chmod +x /usr/local/bin/ccpod
+curl -fsSL https://raw.githubusercontent.com/yorch/ccpod/main/install.sh | bash
 ccpod --version
+```
+
+Installs to `/usr/local/bin` by default. Override with env vars:
+
+```sh
+# Custom install directory
+CCPOD_INSTALL_DIR=~/.local/bin curl -fsSL https://raw.githubusercontent.com/yorch/ccpod/main/install.sh | bash
+
+# Pin a specific version
+CCPOD_VERSION=v0.2.0 curl -fsSL https://raw.githubusercontent.com/yorch/ccpod/main/install.sh | bash
 ```
 
 Pre-built binaries are published for Linux and macOS on x86_64 and arm64.
