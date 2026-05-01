@@ -1,7 +1,7 @@
 #!/bin/sh
 set -e
 
-CLAUDE_DIR="${HOME}/.claude"
+CLAUDE_DIR="${CLAUDE_CONFIG_DIR:-${HOME}/.claude}"
 mkdir -p "${CLAUDE_DIR}"
 
 # 1. Seed config (CLAUDE.md, settings.json, skills/, extensions/) — ro source → rw dest
@@ -9,9 +9,14 @@ if [ -d /ccpod/config ]; then
   cp -r /ccpod/config/. "${CLAUDE_DIR}/"
 fi
 
-# 2. Overlay credentials (.credentials.json, OAuth tokens, etc.)
-if [ -d /ccpod/credentials ] && [ "$(ls -A /ccpod/credentials 2>/dev/null)" ]; then
-  cp -r /ccpod/credentials/. "${CLAUDE_DIR}/"
+# 2. Restore persisted auth files:
+#   .credentials.json — OAuth access/refresh tokens (lives inside CLAUDE_CONFIG_DIR)
+#   .claude.json      — account state, migration flags (fixed at $HOME, not in CLAUDE_CONFIG_DIR)
+if [ -f /ccpod/credentials/.credentials.json ]; then
+  cp -f /ccpod/credentials/.credentials.json "${CLAUDE_DIR}/.credentials.json"
+fi
+if [ -f /ccpod/credentials/.claude.json ]; then
+  cp -f /ccpod/credentials/.claude.json "${HOME}/.claude.json"
 fi
 
 # 3. Plugins — symlink named volume so installs persist across runs
@@ -42,7 +47,8 @@ trap "kill -TERM $CHILD_PID 2>/dev/null" TERM INT HUP
 wait $CHILD_PID || STATUS=$?
 STATUS=${STATUS:-0}
 
-# Write credentials back so they persist across container restarts
+# Write both auth files back so they persist across container restarts
 cp -f "${CLAUDE_DIR}/.credentials.json" /ccpod/credentials/.credentials.json 2>/dev/null || true
+cp -f "${HOME}/.claude.json" /ccpod/credentials/.claude.json 2>/dev/null || true
 
 exit $STATUS

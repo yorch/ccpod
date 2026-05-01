@@ -305,10 +305,18 @@ trap "kill -TERM $CHILD_PID 2>/dev/null" TERM INT HUP
 wait $CHILD_PID || STATUS=$?
 STATUS=${STATUS:-0}
 cp -f "${CLAUDE_DIR}/.credentials.json" /ccpod/credentials/.credentials.json 2>/dev/null || true
+cp -f "${HOME}/.claude.json" /ccpod/credentials/.claude.json 2>/dev/null || true
 exit $STATUS
 ```
 
-**Credential persistence:** on startup, credentials are copied from `/ccpod/credentials` (host-mounted `~/.ccpod/credentials/<profile>/`) into `~/.claude/`. On exit, `.credentials.json` is written back to `/ccpod/credentials/` so OAuth tokens survive across container restarts. The signal-forwarding wrapper (background job + `trap`) ensures the write-back runs even when `docker stop` sends `SIGTERM`.
+**Credential persistence:** two auth files are persisted in `~/.ccpod/credentials/<profile>/` (bind-mounted as `/ccpod/credentials`):
+
+| File | Location inside container | Contains |
+|---|---|---|
+| `.credentials.json` | `$CLAUDE_CONFIG_DIR/.credentials.json` | OAuth access/refresh tokens |
+| `.claude.json` | `$HOME/.claude.json` (fixed — ignores `CLAUDE_CONFIG_DIR`) | Account metadata, migration flags |
+
+On startup both are copied in; on exit both are written back. The signal-forwarding wrapper (`"$@" &` + `trap`) ensures write-back runs even when `docker stop` sends `SIGTERM`.
 
 ---
 
