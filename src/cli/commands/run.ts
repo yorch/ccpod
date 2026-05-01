@@ -13,7 +13,7 @@ import {
 } from "../../container/builder.ts";
 import { runContainer } from "../../container/runner.ts";
 import { sidecarNetworkName, startSidecars } from "../../container/sidecars.ts";
-import { buildImage, ensureImage } from "../../image/manager.ts";
+import { ensureImage, ensureLocalImage } from "../../image/manager.ts";
 import { extractHttpMcpPorts, parseMcpJson } from "../../mcp/parser.ts";
 import { syncGitConfig } from "../../profile/git-sync.ts";
 import { getProfileDir, profileExists } from "../../profile/manager.ts";
@@ -155,7 +155,7 @@ export default defineCommand({
       if (image === "build") {
         const tag = `ccpod-local-${profileName}:latest`;
         const dockerfile = partial.dockerfile ?? "Dockerfile";
-        await buildImage(dockerfile, tag, cwd);
+        await ensureLocalImage(tag, dockerfile, cwd, args.rebuild ?? false);
         image = tag;
       } else {
         await ensureImage(image, args.rebuild ?? false);

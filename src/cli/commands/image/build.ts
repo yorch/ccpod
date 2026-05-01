@@ -5,10 +5,19 @@ import {
   loadProjectConfig,
 } from "../../../config/loader.ts";
 import { buildImage } from "../../../image/manager.ts";
-import { getProfileDir, profileExists } from "../../../profile/manager.ts";
+import {
+  getProfileDir,
+  profileExists,
+  updateProfileImage,
+} from "../../../profile/manager.ts";
 
 export default defineCommand({
   args: {
+    apply: {
+      default: false,
+      description: "Update profile image.use to the built tag after build",
+      type: "boolean",
+    },
     dockerfile: {
       description: "Dockerfile path (overrides profile)",
       type: "string",
@@ -37,8 +46,18 @@ export default defineCommand({
     console.log(chalk.dim(`Building ${dockerfile} → ${tag}`));
     await buildImage(dockerfile, tag, process.cwd());
     console.log(chalk.green(`\n✓ Built: ${tag}`));
-    console.log(
-      chalk.dim(`Update profile image.use to '${tag}' to use this image.`),
-    );
+
+    if (args.apply) {
+      updateProfileImage(profileName, tag);
+      console.log(
+        chalk.green(`✓ Profile '${profileName}' image.use updated to '${tag}'`),
+      );
+    } else {
+      console.log(
+        chalk.dim(
+          `Run with --apply to update profile image.use automatically.`,
+        ),
+      );
+    }
   },
 });

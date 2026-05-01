@@ -1,6 +1,14 @@
-import { existsSync, mkdirSync, readdirSync, rmSync } from "node:fs";
+import {
+  existsSync,
+  mkdirSync,
+  readdirSync,
+  readFileSync,
+  rmSync,
+  writeFileSync,
+} from "node:fs";
 import { homedir } from "node:os";
 import { join } from "node:path";
+import { parseDocument } from "yaml";
 
 // For external consumers (e.g. wizard.ts) — computed once at import time
 export const CCPOD_DIR = join(homedir(), ".ccpod");
@@ -51,4 +59,13 @@ export function deleteProfile(name: string): void {
   const dir = join(profilesDir(), name);
   if (!existsSync(dir)) throw new Error(`Profile not found: ${name}`);
   rmSync(dir, { force: true, recursive: true });
+}
+
+export function updateProfileImage(profileName: string, tag: string): void {
+  const profilePath = join(profilesDir(), profileName, "profile.yml");
+  if (!existsSync(profilePath))
+    throw new Error(`Profile not found: ${profileName}`);
+  const doc = parseDocument(readFileSync(profilePath, "utf8"));
+  doc.setIn(["image", "use"], tag);
+  writeFileSync(profilePath, doc.toString(), "utf8");
 }

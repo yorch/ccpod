@@ -31,6 +31,19 @@ export async function buildImage(
   if (exitCode !== 0) throw new Error(`docker build failed (exit ${exitCode})`);
 }
 
+export async function ensureLocalImage(
+  tag: string,
+  dockerfile: string,
+  contextDir: string,
+  force = false,
+): Promise<void> {
+  if (!force) {
+    const { exitCode } = await dockerExec(["image", "inspect", tag]);
+    if (exitCode === 0) return;
+  }
+  await buildImage(dockerfile, tag, contextDir);
+}
+
 async function pullImage(image: string): Promise<void> {
   console.log(`Pulling image: ${image}`);
   const exitCode = await dockerSpawn(["pull", image]);
