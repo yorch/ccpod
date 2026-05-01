@@ -1,14 +1,21 @@
-import { defineCommand } from "citty";
 import chalk from "chalk";
-import { loadProfileConfig, loadProjectConfig } from "../../../config/loader.ts";
-import { profileExists, getProfileDir } from "../../../profile/manager.ts";
+import { defineCommand } from "citty";
+import {
+  loadProfileConfig,
+  loadProjectConfig,
+} from "../../../config/loader.ts";
 import { ensureImage } from "../../../image/manager.ts";
+import { getProfileDir, profileExists } from "../../../profile/manager.ts";
 
 export default defineCommand({
   meta: { description: "Pull the Docker image for a profile" },
   args: {
     profile: { type: "string", description: "Profile name" },
-    force: { type: "boolean", description: "Force re-pull even if image exists", default: false },
+    force: {
+      type: "boolean",
+      description: "Force re-pull even if image exists",
+      default: false,
+    },
   },
   async run({ args }) {
     const projectConfig = loadProjectConfig(process.cwd());
@@ -23,7 +30,9 @@ export default defineCommand({
     const image = profile.image.use;
 
     if (image === "build") {
-      console.error(`Profile '${profileName}' uses a local build (image.use=build). Use 'ccpod image build' instead.`);
+      console.error(
+        `Profile '${profileName}' uses a local build (image.use=build). Use 'ccpod image build' instead.`,
+      );
       process.exit(1);
     }
 

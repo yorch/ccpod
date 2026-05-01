@@ -1,11 +1,15 @@
-import { input, select, confirm } from "@inquirer/prompts";
-import { stringify as yamlStringify } from "yaml";
 import { mkdirSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
+import { confirm, input, select } from "@inquirer/prompts";
 import chalk from "chalk";
-import { detectRuntime } from "../runtime/detector.ts";
-import { ensureCcpodDirs, PROFILES_DIR, profileExists } from "../profile/manager.ts";
+import { stringify as yamlStringify } from "yaml";
 import type { ProfileConfigInput } from "../config/schema.ts";
+import {
+  ensureCcpodDirs,
+  PROFILES_DIR,
+  profileExists,
+} from "../profile/manager.ts";
+import { detectRuntime } from "../runtime/detector.ts";
 
 export async function runWizard(profileName = "default"): Promise<void> {
   console.log(chalk.bold("\nccpod setup wizard\n"));
@@ -14,9 +18,16 @@ export async function runWizard(profileName = "default"): Promise<void> {
   console.log(chalk.dim("Detecting container runtime..."));
   try {
     const runtime = detectRuntime();
-    console.log(chalk.green(`✓ [1/5] ${capitalize(runtime.name)} detected`) + chalk.dim(` (${runtime.socketPath})`));
+    console.log(
+      chalk.green(`✓ [1/5] ${capitalize(runtime.name)} detected`) +
+        chalk.dim(` (${runtime.socketPath})`),
+    );
   } catch {
-    console.log(chalk.yellow("⚠ [1/5] No runtime detected — install Docker, OrbStack, Colima, or Podman before running containers."));
+    console.log(
+      chalk.yellow(
+        "⚠ [1/5] No runtime detected — install Docker, OrbStack, Colima, or Podman before running containers.",
+      ),
+    );
   }
 
   // Step 2 — auth
@@ -32,20 +43,31 @@ export async function runWizard(profileName = "default"): Promise<void> {
 
   let authConfig: ProfileConfigInput["auth"];
   if (authMethod === "env") {
-    const keyEnv = await input({ message: "     Env var name", default: "ANTHROPIC_API_KEY" });
+    const keyEnv = await input({
+      message: "     Env var name",
+      default: "ANTHROPIC_API_KEY",
+    });
     authConfig = { type: "api-key", keyEnv };
   } else if (authMethod === "file") {
-    const keyFile = await input({ message: "     Key file path", default: "~/.anthropic/api_key" });
+    const keyFile = await input({
+      message: "     Key file path",
+      default: "~/.anthropic/api_key",
+    });
     authConfig = { type: "api-key", keyFile };
   } else {
     authConfig = { type: "oauth" };
-    console.log(chalk.dim("     OAuth tokens will be stored in ~/.ccpod/credentials/default/"));
+    console.log(
+      chalk.dim(
+        "     OAuth tokens will be stored in ~/.ccpod/credentials/default/",
+      ),
+    );
   }
 
   // Step 3 — config source
   console.log();
   const configSource = await select({
-    message: "[3/5] Config source (CLAUDE.md, settings.json, skills, extensions)",
+    message:
+      "[3/5] Config source (CLAUDE.md, settings.json, skills, extensions)",
     choices: [
       { name: "Start empty", value: "empty" },
       { name: "Local directory", value: "local" },
@@ -63,27 +85,30 @@ export async function runWizard(profileName = "default"): Promise<void> {
     configConfig = { source: "local", path };
   } else {
     const repo = await input({ message: "     Git repo URL" });
-    const ref = await input({ message: "     Branch / tag / ref", default: "main" });
-    const sync = await select({
+    const ref = await input({
+      message: "     Branch / tag / ref",
+      default: "main",
+    });
+    const sync = (await select({
       message: "     Sync strategy",
       choices: [
         { name: "Daily (once per day)", value: "daily" },
         { name: "Always (every run)", value: "always" },
         { name: "Pin (never update)", value: "pin" },
       ],
-    }) as "always" | "daily" | "pin";
+    })) as "always" | "daily" | "pin";
     configConfig = { source: "git", repo, ref, sync };
   }
 
   // Step 4 — network policy
   console.log();
-  const networkPolicy = await select({
+  const networkPolicy = (await select({
     message: "[4/5] Default network policy",
     choices: [
       { name: "Full — unrestricted outbound", value: "full" },
       { name: "Restricted — iptables allow-list", value: "restricted" },
     ],
-  }) as "full" | "restricted";
+  })) as "full" | "restricted";
 
   // Step 5 — confirm & write
   console.log();
@@ -125,7 +150,11 @@ export async function runWizard(profileName = "default"): Promise<void> {
     env: [],
   };
 
-  writeFileSync(join(profileDir, "profile.yml"), yamlStringify(profile), "utf8");
+  writeFileSync(
+    join(profileDir, "profile.yml"),
+    yamlStringify(profile),
+    "utf8",
+  );
 
   console.log(chalk.green(`\n✓ Profile '${profileName}' created.`));
   console.log(chalk.dim(`  ${join(profileDir, "profile.yml")}`));

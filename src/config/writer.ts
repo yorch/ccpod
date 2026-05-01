@@ -1,14 +1,24 @@
-import { mkdirSync, writeFileSync, cpSync, existsSync, readdirSync, lstatSync } from "node:fs";
-import { join } from "node:path";
-import { tmpdir } from "node:os";
 import { createHash } from "node:crypto";
+import {
+  cpSync,
+  existsSync,
+  lstatSync,
+  mkdirSync,
+  readdirSync,
+  writeFileSync,
+} from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 
 export function writeMergedConfig(
   profileConfigDir: string,
   mergedClaudeMd: string,
   mergedSettings: object,
 ): string {
-  const content = JSON.stringify({ settings: mergedSettings, claudeMd: mergedClaudeMd });
+  const content = JSON.stringify({
+    settings: mergedSettings,
+    claudeMd: mergedClaudeMd,
+  });
   const hash = createHash("sha256").update(content).digest("hex").slice(0, 16);
   const outDir = join(tmpdir(), `ccpod-${hash}`);
 
@@ -27,7 +37,11 @@ export function writeMergedConfig(
   }
 
   writeFileSync(join(outDir, "CLAUDE.md"), mergedClaudeMd, "utf8");
-  writeFileSync(join(outDir, "settings.json"), JSON.stringify(mergedSettings, null, 2), "utf8");
+  writeFileSync(
+    join(outDir, "settings.json"),
+    JSON.stringify(mergedSettings, null, 2),
+    "utf8",
+  );
 
   return outDir;
 }

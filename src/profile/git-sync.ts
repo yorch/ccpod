@@ -1,7 +1,7 @@
 import { existsSync } from "node:fs";
 import simpleGit from "simple-git";
-import { shouldSync, writeSyncLock } from "./lock.ts";
 import type { SyncStrategy } from "../types/index.ts";
+import { shouldSync, writeSyncLock } from "./lock.ts";
 
 export async function syncGitConfig(
   profileDir: string,

@@ -1,8 +1,8 @@
 import { createHash } from "node:crypto";
 import { homedir } from "node:os";
 import { join } from "node:path";
-import { VERSION } from "../version.ts";
 import type { ResolvedConfig } from "../types/index.ts";
+import { VERSION } from "../version.ts";
 
 const CCPOD_DIR = join(homedir(), ".ccpod");
 
@@ -26,7 +26,10 @@ export function buildContainerSpec(
   projectDir: string,
   tty: boolean,
 ): ContainerSpec {
-  const projectHash = createHash("sha256").update(projectDir).digest("hex").slice(0, 16);
+  const projectHash = createHash("sha256")
+    .update(projectDir)
+    .digest("hex")
+    .slice(0, 16);
   const credentialsDir = join(CCPOD_DIR, "credentials", config.profileName);
 
   const binds = [
@@ -60,7 +63,9 @@ export function buildContainerSpec(
 
   if (config.ssh.agentForward && process.env.SSH_AUTH_SOCK) {
     env.push(`SSH_AUTH_SOCK=/run/host-services/ssh-auth.sock`);
-    binds.push(`${process.env.SSH_AUTH_SOCK}:/run/host-services/ssh-auth.sock:ro`);
+    binds.push(
+      `${process.env.SSH_AUTH_SOCK}:/run/host-services/ssh-auth.sock:ro`,
+    );
   }
 
   return {

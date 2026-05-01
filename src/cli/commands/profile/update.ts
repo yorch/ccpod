@@ -1,8 +1,8 @@
-import { defineCommand } from "citty";
 import chalk from "chalk";
+import { defineCommand } from "citty";
 import { loadProfileConfig } from "../../../config/loader.ts";
-import { profileExists, getProfileDir } from "../../../profile/manager.ts";
 import { syncGitConfig } from "../../../profile/git-sync.ts";
+import { getProfileDir, profileExists } from "../../../profile/manager.ts";
 
 export default defineCommand({
   meta: { description: "Force-sync a profile's config source" },
@@ -26,14 +26,21 @@ export default defineCommand({
       }
       console.log(chalk.dim(`Syncing ${repo}...`));
       // Force sync by using "always" strategy regardless of lock
-      await syncGitConfig(profileDir, repo, profile.config.ref ?? "main", "always");
+      await syncGitConfig(
+        profileDir,
+        repo,
+        profile.config.ref ?? "main",
+        "always",
+      );
       console.log(chalk.green(`✓ '${args.name}' config synced.`));
     } else {
       // Local source — just verify the path exists
       const { existsSync } = await import("node:fs");
       const path = profile.config.path ?? profileDir;
       if (existsSync(path)) {
-        console.log(chalk.green(`✓ '${args.name}' local config path exists: ${path}`));
+        console.log(
+          chalk.green(`✓ '${args.name}' local config path exists: ${path}`),
+        );
       } else {
         console.log(chalk.yellow(`⚠ Config path not found: ${path}`));
       }

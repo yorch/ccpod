@@ -1,4 +1,4 @@
-import { describe, it, expect } from "bun:test";
+import { describe, expect, it } from "bun:test";
 import { mergeClaudes, mergeConfigs } from "../../../src/config/merger.ts";
 import type { ProfileConfig } from "../../../src/types/index.ts";
 
@@ -28,12 +28,16 @@ describe("mergeConfigs", () => {
   });
 
   it("state override takes precedence over profile", () => {
-    const result = mergeConfigs(makeProfile({ state: "persistent" }), null, { state: "ephemeral" });
+    const result = mergeConfigs(makeProfile({ state: "persistent" }), null, {
+      state: "ephemeral",
+    });
     expect(result.state).toBe("ephemeral");
   });
 
   it("deep merge: project network.allow appended to profile allow", () => {
-    const profile = makeProfile({ network: { policy: "restricted", allow: ["github.com"] } });
+    const profile = makeProfile({
+      network: { policy: "restricted", allow: ["github.com"] },
+    });
     const result = mergeConfigs(profile, {
       merge: "deep",
       network: { allow: ["npmjs.com"] },
@@ -43,7 +47,9 @@ describe("mergeConfigs", () => {
   });
 
   it("override strategy: project network fully replaces profile network", () => {
-    const profile = makeProfile({ network: { policy: "restricted", allow: ["github.com"] } });
+    const profile = makeProfile({
+      network: { policy: "restricted", allow: ["github.com"] },
+    });
     const result = mergeConfigs(profile, {
       merge: "override",
       network: { policy: "full" },
@@ -53,7 +59,9 @@ describe("mergeConfigs", () => {
   });
 
   it("port lists concatenate across profile and project", () => {
-    const profile = makeProfile({ ports: { list: ["3000:3000"], autoDetectMcp: true } });
+    const profile = makeProfile({
+      ports: { list: ["3000:3000"], autoDetectMcp: true },
+    });
     const result = mergeConfigs(profile, { ports: { list: ["4000:4000"] } });
     expect(result.ports).toHaveLength(2);
     expect(result.ports[0]).toEqual({ host: 3000, container: 3000 });
@@ -69,7 +77,7 @@ describe("mergeConfigs", () => {
   it("env list deduplicates across profile and project", () => {
     const profile = makeProfile({ env: ["FOO", "BAR"] });
     const result = mergeConfigs(profile, { env: ["BAR", "BAZ"] });
-    const envKeys = result.env; // env is Record<string,string> here — raw keys stay empty
+    const _envKeys = result.env; // env is Record<string,string> here — raw keys stay empty
     // mergeConfigs returns env:{} (resolution happens at run time); verify no error thrown
     expect(result).toBeDefined();
   });
@@ -86,7 +94,11 @@ describe("mergeClaudes", () => {
   });
 
   it("overrides profile content with project content", () => {
-    const result = mergeClaudes("# Profile\nDo X", "# Project\nDo Y", "override");
+    const result = mergeClaudes(
+      "# Profile\nDo X",
+      "# Project\nDo Y",
+      "override",
+    );
     expect(result).toBe("# Project\nDo Y");
     expect(result).not.toContain("# Profile");
   });

@@ -11,10 +11,7 @@ const RUNTIME_CANDIDATES: Array<{ name: string; sockets: string[] }> = [
   },
   {
     name: "docker",
-    sockets: [
-      "/var/run/docker.sock",
-      `${HOME}/.docker/run/docker.sock`,
-    ],
+    sockets: ["/var/run/docker.sock", `${HOME}/.docker/run/docker.sock`],
   },
   {
     name: "colima",

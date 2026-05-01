@@ -1,25 +1,42 @@
-import { defineCommand } from "citty";
-import { readFileSync, existsSync } from "node:fs";
+import { existsSync, readFileSync } from "node:fs";
 import { join } from "node:path";
+import { defineCommand } from "citty";
 import { resolveAuth, resolveEnvForwarding } from "../../auth/resolver.ts";
-import { mergeConfigs, mergeClaudes } from "../../config/merger.ts";
 import { loadProfileConfig, loadProjectConfig } from "../../config/loader.ts";
+import { mergeClaudes, mergeConfigs } from "../../config/merger.ts";
 import { writeMergedConfig } from "../../config/writer.ts";
 import { buildContainerSpec } from "../../container/builder.ts";
 import { runContainer } from "../../container/runner.ts";
-import { ensureImage, buildImage } from "../../image/manager.ts";
-import { parseMcpJson, extractHttpMcpPorts } from "../../mcp/parser.ts";
-import { profileExists, getProfileDir } from "../../profile/manager.ts";
+import { buildImage, ensureImage } from "../../image/manager.ts";
+import { extractHttpMcpPorts, parseMcpJson } from "../../mcp/parser.ts";
 import { syncGitConfig } from "../../profile/git-sync.ts";
+import { getProfileDir, profileExists } from "../../profile/manager.ts";
 import type { ResolvedConfig } from "../../types/index.ts";
 
 export default defineCommand({
-  meta: { description: "Run Claude Code in a container (interactive or headless)" },
+  meta: {
+    description: "Run Claude Code in a container (interactive or headless)",
+  },
   args: {
-    profile: { type: "string", description: "Profile name (overrides .ccpod.yml)" },
-    env: { type: "string", description: "Pass/override env var (KEY or KEY=VALUE)", array: true },
-    rebuild: { type: "boolean", description: "Force image rebuild/repull", default: false },
-    "no-state": { type: "boolean", description: "Force ephemeral state for this run", default: false },
+    profile: {
+      type: "string",
+      description: "Profile name (overrides .ccpod.yml)",
+    },
+    env: {
+      type: "string",
+      description: "Pass/override env var (KEY or KEY=VALUE)",
+      array: true,
+    },
+    rebuild: {
+      type: "boolean",
+      description: "Force image rebuild/repull",
+      default: false,
+    },
+    "no-state": {
+      type: "boolean",
+      description: "Force ephemeral state for this run",
+      default: false,
+    },
     file: { type: "string", description: "Headless mode: path to prompt file" },
   },
   async run({ args }) {
@@ -30,7 +47,9 @@ export default defineCommand({
     const profileName = args.profile ?? projectConfig?.profile ?? "default";
 
     if (!profileExists(profileName)) {
-      console.error(`Profile '${profileName}' not found. Run 'ccpod init' to create one.`);
+      console.error(
+        `Profile '${profileName}' not found. Run 'ccpod init' to create one.`,
+      );
       process.exit(1);
     }
 
@@ -49,13 +68,18 @@ export default defineCommand({
 
     // 3. Merge profile + project
     const stateOverride = args["no-state"] ? ("ephemeral" as const) : undefined;
-    const partial = mergeConfigs(profile, projectConfig, { state: stateOverride });
+    const partial = mergeConfigs(profile, projectConfig, {
+      state: stateOverride,
+    });
 
     // 4. MCP port auto-detection
     const mcpPorts = partial.autoDetectMcp
-      ? (parseMcpJson(cwd)
-          ? extractHttpMcpPorts(parseMcpJson(cwd)!).map((port) => ({ host: port, container: port }))
-          : [])
+      ? parseMcpJson(cwd)
+        ? extractHttpMcpPorts(parseMcpJson(cwd)!).map((port) => ({
+            host: port,
+            container: port,
+          }))
+        : []
       : [];
 
     // 5. Resolve environment
@@ -68,7 +92,7 @@ export default defineCommand({
     // 6. Build merged ~/.claude config dir
     const configSourceDir =
       profile.config.source === "local"
-        ? profile.config.path ?? profileDir
+        ? (profile.config.path ?? profileDir)
         : join(profileDir, "config");
 
     const profileClaudeMd = readIfExists(join(configSourceDir, "CLAUDE.md"));
@@ -76,11 +100,20 @@ export default defineCommand({
     const claudeMdMode = projectConfig?.config?.claudeMd ?? "append";
     const mergedClaudeMd =
       profileClaudeMd || projectClaudeMd
-        ? mergeClaudes(profileClaudeMd ?? "", projectClaudeMd ?? "", claudeMdMode)
+        ? mergeClaudes(
+            profileClaudeMd ?? "",
+            projectClaudeMd ?? "",
+            claudeMdMode,
+          )
         : "";
 
-    const profileSettings = readJsonIfExists(join(configSourceDir, "settings.json")) ?? {};
-    const mergedConfigDir = writeMergedConfig(configSourceDir, mergedClaudeMd, profileSettings);
+    const profileSettings =
+      readJsonIfExists(join(configSourceDir, "settings.json")) ?? {};
+    const mergedConfigDir = writeMergedConfig(
+      configSourceDir,
+      mergedClaudeMd,
+      profileSettings,
+    );
 
     // 7. Resolve image — build locally if use === "build", else pull
     let image = partial.image;

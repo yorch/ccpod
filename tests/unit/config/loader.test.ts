@@ -1,9 +1,13 @@
-import { describe, it, expect, beforeEach, afterEach } from "bun:test";
-import { mkdtempSync, writeFileSync, mkdirSync, rmSync } from "node:fs";
+import { afterEach, beforeEach, describe, expect, it } from "bun:test";
+import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { stringify as yamlStringify } from "yaml";
-import { loadProfileConfig, findProjectConfig, loadProjectConfig } from "../../../src/config/loader.ts";
+import {
+  findProjectConfig,
+  loadProfileConfig,
+  loadProjectConfig,
+} from "../../../src/config/loader.ts";
 
 let tmpDir: string;
 beforeEach(() => {
@@ -17,7 +21,10 @@ describe("loadProfileConfig", () => {
   it("parses a valid profile.yml", () => {
     writeFileSync(
       join(tmpDir, "profile.yml"),
-      yamlStringify({ name: "myprod", config: { source: "local", path: "/tmp/cfg" } }),
+      yamlStringify({
+        name: "myprod",
+        config: { source: "local", path: "/tmp/cfg" },
+      }),
     );
     const profile = loadProfileConfig(tmpDir);
     expect(profile.name).toBe("myprod");
@@ -57,16 +64,19 @@ describe("loadProjectConfig", () => {
   });
 
   it("parses a valid .ccpod.yml", () => {
-    writeFileSync(join(tmpDir, ".ccpod.yml"), yamlStringify({ profile: "custom", merge: "override" }));
+    writeFileSync(
+      join(tmpDir, ".ccpod.yml"),
+      yamlStringify({ profile: "custom", merge: "override" }),
+    );
     const cfg = loadProjectConfig(tmpDir);
     expect(cfg).not.toBeNull();
-    expect(cfg!.profile).toBe("custom");
-    expect(cfg!.merge).toBe("override");
+    expect(cfg?.profile).toBe("custom");
+    expect(cfg?.merge).toBe("override");
   });
 
   it("applies defaults for omitted fields", () => {
     writeFileSync(join(tmpDir, ".ccpod.yml"), "{}");
     const cfg = loadProjectConfig(tmpDir);
-    expect(cfg!.merge).toBe("deep");
+    expect(cfg?.merge).toBe("deep");
   });
 });

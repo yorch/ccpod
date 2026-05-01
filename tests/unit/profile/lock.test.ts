@@ -1,7 +1,11 @@
-import { describe, it, expect, beforeEach } from "bun:test";
-import { mkdtempSync, rmSync } from "node:fs";
+import { beforeEach, describe, expect, it } from "bun:test";
+import { mkdtempSync } from "node:fs";
 import { tmpdir } from "node:os";
-import { shouldSync, writeSyncLock, getLastSync } from "../../../src/profile/lock.ts";
+import {
+  getLastSync,
+  shouldSync,
+  writeSyncLock,
+} from "../../../src/profile/lock.ts";
 
 let tmpDir: string;
 

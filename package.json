@@ -9,6 +9,8 @@
     "build": "bun build --compile --minify src/cli/index.ts --outfile dist/ccpod",
     "typecheck": "tsc --noEmit",
     "test": "bun test",
+    "lint": "biome check .",
+    "lint:fix": "biome check --write .",
     "check": "biome check --write .",
     "check:ci": "biome check ."
   },

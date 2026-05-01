@@ -1,8 +1,11 @@
-import { describe, it, expect, afterEach } from "bun:test";
-import { mkdtempSync, writeFileSync, rmSync } from "node:fs";
+import { afterEach, describe, expect, it } from "bun:test";
+import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { resolveAuth, resolveEnvForwarding } from "../../../src/auth/resolver.ts";
+import {
+  resolveAuth,
+  resolveEnvForwarding,
+} from "../../../src/auth/resolver.ts";
 
 // Save env state around tests that mutate it
 const savedEnv: Record<string, string | undefined> = {};
@@ -14,7 +17,9 @@ afterEach(() => {
     if (v === undefined) delete process.env[k];
     else process.env[k] = v;
   }
-  Object.keys(savedEnv).forEach((k) => delete savedEnv[k]);
+  Object.keys(savedEnv).forEach((k) => {
+    delete savedEnv[k];
+  });
 });
 
 describe("resolveAuth", () => {
@@ -25,7 +30,9 @@ describe("resolveAuth", () => {
   it("reads ANTHROPIC_API_KEY from env", () => {
     saveEnv("ANTHROPIC_API_KEY");
     process.env.ANTHROPIC_API_KEY = "sk-test-abc";
-    expect(resolveAuth({ type: "api-key", keyEnv: "ANTHROPIC_API_KEY" })).toEqual({
+    expect(
+      resolveAuth({ type: "api-key", keyEnv: "ANTHROPIC_API_KEY" }),
+    ).toEqual({
       ANTHROPIC_API_KEY: "sk-test-abc",
     });
   });
@@ -33,7 +40,9 @@ describe("resolveAuth", () => {
   it("uses custom keyEnv name", () => {
     saveEnv("MY_ANTHROPIC_KEY");
     process.env.MY_ANTHROPIC_KEY = "sk-custom-xyz";
-    expect(resolveAuth({ type: "api-key", keyEnv: "MY_ANTHROPIC_KEY" })).toEqual({
+    expect(
+      resolveAuth({ type: "api-key", keyEnv: "MY_ANTHROPIC_KEY" }),
+    ).toEqual({
       ANTHROPIC_API_KEY: "sk-custom-xyz",
     });
   });
@@ -47,7 +56,9 @@ describe("resolveAuth", () => {
     writeFileSync(keyFile, "sk-from-file\n");
 
     try {
-      expect(resolveAuth({ type: "api-key", keyEnv: "ANTHROPIC_API_KEY", keyFile })).toEqual({
+      expect(
+        resolveAuth({ type: "api-key", keyEnv: "ANTHROPIC_API_KEY", keyFile }),
+      ).toEqual({
         ANTHROPIC_API_KEY: "sk-from-file",
       });
     } finally {
@@ -58,7 +69,9 @@ describe("resolveAuth", () => {
   it("returns empty when env absent and keyFile missing", () => {
     saveEnv("ANTHROPIC_API_KEY");
     delete process.env.ANTHROPIC_API_KEY;
-    expect(resolveAuth({ type: "api-key", keyEnv: "ANTHROPIC_API_KEY" })).toEqual({});
+    expect(
+      resolveAuth({ type: "api-key", keyEnv: "ANTHROPIC_API_KEY" }),
+    ).toEqual({});
   });
 });
 
@@ -66,7 +79,9 @@ describe("resolveEnvForwarding", () => {
   it("forwards KEY from host env", () => {
     saveEnv("MY_VAR");
     process.env.MY_VAR = "hello";
-    expect(resolveEnvForwarding(["MY_VAR"], [], [])).toEqual({ MY_VAR: "hello" });
+    expect(resolveEnvForwarding(["MY_VAR"], [], [])).toEqual({
+      MY_VAR: "hello",
+    });
   });
 
   it("skips KEY not present in host env", () => {
@@ -78,19 +93,27 @@ describe("resolveEnvForwarding", () => {
   it("uses inline KEY=VALUE without reading host env", () => {
     saveEnv("FORCE_VAR");
     delete process.env.FORCE_VAR;
-    expect(resolveEnvForwarding(["FORCE_VAR=literal"], [], [])).toEqual({ FORCE_VAR: "literal" });
+    expect(resolveEnvForwarding(["FORCE_VAR=literal"], [], [])).toEqual({
+      FORCE_VAR: "literal",
+    });
   });
 
   it("project keys override profile keys", () => {
-    expect(resolveEnvForwarding(["X=profile"], ["X=project"], [])).toEqual({ X: "project" });
+    expect(resolveEnvForwarding(["X=profile"], ["X=project"], [])).toEqual({
+      X: "project",
+    });
   });
 
   it("CLI overrides win over profile and project", () => {
-    expect(resolveEnvForwarding(["X=profile"], ["X=project"], ["X=cli"])).toEqual({ X: "cli" });
+    expect(
+      resolveEnvForwarding(["X=profile"], ["X=project"], ["X=cli"]),
+    ).toEqual({ X: "cli" });
   });
 
   it("handles value containing = sign", () => {
-    expect(resolveEnvForwarding(["TOKEN=abc=def=ghi"], [], [])).toEqual({ TOKEN: "abc=def=ghi" });
+    expect(resolveEnvForwarding(["TOKEN=abc=def=ghi"], [], [])).toEqual({
+      TOKEN: "abc=def=ghi",
+    });
   });
 
   it("merges keys from all three sources", () => {

@@ -1,14 +1,20 @@
-import { defineCommand } from "citty";
 import chalk from "chalk";
+import { defineCommand } from "citty";
 import { loadProjectConfig } from "../../../config/loader.ts";
-import { profileExists, getProfileDir } from "../../../profile/manager.ts";
-import { loadProfileConfig } from "../../../config/loader.ts";
-import { pluginsVolumeName, volumeExists, listVolumeEntries } from "../../../plugins/volume.ts";
+import {
+  listVolumeEntries,
+  pluginsVolumeName,
+  volumeExists,
+} from "../../../plugins/volume.ts";
+import { profileExists } from "../../../profile/manager.ts";
 
 export default defineCommand({
   meta: { description: "List plugins installed in a profile's volume" },
   args: {
-    profile: { type: "string", description: "Profile name (default: from .ccpod.yml or 'default')" },
+    profile: {
+      type: "string",
+      description: "Profile name (default: from .ccpod.yml or 'default')",
+    },
   },
   async run({ args }) {
     const projectConfig = loadProjectConfig(process.cwd());
@@ -23,7 +29,9 @@ export default defineCommand({
     const exists = await volumeExists(volName);
 
     if (!exists) {
-      console.log(`No plugins volume for profile '${profileName}'. Run 'ccpod run' to create it.`);
+      console.log(
+        `No plugins volume for profile '${profileName}'. Run 'ccpod run' to create it.`,
+      );
       return;
     }
 
@@ -32,9 +40,17 @@ export default defineCommand({
     let entries: string[];
     try {
       entries = await listVolumeEntries(volName, "/plugins");
-    } catch (e) {
-      console.log(chalk.yellow("Could not inspect volume (is Docker running with alpine image available?)."));
-      console.log(chalk.dim(`Manual inspect: docker run --rm -v ${volName}:/p alpine ls /p`));
+    } catch (_e) {
+      console.log(
+        chalk.yellow(
+          "Could not inspect volume (is Docker running with alpine image available?).",
+        ),
+      );
+      console.log(
+        chalk.dim(
+          `Manual inspect: docker run --rm -v ${volName}:/p alpine ls /p`,
+        ),
+      );
       return;
     }
 

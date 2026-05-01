@@ -1,13 +1,17 @@
-import { defineCommand } from "citty";
 import { confirm } from "@inquirer/prompts";
 import chalk from "chalk";
-import { profileExists, deleteProfile } from "../../../profile/manager.ts";
+import { defineCommand } from "citty";
+import { deleteProfile, profileExists } from "../../../profile/manager.ts";
 
 export default defineCommand({
   meta: { description: "Delete a profile" },
   args: {
     name: { type: "positional", description: "Profile name" },
-    force: { type: "boolean", description: "Skip confirmation prompt", default: false },
+    force: {
+      type: "boolean",
+      description: "Skip confirmation prompt",
+      default: false,
+    },
   },
   async run({ args }) {
     if (!args.name) {

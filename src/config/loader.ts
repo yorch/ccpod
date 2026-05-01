@@ -1,8 +1,8 @@
-import { readFileSync, existsSync } from "node:fs";
-import { join, dirname } from "node:path";
+import { existsSync, readFileSync } from "node:fs";
+import { dirname, join } from "node:path";
 import { parse as parseYaml } from "yaml";
-import { profileConfigSchema, projectConfigSchema } from "./schema.ts";
 import type { ProfileConfig, ProjectConfig } from "../types/index.ts";
+import { profileConfigSchema, projectConfigSchema } from "./schema.ts";
 
 export function loadProfileConfig(profileDir: string): ProfileConfig {
   const profilePath = join(profileDir, "profile.yml");

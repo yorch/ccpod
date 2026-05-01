@@ -1,8 +1,8 @@
-import { defineCommand } from "citty";
 import chalk from "chalk";
-import { listProfiles, getProfileDir } from "../../../profile/manager.ts";
+import { defineCommand } from "citty";
 import { loadProfileConfig } from "../../../config/loader.ts";
 import { getLastSync } from "../../../profile/lock.ts";
+import { getProfileDir, listProfiles } from "../../../profile/manager.ts";
 
 export default defineCommand({
   meta: { description: "List all profiles" },
@@ -19,19 +19,36 @@ export default defineCommand({
         const cfg = loadProfileConfig(profileDir);
         const lastSync = getLastSync(profileDir);
         const syncStr = lastSync ? lastSync.toLocaleDateString() : "-";
-        const source = cfg.config.source === "git" ? `git (${cfg.config.sync})` : "local";
-        return { name, image: cfg.image.use, source, state: cfg.state, sync: syncStr };
+        const source =
+          cfg.config.source === "git" ? `git (${cfg.config.sync})` : "local";
+        return {
+          name,
+          image: cfg.image.use,
+          imageDisplay: cfg.image.use,
+          source,
+          state: cfg.state,
+          sync: syncStr,
+        };
       } catch {
-        return { name, image: chalk.red("[invalid]"), source: "-", state: "-", sync: "-" };
+        return {
+          name,
+          image: "[invalid]",
+          imageDisplay: chalk.red("[invalid]"),
+          source: "-",
+          state: "-",
+          sync: "-",
+        };
       }
     });
 
     const nameW = Math.max(4, ...rows.map((r) => r.name.length));
-    const imageW = Math.max(5, ...rows.map((r) => r.image.replace(/\x1b\[[0-9;]*m/g, "").length));
+    const imageW = Math.max(5, ...rows.map((r) => r.image.length));
     const sourceW = Math.max(6, ...rows.map((r) => r.source.length));
     const stateW = Math.max(5, ...rows.map((r) => r.state.length));
 
-    const pad = (s: string, w: number) => s + " ".repeat(w - s.replace(/\x1b\[[0-9;]*m/g, "").length);
+    const pad = (s: string, w: number) => s.padEnd(w);
+    const padDisplay = (display: string, raw: string, w: number) =>
+      display + " ".repeat(w - raw.length);
 
     console.log(
       chalk.dim(
@@ -40,7 +57,7 @@ export default defineCommand({
     );
     for (const r of rows) {
       console.log(
-        `${chalk.cyan(pad(r.name, nameW))}  ${pad(r.image, imageW)}  ${pad(r.source, sourceW)}  ${pad(r.state, stateW)}  ${r.sync}`,
+        `${chalk.cyan(pad(r.name, nameW))}  ${padDisplay(r.imageDisplay, r.image, imageW)}  ${pad(r.source, sourceW)}  ${pad(r.state, stateW)}  ${r.sync}`,
       );
     }
   },

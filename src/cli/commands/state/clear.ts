@@ -1,15 +1,23 @@
-import { defineCommand } from "citty";
 import { confirm } from "@inquirer/prompts";
 import chalk from "chalk";
+import { defineCommand } from "citty";
 import { loadProjectConfig } from "../../../config/loader.ts";
+import {
+  removeVolume,
+  stateVolumeName,
+  volumeExists,
+} from "../../../plugins/volume.ts";
 import { profileExists } from "../../../profile/manager.ts";
-import { stateVolumeName, volumeExists, removeVolume } from "../../../plugins/volume.ts";
 
 export default defineCommand({
   meta: { description: "Clear persistent state volume for a profile" },
   args: {
     profile: { type: "string", description: "Profile name" },
-    force: { type: "boolean", description: "Skip confirmation prompt", default: false },
+    force: {
+      type: "boolean",
+      description: "Skip confirmation prompt",
+      default: false,
+    },
   },
   async run({ args }) {
     const projectConfig = loadProjectConfig(process.cwd());
@@ -24,7 +32,9 @@ export default defineCommand({
     const exists = await volumeExists(volName);
 
     if (!exists) {
-      console.log(`No persistent state volume for '${profileName}' (profile may use ephemeral state).`);
+      console.log(
+        `No persistent state volume for '${profileName}' (profile may use ephemeral state).`,
+      );
       return;
     }
 

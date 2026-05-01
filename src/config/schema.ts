@@ -1,9 +1,11 @@
 import { z } from "zod";
 
-const portsConfigSchema = z.object({
-  list: z.array(z.string()).default([]),
-  autoDetectMcp: z.boolean().default(true),
-}).default({ list: [], autoDetectMcp: true });
+const portsConfigSchema = z
+  .object({
+    list: z.array(z.string()).default([]),
+    autoDetectMcp: z.boolean().default(true),
+  })
+  .default({ list: [], autoDetectMcp: true });
 
 const serviceConfigSchema = z.object({
   image: z.string(),

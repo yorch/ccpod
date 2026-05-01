@@ -1,8 +1,10 @@
-import { readFileSync, existsSync } from "node:fs";
+import { existsSync, readFileSync } from "node:fs";
 import { homedir } from "node:os";
 import type { ProfileConfig } from "../types/index.ts";
 
-export function resolveAuth(auth: ProfileConfig["auth"]): Record<string, string> {
+export function resolveAuth(
+  auth: ProfileConfig["auth"],
+): Record<string, string> {
   if (auth.type === "oauth") {
     // OAuth tokens live in the credentials dir, mounted by entrypoint
     return {};
@@ -19,7 +21,9 @@ export function resolveAuth(auth: ProfileConfig["auth"]): Record<string, string>
     }
   }
 
-  console.warn(`Warning: ${envVar} not set and no keyFile found. Container may fail to authenticate.`);
+  console.warn(
+    `Warning: ${envVar} not set and no keyFile found. Container may fail to authenticate.`,
+  );
   return {};
 }
 

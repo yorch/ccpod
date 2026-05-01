@@ -1,4 +1,4 @@
-import { readFileSync, writeFileSync, existsSync } from "node:fs";
+import { existsSync, readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 
 const LOCK_FILE = ".ccpod-sync-lock";
@@ -14,7 +14,10 @@ export function writeSyncLock(profileDir: string): void {
   writeFileSync(join(profileDir, LOCK_FILE), String(Date.now()), "utf8");
 }
 
-export function shouldSync(profileDir: string, strategy: "always" | "daily" | "pin"): boolean {
+export function shouldSync(
+  profileDir: string,
+  strategy: "always" | "daily" | "pin",
+): boolean {
   if (strategy === "always") return true;
   if (strategy === "pin") return false;
   const last = getLastSync(profileDir);

@@ -23,8 +23,15 @@ export async function stopContainer(name: string): Promise<void> {
   await dockerExec(["rm", name]);
 }
 
-async function containerState(name: string): Promise<"running" | "stopped" | "not_found"> {
-  const { exitCode, stdout } = await dockerExec(["inspect", "--format", "{{.State.Status}}", name]);
+async function containerState(
+  name: string,
+): Promise<"running" | "stopped" | "not_found"> {
+  const { exitCode, stdout } = await dockerExec([
+    "inspect",
+    "--format",
+    "{{.State.Status}}",
+    name,
+  ]);
   if (exitCode !== 0) return "not_found";
   return stdout === "running" ? "running" : "stopped";
 }

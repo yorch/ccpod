@@ -1,14 +1,24 @@
-import { defineCommand } from "citty";
 import chalk from "chalk";
+import { defineCommand } from "citty";
 import { loadProjectConfig } from "../../../config/loader.ts";
+import {
+  pluginsVolumeName,
+  removeVolume,
+  volumeExists,
+} from "../../../plugins/volume.ts";
 import { profileExists } from "../../../profile/manager.ts";
-import { pluginsVolumeName, volumeExists, removeVolume } from "../../../plugins/volume.ts";
 
 export default defineCommand({
-  meta: { description: "Reset the plugins volume (forces reinstall on next run)" },
+  meta: {
+    description: "Reset the plugins volume (forces reinstall on next run)",
+  },
   args: {
     profile: { type: "string", description: "Profile name" },
-    reset: { type: "boolean", description: "Remove the volume entirely", default: false },
+    reset: {
+      type: "boolean",
+      description: "Remove the volume entirely",
+      default: false,
+    },
   },
   async run({ args }) {
     const projectConfig = loadProjectConfig(process.cwd());
@@ -22,9 +32,15 @@ export default defineCommand({
     const volName = pluginsVolumeName(profileName);
 
     if (!args.reset) {
-      console.log(`Use --reset to remove the plugins volume for '${profileName}'.`);
+      console.log(
+        `Use --reset to remove the plugins volume for '${profileName}'.`,
+      );
       console.log(chalk.dim(`Volume: ${volName}`));
-      console.log(chalk.dim("\nTo install specific plugins on next run, set CCPOD_PLUGINS_TO_INSTALL=plugin1,plugin2 in your profile env."));
+      console.log(
+        chalk.dim(
+          "\nTo install specific plugins on next run, set CCPOD_PLUGINS_TO_INSTALL=plugin1,plugin2 in your profile env.",
+        ),
+      );
       return;
     }
 

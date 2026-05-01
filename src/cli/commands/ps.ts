@@ -1,5 +1,5 @@
-import { defineCommand } from "citty";
 import chalk from "chalk";
+import { defineCommand } from "citty";
 import { dockerExec } from "../../runtime/docker.ts";
 
 type PsRow = { Names: string; Image: string; Status: string; Labels: string };
@@ -16,19 +16,28 @@ function parseLabels(raw: string): Record<string, string> {
 export default defineCommand({
   meta: { description: "List ccpod containers" },
   args: {
-    all: { type: "boolean", description: "Include stopped containers", default: false },
+    all: {
+      type: "boolean",
+      description: "Include stopped containers",
+      default: false,
+    },
   },
   async run({ args }) {
     const filterArgs = args.all ? ["-a"] : [];
     const { stdout } = await dockerExec([
       "ps",
       ...filterArgs,
-      "--filter", "label=ccpod.profile",
-      "--format", "{{json .}}",
+      "--filter",
+      "label=ccpod.profile",
+      "--format",
+      "{{json .}}",
     ]);
 
     if (!stdout) {
-      console.log("No ccpod containers" + (args.all ? "." : " running. Use --all to include stopped."));
+      console.log(
+        "No ccpod containers" +
+          (args.all ? "." : " running. Use --all to include stopped."),
+      );
       return;
     }
 
@@ -38,7 +47,10 @@ export default defineCommand({
       .map((line) => JSON.parse(line) as PsRow);
 
     if (containers.length === 0) {
-      console.log("No ccpod containers" + (args.all ? "." : " running. Use --all to include stopped."));
+      console.log(
+        "No ccpod containers" +
+          (args.all ? "." : " running. Use --all to include stopped."),
+      );
       return;
     }
 
@@ -54,7 +66,9 @@ export default defineCommand({
       const workdir = labels["ccpod.workdir"] ?? labels["ccpod.project"] ?? "-";
       const isRunning = c.Status.startsWith("Up");
       const stateRaw = isRunning ? "running" : "stopped";
-      const stateColored = isRunning ? chalk.green(stateRaw) : chalk.yellow(stateRaw);
+      const stateColored = isRunning
+        ? chalk.green(stateRaw)
+        : chalk.yellow(stateRaw);
       const statePad = " ".repeat(Math.max(0, 10 - stateRaw.length));
 
       console.log(

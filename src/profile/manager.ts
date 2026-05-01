@@ -1,6 +1,6 @@
-import { mkdirSync, existsSync, readdirSync, rmSync } from "node:fs";
-import { join } from "node:path";
+import { existsSync, mkdirSync, readdirSync, rmSync } from "node:fs";
 import { homedir } from "node:os";
+import { join } from "node:path";
 
 export const CCPOD_DIR = join(homedir(), ".ccpod");
 export const PROFILES_DIR = join(CCPOD_DIR, "profiles");

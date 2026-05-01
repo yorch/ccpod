@@ -5,7 +5,8 @@ const main = defineCommand({
   meta: {
     name: "ccpod",
     version: VERSION,
-    description: "Run Claude Code in Docker containers with portable, composable configuration",
+    description:
+      "Run Claude Code in Docker containers with portable, composable configuration",
   },
   subCommands: {
     run: () => import("./commands/run.ts").then((m) => m.default),

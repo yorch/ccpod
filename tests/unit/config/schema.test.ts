@@ -1,5 +1,8 @@
-import { describe, it, expect } from "bun:test";
-import { profileConfigSchema, projectConfigSchema } from "../../../src/config/schema.ts";
+import { describe, expect, it } from "bun:test";
+import {
+  profileConfigSchema,
+  projectConfigSchema,
+} from "../../../src/config/schema.ts";
 
 describe("profileConfigSchema", () => {
   it("parses minimal valid profile", () => {

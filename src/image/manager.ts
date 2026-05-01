@@ -10,13 +10,24 @@ export async function ensureImage(image: string, force = false): Promise<void> {
   await pullImage(image);
 }
 
-export async function buildImage(dockerfile: string, tag: string, contextDir: string): Promise<void> {
+export async function buildImage(
+  dockerfile: string,
+  tag: string,
+  contextDir: string,
+): Promise<void> {
   const dockerfilePath = existsSync(join(contextDir, dockerfile))
     ? join(contextDir, dockerfile)
     : dockerfile;
 
   console.log(`Building image: ${tag}`);
-  const exitCode = await dockerSpawn(["build", "-f", dockerfilePath, "-t", tag, contextDir]);
+  const exitCode = await dockerSpawn([
+    "build",
+    "-f",
+    dockerfilePath,
+    "-t",
+    tag,
+    contextDir,
+  ]);
   if (exitCode !== 0) throw new Error(`docker build failed (exit ${exitCode})`);
 }
 
