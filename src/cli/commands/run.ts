@@ -3,6 +3,7 @@ import { existsSync, readFileSync } from 'node:fs';
 import { dirname, isAbsolute, join, normalize } from 'node:path';
 import chalk from 'chalk';
 import { defineCommand } from 'citty';
+import deepmerge from 'deepmerge';
 import { ZodError } from 'zod';
 import { resolveAuth, resolveEnvForwarding } from '../../auth/resolver.ts';
 import { loadProfileConfig, loadProjectConfig } from '../../config/loader.ts';
@@ -166,10 +167,27 @@ export default defineCommand({
 
       const profileSettings =
         readJsonIfExists(join(configSourceDir, 'settings.json')) ?? {};
+      const projectClaudeDir = join(cwd, '.claude');
+      // Trust boundary: project .claude/settings.json is treated as untrusted
+      // (repo-provided). It deep-merges into profile settings with project winning
+      // on conflicts — same trust level as claudeArgs passthrough. Only run ccpod
+      // against repos you trust; do not use with third-party repos in CI without
+      // reviewing their .claude/settings.json.
+      const projectSettings =
+        readJsonIfExists(join(projectClaudeDir, 'settings.json')) ?? {};
+      const mergedSettings = deepmerge(profileSettings, projectSettings, {
+        arrayMerge: (dest: unknown[], src: unknown[]) => {
+          const combined = [...dest, ...src];
+          return combined.every((item) => typeof item === 'string')
+            ? [...new Set(combined as string[])]
+            : combined;
+        },
+      }) as object;
       const mergedConfigDir = writeMergedConfig(
         configSourceDir,
         mergedClaudeMd,
-        profileSettings,
+        mergedSettings,
+        projectClaudeDir,
       );
 
       // 7. Resolve image — build locally if use === "build", else pull

@@ -12,27 +12,47 @@ import {
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 
-function hashProfileDir(dir: string): string {
-  if (!existsSync(dir)) return '';
-  const hash = createHash('sha256');
+function hashDir(dir: string, hash: ReturnType<typeof createHash>): void {
+  if (!existsSync(dir)) return;
   for (const entry of readdirSync(dir).sort()) {
     const p = join(dir, entry);
     const stat = lstatSync(p);
-    if (!stat.isSymbolicLink()) {
+    if (stat.isSymbolicLink()) continue;
+    if (stat.isDirectory()) {
+      hash.update(`${entry}/`);
+      hashDir(p, hash);
+    } else {
       hash.update(`${entry}:${stat.mtimeMs}:${stat.size}`);
     }
   }
+}
+
+function hashProfileDir(dir: string): string {
+  const hash = createHash('sha256');
+  hashDir(dir, hash);
   return hash.digest('hex').slice(0, 8);
+}
+
+function copyAssets(srcDir: string, destDir: string): void {
+  if (!existsSync(srcDir)) return;
+  for (const entry of readdirSync(srcDir)) {
+    const src = join(srcDir, entry);
+    if (lstatSync(src).isSymbolicLink()) continue;
+    if (entry === 'CLAUDE.md' || entry === 'settings.json') continue;
+    cpSync(src, join(destDir, entry), { recursive: true });
+  }
 }
 
 export function writeMergedConfig(
   profileConfigDir: string,
   mergedClaudeMd: string,
   mergedSettings: object,
+  projectClaudeDir?: string,
 ): string {
   const content = JSON.stringify({
     claudeMd: mergedClaudeMd,
     profileDirHash: hashProfileDir(profileConfigDir),
+    projectDirHash: projectClaudeDir ? hashProfileDir(projectClaudeDir) : '',
     settings: mergedSettings,
   });
   const hash = createHash('sha256').update(content).digest('hex').slice(0, 16);
@@ -42,14 +62,9 @@ export function writeMergedConfig(
 
   const tmpOut = mkdtempSync(join(tmpdir(), 'ccpod-tmp-'));
   try {
-    if (existsSync(profileConfigDir)) {
-      for (const entry of readdirSync(profileConfigDir)) {
-        const src = join(profileConfigDir, entry);
-        if (lstatSync(src).isSymbolicLink()) continue;
-        if (entry === 'CLAUDE.md' || entry === 'settings.json') continue;
-        cpSync(src, join(tmpOut, entry), { recursive: true });
-      }
-    }
+    // Profile assets first; project assets second so project wins on conflict
+    copyAssets(profileConfigDir, tmpOut);
+    if (projectClaudeDir) copyAssets(projectClaudeDir, tmpOut);
 
     writeFileSync(join(tmpOut, 'CLAUDE.md'), mergedClaudeMd, {
       encoding: 'utf8',
