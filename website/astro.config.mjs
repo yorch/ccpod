@@ -7,38 +7,6 @@ export default defineConfig({
   base: '/',
   integrations: [
     starlight({
-      head: [
-        {
-          tag: 'script',
-          attrs: {
-            src: 'https://www.googletagmanager.com/gtag/js?id=G-VJXW4GZXT6',
-            async: true,
-          },
-        },
-        {
-          tag: 'script',
-          content: `
-window.dataLayer = window.dataLayer || [];
-function gtag(){dataLayer.push(arguments);}
-gtag('js', new Date());
-gtag('config', 'G-VJXW4GZXT6');
-`,
-        },
-        {
-          tag: 'script',
-          attrs: {
-            src: 'https://plausible.brnby.com/js/pa-eRH3SRTdLLQukpA4zRNB1.js',
-            async: true,
-          },
-        },
-        {
-          tag: 'script',
-          content: `
-window.plausible=window.plausible||function(){(plausible.q=plausible.q||[]).push(arguments)},plausible.init=plausible.init||function(i){plausible.o=i||{}};
-plausible.init()
-`,
-        },
-      ],
       components: {
         Footer: './src/components/Footer.astro',
       },
@@ -47,6 +15,38 @@ plausible.init()
       editLink: {
         baseUrl: 'https://github.com/yorch/ccpod/edit/main/website/',
       },
+      head: [
+        {
+          attrs: {
+            async: true,
+            src: 'https://www.googletagmanager.com/gtag/js?id=G-VJXW4GZXT6',
+          },
+          tag: 'script',
+        },
+        {
+          content: `
+window.dataLayer = window.dataLayer || [];
+function gtag(){dataLayer.push(arguments);}
+gtag('js', new Date());
+gtag('config', 'G-VJXW4GZXT6');
+`,
+          tag: 'script',
+        },
+        {
+          attrs: {
+            async: true,
+            src: 'https://plausible.brnby.com/js/pa-eRH3SRTdLLQukpA4zRNB1.js',
+          },
+          tag: 'script',
+        },
+        {
+          content: `
+window.plausible=window.plausible||function(){(plausible.q=plausible.q||[]).push(arguments)},plausible.init=plausible.init||function(i){plausible.o=i||{}};
+plausible.init()
+`,
+          tag: 'script',
+        },
+      ],
       logo: {
         replacesTitle: false,
         src: './src/assets/logo.svg',
