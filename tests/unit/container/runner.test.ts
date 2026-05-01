@@ -1,4 +1,4 @@
-import { beforeEach, describe, expect, it, mock } from "bun:test";
+import { describe, expect, it, mock } from "bun:test";
 import type { ContainerSpec } from "../../../src/container/builder.ts";
 import type { RunnerDeps } from "../../../src/container/runner.ts";
 import { runContainer } from "../../../src/container/runner.ts";

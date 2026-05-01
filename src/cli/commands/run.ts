@@ -7,8 +7,12 @@ import { resolveAuth, resolveEnvForwarding } from "../../auth/resolver.ts";
 import { loadProfileConfig, loadProjectConfig } from "../../config/loader.ts";
 import { mergeClaudes, mergeConfigs } from "../../config/merger.ts";
 import { writeMergedConfig } from "../../config/writer.ts";
-import { buildContainerSpec } from "../../container/builder.ts";
+import {
+  buildContainerSpec,
+  computeProjectHash,
+} from "../../container/builder.ts";
 import { runContainer } from "../../container/runner.ts";
+import { sidecarNetworkName, startSidecars } from "../../container/sidecars.ts";
 import { buildImage, ensureImage } from "../../image/manager.ts";
 import { extractHttpMcpPorts, parseMcpJson } from "../../mcp/parser.ts";
 import { syncGitConfig } from "../../profile/git-sync.ts";
@@ -167,9 +171,18 @@ export default defineCommand({
         ports: [...partial.ports, ...mcpPorts],
       };
 
-      // 9. Launch
+      // 9. Start sidecars (if any) and launch
+      const hash = computeProjectHash(cwd);
+      let networkName: string | undefined;
+
+      if (Object.keys(config.services).length > 0) {
+        networkName = sidecarNetworkName(hash);
+        console.log(chalk.bold("Starting sidecars..."));
+        await startSidecars(config.services, networkName, profileName, hash);
+      }
+
       const tty = !fileArg;
-      const spec = buildContainerSpec(config, cwd, tty);
+      const spec = buildContainerSpec(config, cwd, tty, networkName);
       const exitCode = await runContainer(spec);
       process.exit(exitCode);
     } catch (err) {

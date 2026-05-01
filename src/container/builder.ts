@@ -19,15 +19,17 @@ export interface ContainerSpec {
   workingDir: string;
 }
 
+export function computeProjectHash(projectDir: string): string {
+  return createHash("sha256").update(projectDir).digest("hex").slice(0, 16);
+}
+
 export function buildContainerSpec(
   config: ResolvedConfig,
   projectDir: string,
   tty: boolean,
+  networkName?: string,
 ): ContainerSpec {
-  const projectHash = createHash("sha256")
-    .update(projectDir)
-    .digest("hex")
-    .slice(0, 16);
+  const hash = computeProjectHash(projectDir);
   const credentialsDir = getCredentialsDir(config.profileName);
 
   const binds = [
@@ -40,7 +42,6 @@ export function buildContainerSpec(
     binds.push(`${homedir()}/.ssh:/root/.ssh:ro`);
   }
 
-  // Named volumes - Docker accepts `volumeName:/path` in Binds
   binds.push(`ccpod-plugins-${config.profileName}:/ccpod/plugins`);
   if (config.state === "persistent") {
     binds.push(`ccpod-state-${config.profileName}:/ccpod/state`);
@@ -62,7 +63,7 @@ export function buildContainerSpec(
   if (config.ssh.agentForward && process.env.SSH_AUTH_SOCK) {
     const sshSock = process.env.SSH_AUTH_SOCK;
     if (!sshSock.includes(":")) {
-      env.push(`SSH_AUTH_SOCK=/run/host-services/ssh-auth.sock`);
+      env.push("SSH_AUTH_SOCK=/run/host-services/ssh-auth.sock");
       binds.push(`${sshSock}:/run/host-services/ssh-auth.sock:ro`);
     }
   }
@@ -73,13 +74,13 @@ export function buildContainerSpec(
     image: config.image,
     labels: {
       "ccpod.profile": config.profileName,
-      "ccpod.project": projectHash,
+      "ccpod.project": hash,
       "ccpod.type": "main",
       "ccpod.version": VERSION,
       "ccpod.workdir": projectDir,
     },
-    name: `ccpod-${config.profileName}-${projectHash}`,
-    networkMode: "bridge",
+    name: `ccpod-${config.profileName}-${hash}`,
+    networkMode: networkName ?? "bridge",
     openStdin: tty,
     portBindings,
     tty,

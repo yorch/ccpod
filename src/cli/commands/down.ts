@@ -1,6 +1,10 @@
 import { createHash } from "node:crypto";
 import chalk from "chalk";
 import { defineCommand } from "citty";
+import {
+  removeSidecarNetwork,
+  sidecarNetworkName,
+} from "../../container/sidecars.ts";
 import { dockerExec } from "../../runtime/docker.ts";
 
 export default defineCommand({
@@ -76,6 +80,13 @@ export default defineCommand({
       } else {
         console.log(chalk.green("done"));
       }
+    }
+
+    // Remove shared sidecar network for this project (idempotent — ignore errors)
+    if (!args.all) {
+      await removeSidecarNetwork(sidecarNetworkName(projectHash)).catch(
+        () => {},
+      );
     }
   },
 });
