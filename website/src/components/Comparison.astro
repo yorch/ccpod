@@ -22,17 +22,17 @@ const rows = [
   <table>
     <thead>
       <tr>
-        <th>Concern</th>
-        <th>Bare Claude Code</th>
-        <th>ccpod</th>
+        <th class="col-feature">Feature</th>
+        <th class="col-bare">Bare Claude Code</th>
+        <th class="col-ccpod">ccpod</th>
       </tr>
     </thead>
     <tbody>
       {rows.map(([concern, bare, ccpod]) => (
         <tr>
-          <td>{concern}</td>
-          <td>{bare}</td>
-          <td>{ccpod}</td>
+          <td class="col-feature">{concern}</td>
+          <td class="col-bare">{bare}</td>
+          <td class="col-ccpod">{ccpod}</td>
         </tr>
       ))}
     </tbody>

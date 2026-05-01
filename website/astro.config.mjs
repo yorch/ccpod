@@ -7,6 +7,9 @@ export default defineConfig({
   base: "/ccpod",
   integrations: [
     starlight({
+      components: {
+        Footer: "./src/components/Footer.astro",
+      },
       customCss: ["./src/styles/custom.css"],
       description: "Run Claude Code in Docker. Portable, composable profiles.",
       editLink: {

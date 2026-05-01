@@ -27,8 +27,9 @@ const features = [
 ];
 ---
 <div class="hero-features">
-  {features.map((f) => (
+  {features.map((f, i) => (
     <div class="hero-feature">
+      <span class="feature-num">{String(i + 1).padStart(2, '0')}</span>
       <h3>{f.title}</h3>
       <p>{f.body}</p>
     </div>
