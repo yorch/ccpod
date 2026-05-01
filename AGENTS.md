@@ -27,7 +27,7 @@ bun test tests/unit/config/merger.test.ts  # single test file
 4. **Auth** — `src/auth/resolver.ts` resolves API key or OAuth credentials into env vars.
 5. **Config write** — `src/config/writer.ts` writes merged config to a temp dir mounted as `/ccpod/config` in the container.
 6. **Container spec** — `src/container/builder.ts` builds the `ContainerSpec` (binds, env, ports, labels, tmpfs).
-7. **Run** — `src/container/runner.ts` creates/reattaches/starts the container via dockerode. TTY mode = interactive; headless mode (`--file`) streams logs.
+7. **Run** — `src/container/runner.ts` creates/reattaches/starts the container via `docker` CLI (`Bun.spawn`). TTY mode = interactive; headless mode (`--file`) streams logs.
 
 ### Key modules
 
@@ -35,7 +35,7 @@ bun test tests/unit/config/merger.test.ts  # single test file
 |------|---------|
 | `src/types/index.ts` | Shared types: `ProfileConfig`, `ProjectConfig`, `ResolvedConfig`, `ContainerSpec` |
 | `src/runtime/detector.ts` | Auto-detects OrbStack / Docker / Colima / Podman socket |
-| `src/runtime/client.ts` | Returns a dockerode client using the detected socket |
+| `src/runtime/docker.ts` | `dockerExec` (capture stdout/stderr) and `dockerSpawn` (inherit stdio) |
 | `src/profile/manager.ts` | `~/.ccpod/` directory layout, profile CRUD |
 | `src/mcp/parser.ts` | Reads `.mcp.json` to auto-expose MCP HTTP ports |
 | `src/image/manager.ts` | Pull or `docker build` the container image |

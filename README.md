@@ -12,7 +12,7 @@ Works with Docker, Podman, OrbStack, and Colima — auto-detected.
 
 ```sh
 # From binary release
-curl -fsSL https://github.com/ccpod/ccpod/releases/latest/download/ccpod-$(uname -s)-$(uname -m) -o /usr/local/bin/ccpod
+curl -fsSL https://github.com/yorch/ccpod/releases/latest/download/ccpod-$(uname -s)-$(uname -m) -o /usr/local/bin/ccpod
 chmod +x /usr/local/bin/ccpod
 
 # Or build from source (requires Bun)
@@ -54,7 +54,7 @@ config:
   # ref: main
 
 image:
-  use: ghcr.io/ccpod/base:latest   # pre-built image with Claude Code
+  use: ghcr.io/yorch/ccpod:latest   # pre-built image with Claude Code
   # use: build                     # build locally using dockerfile:
   # dockerfile: ./Dockerfile
 
@@ -218,6 +218,6 @@ Everyone gets the same CLAUDE.md, settings, and plugins. Updates flow in daily (
 
 ## Base image
 
-The official base image is `ghcr.io/ccpod/base` — published automatically whenever `@anthropic-ai/claude-code` releases a new version. Tags track Claude Code versions: `ghcr.io/ccpod/base:2.1.120`, `ghcr.io/ccpod/base:latest`.
+The official base image is `ghcr.io/yorch/ccpod` — built from `docker/Dockerfile` and published automatically on every push to `main` (`:main`, `:latest`) and on version tags (`:1.2.3`, `:1.2`).
 
 To use a custom image, set `image.use` in your profile. To build locally from a Dockerfile, set `image.use: build` and `image.dockerfile: ./Dockerfile`.

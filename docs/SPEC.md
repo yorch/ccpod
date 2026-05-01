@@ -17,7 +17,7 @@ CLI tool (TypeScript + Bun, single binary) that runs Claude Code inside Docker c
 | Tests | Bun test runner |
 | Container runtimes | Docker, Podman, OrbStack, Colima (auto-detect socket) |
 | Config format | YAML |
-| Base image | `ghcr.io/ccpod/base` — auto-published tracking `@anthropic-ai/claude-code` npm releases |
+| Base image | `ghcr.io/yorch/ccpod` — auto-published tracking `@anthropic-ai/claude-code` npm releases |
 
 ---
 
@@ -101,7 +101,7 @@ The `~/.claude/` directory has three distinct categories requiring different per
 
 | ID | Requirement |
 |---|---|
-| F-40 | Official base image: `ghcr.io/ccpod/base` with Claude Code pre-installed |
+| F-40 | Official base image: `ghcr.io/yorch/ccpod` with Claude Code pre-installed |
 | F-41 | Override with `image: my-registry/my-image:tag` in profile |
 | F-42 | `dockerfile:` path is resolved relative to `$PWD` (project dir) at runtime, not relative to the profile dir |
 | F-42a | When `dockerfile:` is set, ccpod auto-builds on first run using tag `ccpod-local-<profile>-<sha256-of-dockerfile-path>`; subsequent runs reuse that tag unless `--rebuild` is passed |
@@ -186,7 +186,7 @@ config:
   # ref: main
 
 image:
-  use: ghcr.io/ccpod/base:latest    # or "build"
+  use: ghcr.io/yorch/ccpod:latest    # or "build"
   # dockerfile: ./Dockerfile
 
 auth:

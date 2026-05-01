@@ -84,8 +84,7 @@ src/
 │
 ├── runtime/
 │   ├── detector.ts              # Socket auto-detection per runtime
-│   ├── client.ts                # Thin wrapper over dockerode
-│   └── types.ts                 # ContainerRuntime interface
+│   └── docker.ts                # dockerExec (capture) / dockerSpawn (inherit stdio)
 │
 ├── container/
 │   ├── builder.ts               # ResolvedConfig → ContainerSpec
@@ -127,11 +126,12 @@ src/
 | `citty` | CLI framework (lightweight, Bun-native) |
 | `zod` | Schema validation for config files |
 | `yaml` | YAML parse/serialize |
-| `dockerode` | Docker SDK (works with any compatible socket) |
 | `deepmerge` | Deep-merge for settings.json |
 | `@inquirer/prompts` | Interactive wizard prompts |
 | `simple-git` | Git operations for profile sync |
 | `chalk` | Terminal output colouring |
+
+Docker operations use the `docker` CLI via `Bun.spawn` — no Docker SDK dependency. Two helpers in `src/runtime/docker.ts`: `dockerExec` (captures stdout/stderr) and `dockerSpawn` (inherits stdio for TTY sessions).
 
 ---
 
@@ -443,7 +443,7 @@ const RUNTIME_CANDIDATES = [
   },
 ] as const;
 
-export async function detectRuntime(): Promise<ContainerRuntime> { ... }
+export function detectRuntime(): DetectedRuntime { ... }
 ```
 
 Dockerode accepts a custom socket path, so after detection the rest of the code uses the same API regardless of runtime.
@@ -491,31 +491,30 @@ export function generateIptablesRules(allowList: string[]): string[] {
 
 ## 10. Base Image Strategy
 
-**Tagging convention:** `ghcr.io/ccpod/base:<claude-code-version>`
-e.g. `ghcr.io/ccpod/base:2.1.120`, `ghcr.io/ccpod/base:latest`
+**Image:** `ghcr.io/yorch/ccpod`
 
-**Release automation (GitHub Actions):**
-- Watch `@anthropic-ai/claude-code` on npm registry (poll or webhook)
-- On new version: build + push new image tag
-- Update `latest` tag
+**Publish triggers (`.github/workflows/docker.yml`):**
+
+| Event | Tags pushed |
+|---|---|
+| Push to `main` | `:main`, `:latest` |
+| Push `v1.2.3` tag | `:1.2.3`, `:1.2` |
 
 ```dockerfile
 # docker/Dockerfile
-FROM node:24-slim
-
-ARG CLAUDE_VERSION=latest
-RUN npm install -g @anthropic-ai/claude-code@${CLAUDE_VERSION}
+FROM node:22-slim
 
 RUN apt-get update && apt-get install -y --no-install-recommends \
-    git curl openssh-client python3 python3-pip \
-    iptables \
+    git openssh-client curl ca-certificates \
     && rm -rf /var/lib/apt/lists/*
 
-COPY entrypoint.sh /ccpod/entrypoint.sh
-RUN chmod +x /ccpod/entrypoint.sh
+RUN npm install -g @anthropic-ai/claude-code
 
 WORKDIR /workspace
-ENTRYPOINT ["/ccpod/entrypoint.sh"]
+COPY entrypoint.sh /usr/local/bin/entrypoint.sh
+RUN chmod +x /usr/local/bin/entrypoint.sh
+
+ENTRYPOINT ["/usr/local/bin/entrypoint.sh"]
 CMD ["claude"]
 ```
 
