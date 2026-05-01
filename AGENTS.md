@@ -50,9 +50,9 @@ bun test tests/unit/config/merger.test.ts  # single test file
     profile.yml          # profile config
     config/              # Claude config dir (if source: git, cloned here)
   credentials/<name>/    # auth tokens/keys
+  state/<name>/          # persistent state (when state: persistent)
 Docker volumes:
   ccpod-plugins-<profile>   # persistent plugin installs
-  ccpod-state-<profile>     # persistent state (when state: persistent)
 ```
 
 ### Container mounts
@@ -61,7 +61,7 @@ Docker volumes:
 - `/ccpod/config` — merged Claude config dir (ro)
 - `/ccpod/credentials` — auth credentials (rw)
 - `/ccpod/plugins` — named volume for plugins
-- `/ccpod/state` — named volume (persistent) or tmpfs (ephemeral)
+- `/ccpod/state` — host bind `~/.ccpod/state/<profile>/` (persistent) or tmpfs (ephemeral)
 
 ### Security invariants
 
@@ -74,3 +74,23 @@ Docker volumes:
 ### Testing
 
 Tests live in `tests/unit/` and `tests/integration/`. Fixtures in `tests/fixtures/`. Unit tests use `bun:test`; `mock.module()` is used for Docker subprocess isolation in container tests.
+
+## Commit Checklist
+
+Before every commit:
+
+1. **Quality gates** — `bun run typecheck && bun test tests/unit/ && bun run check` must all pass
+2. **Docs** — update `CLAUDE.md`, `docs/ARCHITECTURE.md`, or any affected docs to reflect the change
+3. **Code review** — spawn a fresh subagent (`feature-dev:code-reviewer`) to review the diff; address any real bugs or meaningful risks before committing
+
+Commit messages must follow [Conventional Commits](https://www.conventionalcommits.org/):
+
+```
+<type>(<scope>): <summary>
+
+<body>
+```
+
+Types: `feat`, `fix`, `refactor`, `test`, `docs`, `chore`, `perf`, `ci`
+
+Example: `feat(state): replace Docker volume with host bind mount`
