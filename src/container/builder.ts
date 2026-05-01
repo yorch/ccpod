@@ -101,6 +101,8 @@ export function buildContainerSpec(
     tty,
     workingDir: '/workspace',
     ...(Object.keys(tmpfs).length > 0 ? { tmpfs } : {}),
-    ...(config.claudeArgs.length > 0 ? { cmd: config.claudeArgs } : {}),
+    ...(config.claudeArgs.length > 0
+      ? { cmd: ['claude', ...config.claudeArgs] }
+      : {}),
   };
 }

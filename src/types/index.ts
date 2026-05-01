@@ -16,6 +16,7 @@ export interface ProfileConfig {
     keyEnv?: string;
     keyFile?: string;
   };
+  claudeArgs: string[];
   config: {
     source: 'local' | 'git';
     path?: string;
@@ -45,6 +46,7 @@ export interface ProfileConfig {
 }
 
 export interface ProjectConfig {
+  claudeArgs?: string[];
   config?: {
     claudeMd?: ClaudeMdMerge;
   };

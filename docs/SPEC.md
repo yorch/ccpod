@@ -195,6 +195,9 @@ auth:
   # keyEnv: ANTHROPIC_API_KEY
   # keyFile: /run/secrets/api-key
 
+claudeArgs: []                      # extra flags passed to claude on every run
+# claudeArgs: ["--dangerously-skip-permissions", "--model", "claude-opus-4-5"]
+
 state: ephemeral                    # "ephemeral" | "persistent"
 
 ssh:
@@ -224,6 +227,9 @@ services:
 ```yaml
 profile: personal
 merge: deep                         # "deep" | "override"
+
+claudeArgs:                         # deep: appended after profile; override: replaces profile
+  - "--dangerously-skip-permissions"
 
 config:
   claudeMd: append                  # "append" | "override"

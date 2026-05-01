@@ -141,6 +141,7 @@ export type ClaudeMdMerge = 'append' | 'override';
 export interface ProfileConfig {
   name: string;
   description?: string;
+  claudeArgs: string[];   // extra flags passed to claude on every run
   config: {
     source: 'local' | 'git';
     path?: string;      // local
@@ -180,11 +181,12 @@ export interface ProfileConfig {
 export interface ProjectConfig {
   profile?: string;
   merge?: MergeStrategy;
+  claudeArgs?: string[];  // extra flags; deep=concat after profile, override=replace
   config?: {
     claudeMd?: ClaudeMdMerge;
   };
   network?: Partial<ProfileConfig['network']>;
-  ports?: PortMapping[];
+  ports?: Partial<PortsConfig>;
   services?: Record<string, ServiceConfig>;
   env?: string[];
 }

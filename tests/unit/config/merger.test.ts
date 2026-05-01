@@ -5,6 +5,7 @@ import type { ProfileConfig } from '../../../src/types/index.ts';
 function makeProfile(overrides: Partial<ProfileConfig> = {}): ProfileConfig {
   return {
     auth: { keyEnv: 'ANTHROPIC_API_KEY', type: 'api-key' },
+    claudeArgs: [],
     config: { path: '/tmp/cfg', source: 'local', sync: 'daily' },
     env: [],
     image: { use: 'ghcr.io/ccpod/base:latest' },
@@ -99,6 +100,39 @@ describe('mergeConfigs', () => {
     expect(() => mergeConfigs(profile, null)).toThrow(
       'Invalid port mapping "0:3000"',
     );
+  });
+
+  it('deep merge: claudeArgs concatenates profile then project', () => {
+    const profile = makeProfile({ claudeArgs: ['--verbose'] });
+    const result = mergeConfigs(profile, {
+      claudeArgs: ['--model', 'claude-opus-4-5'],
+    });
+    expect(result.claudeArgs).toEqual([
+      '--verbose',
+      '--model',
+      'claude-opus-4-5',
+    ]);
+  });
+
+  it('override strategy: project claudeArgs replaces profile', () => {
+    const profile = makeProfile({ claudeArgs: ['--verbose'] });
+    const result = mergeConfigs(profile, {
+      claudeArgs: ['--dangerously-skip-permissions'],
+      merge: 'override',
+    });
+    expect(result.claudeArgs).toEqual(['--dangerously-skip-permissions']);
+  });
+
+  it('override strategy with no project claudeArgs produces empty (clean slate)', () => {
+    const profile = makeProfile({ claudeArgs: ['--verbose'] });
+    const result = mergeConfigs(profile, { merge: 'override' });
+    expect(result.claudeArgs).toEqual([]);
+  });
+
+  it('null project: claudeArgs comes from profile', () => {
+    const profile = makeProfile({ claudeArgs: ['--verbose'] });
+    const result = mergeConfigs(profile, null);
+    expect(result.claudeArgs).toEqual(['--verbose']);
   });
 });
 

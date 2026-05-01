@@ -147,4 +147,23 @@ describe('buildContainerSpec', () => {
     );
     expect(spec.image).toBe('my-custom:1.2.3');
   });
+
+  it('empty claudeArgs omits cmd (uses Dockerfile CMD)', () => {
+    const spec = buildContainerSpec(makeConfig(), PROJECT_DIR, true);
+    expect(spec.cmd).toBeUndefined();
+  });
+
+  it('non-empty claudeArgs prepends claude to cmd', () => {
+    const spec = buildContainerSpec(
+      makeConfig({ claudeArgs: ['--verbose', '--model', 'claude-opus-4-5'] }),
+      PROJECT_DIR,
+      false,
+    );
+    expect(spec.cmd).toEqual([
+      'claude',
+      '--verbose',
+      '--model',
+      'claude-opus-4-5',
+    ]);
+  });
 });

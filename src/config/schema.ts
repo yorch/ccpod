@@ -22,6 +22,7 @@ export const profileConfigSchema = z.object({
       type: z.enum(['api-key', 'oauth']).default('api-key'),
     })
     .default({ keyEnv: 'ANTHROPIC_API_KEY', type: 'api-key' }),
+  claudeArgs: z.array(z.string()).default([]),
   config: z.object({
     path: z.string().optional(),
     ref: z.string().optional(),
@@ -62,6 +63,7 @@ export const profileConfigSchema = z.object({
 });
 
 export const projectConfigSchema = z.object({
+  claudeArgs: z.array(z.string()).optional(),
   config: z
     .object({
       claudeMd: z.enum(['append', 'override']).default('append'),

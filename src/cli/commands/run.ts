@@ -187,9 +187,17 @@ export default defineCommand({
       }
 
       // 8. Build full config
+      const passthroughIdx = process.argv.indexOf('--');
+      const passthroughArgs =
+        passthroughIdx >= 0 ? process.argv.slice(passthroughIdx + 1) : [];
+
       const config: ResolvedConfig = {
         ...partial,
-        claudeArgs: fileArg ? ['--file', `/workspace/${fileArg}`] : [],
+        claudeArgs: [
+          ...partial.claudeArgs,
+          ...(fileArg ? ['--file', `/workspace/${fileArg}`] : []),
+          ...passthroughArgs,
+        ],
         env,
         image,
         mergedConfigDir,

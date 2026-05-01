@@ -138,6 +138,7 @@ export async function runWizard(profileName = 'default'): Promise<void> {
 
   const profile: ProfileConfigInput = {
     auth: authConfig,
+    claudeArgs: [],
     config: configConfig,
     env: [],
     image: { use: 'ghcr.io/yorch/ccpod:latest' },
@@ -197,6 +198,13 @@ export function buildAnnotatedProfileYaml(profile: ProfileConfigInput): string {
       s.push(`  keyEnv: ${profile.auth?.keyEnv ?? 'ANTHROPIC_API_KEY'}`);
     }
   }
+  s.push('');
+
+  s.push(
+    '# Extra CLI flags passed to the claude command on every run (profile-level baseline).',
+  );
+  s.push('# Example: ["--verbose", "--model", "claude-opus-4-5"]');
+  s.push(`claudeArgs: []`);
   s.push('');
 
   s.push(
