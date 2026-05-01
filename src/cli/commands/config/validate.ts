@@ -69,7 +69,8 @@ export default defineCommand({
       if (src?.source === "local" && src.path) {
         allOk =
           check(`config source path (${src.path})`, () => {
-            if (!existsSync(src.path!)) throw new Error("Directory not found");
+            if (!existsSync(src.path ?? ""))
+              throw new Error("Directory not found");
           }) && allOk;
       }
       if (src?.source === "git" && src.repo) {

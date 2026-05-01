@@ -39,7 +39,7 @@ export function resolveEnvForwarding(
     if (eqIdx !== -1) {
       resolved[key.slice(0, eqIdx)] = key.slice(eqIdx + 1);
     } else if (process.env[key] !== undefined) {
-      resolved[key] = process.env[key]!;
+      resolved[key] = process.env[key] ?? "";
     }
   }
 

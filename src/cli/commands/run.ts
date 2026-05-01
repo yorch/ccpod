@@ -73,13 +73,12 @@ export default defineCommand({
     });
 
     // 4. MCP port auto-detection
-    const mcpPorts = partial.autoDetectMcp
-      ? parseMcpJson(cwd)
-        ? extractHttpMcpPorts(parseMcpJson(cwd)!).map((port) => ({
-            host: port,
-            container: port,
-          }))
-        : []
+    const mcpJson = partial.autoDetectMcp ? parseMcpJson(cwd) : null;
+    const mcpPorts = mcpJson
+      ? extractHttpMcpPorts(mcpJson).map((port) => ({
+          host: port,
+          container: port,
+        }))
       : [];
 
     // 5. Resolve environment
