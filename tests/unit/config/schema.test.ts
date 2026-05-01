@@ -7,16 +7,16 @@ import {
 describe("profileConfigSchema", () => {
   it("parses minimal valid profile", () => {
     const result = profileConfigSchema.safeParse({
+      config: { path: "/tmp/config", source: "local" },
       name: "test",
-      config: { source: "local", path: "/tmp/config" },
     });
     expect(result.success).toBe(true);
   });
 
   it("applies defaults", () => {
     const result = profileConfigSchema.parse({
-      name: "test",
       config: { source: "local" },
+      name: "test",
     });
     expect(result.state).toBe("ephemeral");
     expect(result.ssh.agentForward).toBe(true);
@@ -26,8 +26,8 @@ describe("profileConfigSchema", () => {
 
   it("rejects unknown source", () => {
     const result = profileConfigSchema.safeParse({
-      name: "test",
       config: { source: "ftp" },
+      name: "test",
     });
     expect(result.success).toBe(false);
   });

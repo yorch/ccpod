@@ -10,15 +10,15 @@ import {
 import { profileExists } from "../../../profile/manager.ts";
 
 export default defineCommand({
-  meta: { description: "Clear persistent state volume for a profile" },
   args: {
-    profile: { type: "string", description: "Profile name" },
     force: {
-      type: "boolean",
-      description: "Skip confirmation prompt",
       default: false,
+      description: "Skip confirmation prompt",
+      type: "boolean",
     },
+    profile: { description: "Profile name", type: "string" },
   },
+  meta: { description: "Clear persistent state volume for a profile" },
   async run({ args }) {
     const projectConfig = loadProjectConfig(process.cwd());
     const profileName = args.profile ?? projectConfig?.profile ?? "default";
@@ -40,8 +40,8 @@ export default defineCommand({
 
     if (!args.force) {
       const ok = await confirm({
-        message: `Remove state volume ${chalk.cyan(volName)}? This deletes all saved projects, todos, and conversation history.`,
         default: false,
+        message: `Remove state volume ${chalk.cyan(volName)}? This deletes all saved projects, todos, and conversation history.`,
       });
       if (!ok) {
         console.log("Aborted.");

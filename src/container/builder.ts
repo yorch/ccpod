@@ -7,18 +7,18 @@ import { VERSION } from "../version.ts";
 const CCPOD_DIR = join(homedir(), ".ccpod");
 
 export interface ContainerSpec {
-  image: string;
-  name: string;
-  workingDir: string;
-  env: string[];
   binds: string[];
-  portBindings: Record<string, Array<{ HostPort: string }>>;
-  networkMode: string;
-  tty: boolean;
-  openStdin: boolean;
-  labels: Record<string, string>;
-  tmpfs?: Record<string, string>;
   cmd?: string[];
+  env: string[];
+  image: string;
+  labels: Record<string, string>;
+  name: string;
+  networkMode: string;
+  openStdin: boolean;
+  portBindings: Record<string, Array<{ HostPort: string }>>;
+  tmpfs?: Record<string, string>;
+  tty: boolean;
+  workingDir: string;
 }
 
 export function buildContainerSpec(
@@ -69,22 +69,22 @@ export function buildContainerSpec(
   }
 
   return {
-    image: config.image,
-    name: `ccpod-${config.profileName}-${projectHash}`,
-    workingDir: "/workspace",
-    env,
     binds,
-    portBindings,
-    networkMode: "bridge",
-    tty,
-    openStdin: tty,
+    env,
+    image: config.image,
     labels: {
       "ccpod.profile": config.profileName,
       "ccpod.project": projectHash,
-      "ccpod.workdir": projectDir,
       "ccpod.type": "main",
       "ccpod.version": VERSION,
+      "ccpod.workdir": projectDir,
     },
+    name: `ccpod-${config.profileName}-${projectHash}`,
+    networkMode: "bridge",
+    openStdin: tty,
+    portBindings,
+    tty,
+    workingDir: "/workspace",
     ...(Object.keys(tmpfs).length > 0 ? { tmpfs } : {}),
     ...(config.claudeArgs.length > 0 ? { cmd: config.claudeArgs } : {}),
   };

@@ -31,7 +31,7 @@ describe("resolveAuth", () => {
     saveEnv("ANTHROPIC_API_KEY");
     process.env.ANTHROPIC_API_KEY = "sk-test-abc";
     expect(
-      resolveAuth({ type: "api-key", keyEnv: "ANTHROPIC_API_KEY" }),
+      resolveAuth({ keyEnv: "ANTHROPIC_API_KEY", type: "api-key" }),
     ).toEqual({
       ANTHROPIC_API_KEY: "sk-test-abc",
     });
@@ -41,7 +41,7 @@ describe("resolveAuth", () => {
     saveEnv("MY_ANTHROPIC_KEY");
     process.env.MY_ANTHROPIC_KEY = "sk-custom-xyz";
     expect(
-      resolveAuth({ type: "api-key", keyEnv: "MY_ANTHROPIC_KEY" }),
+      resolveAuth({ keyEnv: "MY_ANTHROPIC_KEY", type: "api-key" }),
     ).toEqual({
       ANTHROPIC_API_KEY: "sk-custom-xyz",
     });
@@ -57,12 +57,12 @@ describe("resolveAuth", () => {
 
     try {
       expect(
-        resolveAuth({ type: "api-key", keyEnv: "ANTHROPIC_API_KEY", keyFile }),
+        resolveAuth({ keyEnv: "ANTHROPIC_API_KEY", keyFile, type: "api-key" }),
       ).toEqual({
         ANTHROPIC_API_KEY: "sk-from-file",
       });
     } finally {
-      rmSync(dir, { recursive: true, force: true });
+      rmSync(dir, { force: true, recursive: true });
     }
   });
 
@@ -70,7 +70,7 @@ describe("resolveAuth", () => {
     saveEnv("ANTHROPIC_API_KEY");
     delete process.env.ANTHROPIC_API_KEY;
     expect(
-      resolveAuth({ type: "api-key", keyEnv: "ANTHROPIC_API_KEY" }),
+      resolveAuth({ keyEnv: "ANTHROPIC_API_KEY", type: "api-key" }),
     ).toEqual({});
   });
 });
@@ -120,6 +120,6 @@ describe("resolveEnvForwarding", () => {
     saveEnv("HOST_VAR");
     process.env.HOST_VAR = "from-host";
     const result = resolveEnvForwarding(["HOST_VAR", "A=1"], ["B=2"], ["C=3"]);
-    expect(result).toEqual({ HOST_VAR: "from-host", A: "1", B: "2", C: "3" });
+    expect(result).toEqual({ A: "1", B: "2", C: "3", HOST_VAR: "from-host" });
   });
 });

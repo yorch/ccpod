@@ -6,13 +6,16 @@ export type AuthType = "api-key" | "oauth";
 export type ClaudeMdMerge = "append" | "override";
 
 export interface PortsConfig {
-  list: string[];
   autoDetectMcp: boolean;
+  list: string[];
 }
 
 export interface ProfileConfig {
-  name: string;
-  description?: string;
+  auth: {
+    type: AuthType;
+    keyEnv?: string;
+    keyFile?: string;
+  };
   config: {
     source: "local" | "git";
     path?: string;
@@ -20,67 +23,64 @@ export interface ProfileConfig {
     sync?: SyncStrategy;
     ref?: string;
   };
+  description?: string;
+  env: string[];
   image: {
     use: string;
     dockerfile?: string;
   };
-  auth: {
-    type: AuthType;
-    keyEnv?: string;
-    keyFile?: string;
-  };
-  state: StateMode;
-  ssh: {
-    agentForward: boolean;
-    mountSshDir: boolean;
-  };
+  name: string;
   network: {
     policy: NetworkPolicy;
     allow: string[];
   };
   ports: PortsConfig;
   services: Record<string, ServiceConfig>;
-  env: string[];
+  ssh: {
+    agentForward: boolean;
+    mountSshDir: boolean;
+  };
+  state: StateMode;
 }
 
 export interface ProjectConfig {
-  profile?: string;
-  merge?: MergeStrategy;
   config?: {
     claudeMd?: ClaudeMdMerge;
   };
+  env?: string[];
+  merge?: MergeStrategy;
   network?: Partial<ProfileConfig["network"]>;
   ports?: Partial<PortsConfig>;
+  profile?: string;
   services?: Record<string, ServiceConfig>;
-  env?: string[];
 }
 
 export interface ServiceConfig {
-  image: string;
   env?: Record<string, string>;
-  volumes?: string[];
+  image: string;
   ports?: string[];
+  volumes?: string[];
 }
 
 export interface PortMapping {
-  host: number;
   container: number;
+  host: number;
 }
 
 export interface ResolvedConfig {
-  profileName: string;
-  image: string;
-  dockerfile?: string;
   auth: ProfileConfig["auth"];
-  state: StateMode;
-  ssh: ProfileConfig["ssh"];
+  autoDetectMcp: boolean;
+  claudeArgs: string[];
+  dockerfile?: string;
+  env: Record<string, string>;
+  image: string;
+  mergedConfigDir: string;
   network: ProfileConfig["network"];
   ports: PortMapping[];
-  autoDetectMcp: boolean;
+  profileName: string;
   services: Record<string, ServiceConfig>;
-  env: Record<string, string>;
-  mergedConfigDir: string;
-  claudeArgs: string[];
+  ssh: ProfileConfig["ssh"];
+  state: StateMode;
 }
 
 export interface DetectedRuntime {
@@ -89,8 +89,8 @@ export interface DetectedRuntime {
 }
 
 export interface PluginDiff {
-  toInstall: string[];
   alreadyInstalled: string[];
+  toInstall: string[];
   toRemove: string[];
 }
 

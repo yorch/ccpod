@@ -5,18 +5,18 @@ import type { ResolvedConfig } from "../../../src/types/index.ts";
 
 function makeConfig(overrides: Partial<ResolvedConfig> = {}): ResolvedConfig {
   return {
-    profileName: "testprof",
-    image: "ghcr.io/ccpod/base:latest",
-    auth: { type: "api-key", keyEnv: "ANTHROPIC_API_KEY" },
-    state: "ephemeral",
-    ssh: { agentForward: false, mountSshDir: false },
-    network: { policy: "full", allow: [] },
-    ports: [],
+    auth: { keyEnv: "ANTHROPIC_API_KEY", type: "api-key" },
     autoDetectMcp: true,
-    services: {},
-    env: {},
-    mergedConfigDir: "/tmp/ccpod-config-abc",
     claudeArgs: [],
+    env: {},
+    image: "ghcr.io/ccpod/base:latest",
+    mergedConfigDir: "/tmp/ccpod-config-abc",
+    network: { allow: [], policy: "full" },
+    ports: [],
+    profileName: "testprof",
+    services: {},
+    ssh: { agentForward: false, mountSshDir: false },
+    state: "ephemeral",
     ...overrides,
   };
 }
@@ -87,7 +87,7 @@ describe("buildContainerSpec", () => {
 
   it("port bindings map host to container", () => {
     const spec = buildContainerSpec(
-      makeConfig({ ports: [{ host: 3000, container: 3001 }] }),
+      makeConfig({ ports: [{ container: 3001, host: 3000 }] }),
       PROJECT_DIR,
       true,
     );

@@ -14,7 +14,7 @@ beforeEach(() => {
   tmpDir = mkdtempSync(`${tmpdir()}/ccpod-test-`);
 });
 afterEach(() => {
-  rmSync(tmpDir, { recursive: true, force: true });
+  rmSync(tmpDir, { force: true, recursive: true });
 });
 
 describe("loadProfileConfig", () => {
@@ -22,8 +22,8 @@ describe("loadProfileConfig", () => {
     writeFileSync(
       join(tmpDir, "profile.yml"),
       yamlStringify({
+        config: { path: "/tmp/cfg", source: "local" },
         name: "myprod",
-        config: { source: "local", path: "/tmp/cfg" },
       }),
     );
     const profile = loadProfileConfig(tmpDir);
@@ -66,7 +66,7 @@ describe("loadProjectConfig", () => {
   it("parses a valid .ccpod.yml", () => {
     writeFileSync(
       join(tmpDir, ".ccpod.yml"),
-      yamlStringify({ profile: "custom", merge: "override" }),
+      yamlStringify({ merge: "override", profile: "custom" }),
     );
     const cfg = loadProjectConfig(tmpDir);
     expect(cfg).not.toBeNull();

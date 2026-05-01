@@ -5,8 +5,8 @@ import { syncGitConfig } from "../../../profile/git-sync.ts";
 import { getProfileDir, profileExists } from "../../../profile/manager.ts";
 
 export default defineCommand({
+  args: { name: { description: "Profile name", type: "positional" } },
   meta: { description: "Force-sync a profile's config source" },
-  args: { name: { type: "positional", description: "Profile name" } },
   async run({ args }) {
     if (!args.name) throw new Error("Profile name required");
 

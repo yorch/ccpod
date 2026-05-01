@@ -11,12 +11,12 @@ import { mergeClaudes, mergeConfigs } from "../../../config/merger.ts";
 import { getProfileDir, profileExists } from "../../../profile/manager.ts";
 
 export default defineCommand({
+  args: {
+    json: { default: false, description: "Output as JSON", type: "boolean" },
+    profile: { description: "Override profile name", type: "string" },
+  },
   meta: {
     description: "Show effective merged config for the current directory",
-  },
-  args: {
-    profile: { type: "string", description: "Override profile name" },
-    json: { type: "boolean", description: "Output as JSON", default: false },
   },
   run({ args }) {
     const cwd = process.cwd();
@@ -41,19 +41,19 @@ export default defineCommand({
     }
 
     const display = {
-      profile: merged.profileName,
+      auth: merged.auth,
+      autoDetectMcp: merged.autoDetectMcp,
+      env: envDisplay,
       image:
         merged.image === "build"
           ? `build (${merged.dockerfile ?? "Dockerfile"})`
           : merged.image,
-      state: merged.state,
-      auth: merged.auth,
-      ssh: merged.ssh,
       network: merged.network,
       ports: merged.ports,
-      autoDetectMcp: merged.autoDetectMcp,
+      profile: merged.profileName,
       services: merged.services,
-      env: envDisplay,
+      ssh: merged.ssh,
+      state: merged.state,
     };
 
     if (args.json) {

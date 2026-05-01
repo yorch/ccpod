@@ -35,5 +35,5 @@ export function listProfiles(): string[] {
 export function deleteProfile(name: string): void {
   const dir = join(PROFILES_DIR, name);
   if (!existsSync(dir)) throw new Error(`Profile not found: ${name}`);
-  rmSync(dir, { recursive: true, force: true });
+  rmSync(dir, { force: true, recursive: true });
 }

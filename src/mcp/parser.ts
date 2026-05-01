@@ -2,9 +2,9 @@ import { existsSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 
 interface McpServer {
+  command?: string;
   type?: "stdio" | "http" | "sse";
   url?: string;
-  command?: string;
 }
 
 interface McpConfig {

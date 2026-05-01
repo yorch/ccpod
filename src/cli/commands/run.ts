@@ -14,30 +14,30 @@ import { getProfileDir, profileExists } from "../../profile/manager.ts";
 import type { ResolvedConfig } from "../../types/index.ts";
 
 export default defineCommand({
-  meta: {
-    description: "Run Claude Code in a container (interactive or headless)",
-  },
   args: {
-    profile: {
-      type: "string",
-      description: "Profile name (overrides .ccpod.yml)",
-    },
     env: {
-      type: "string",
-      description: "Pass/override env var (KEY or KEY=VALUE)",
       array: true,
+      description: "Pass/override env var (KEY or KEY=VALUE)",
+      type: "string",
+    },
+    file: { description: "Headless mode: path to prompt file", type: "string" },
+    "no-state": {
+      default: false,
+      description: "Force ephemeral state for this run",
+      type: "boolean",
+    },
+    profile: {
+      description: "Profile name (overrides .ccpod.yml)",
+      type: "string",
     },
     rebuild: {
-      type: "boolean",
+      default: false,
       description: "Force image rebuild/repull",
-      default: false,
-    },
-    "no-state": {
       type: "boolean",
-      description: "Force ephemeral state for this run",
-      default: false,
     },
-    file: { type: "string", description: "Headless mode: path to prompt file" },
+  },
+  meta: {
+    description: "Run Claude Code in a container (interactive or headless)",
   },
   async run({ args }) {
     const cwd = process.cwd();
@@ -76,8 +76,8 @@ export default defineCommand({
     const mcpJson = partial.autoDetectMcp ? parseMcpJson(cwd) : null;
     const mcpPorts = mcpJson
       ? extractHttpMcpPorts(mcpJson).map((port) => ({
-          host: port,
           container: port,
+          host: port,
         }))
       : [];
 
@@ -128,11 +128,11 @@ export default defineCommand({
     // 8. Build full config
     const config: ResolvedConfig = {
       ...partial,
-      image,
-      ports: [...partial.ports, ...mcpPorts],
-      env,
-      mergedConfigDir,
       claudeArgs: args.file ? ["--file", `/workspace/${args.file}`] : [],
+      env,
+      image,
+      mergedConfigDir,
+      ports: [...partial.ports, ...mcpPorts],
     };
 
     // 9. Launch

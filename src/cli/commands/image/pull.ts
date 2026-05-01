@@ -8,15 +8,15 @@ import { ensureImage } from "../../../image/manager.ts";
 import { getProfileDir, profileExists } from "../../../profile/manager.ts";
 
 export default defineCommand({
-  meta: { description: "Pull the Docker image for a profile" },
   args: {
-    profile: { type: "string", description: "Profile name" },
     force: {
-      type: "boolean",
-      description: "Force re-pull even if image exists",
       default: false,
+      description: "Force re-pull even if image exists",
+      type: "boolean",
     },
+    profile: { description: "Profile name", type: "string" },
   },
+  meta: { description: "Pull the Docker image for a profile" },
   async run({ args }) {
     const projectConfig = loadProjectConfig(process.cwd());
     const profileName = args.profile ?? projectConfig?.profile ?? "default";

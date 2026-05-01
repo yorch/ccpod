@@ -8,18 +8,18 @@ import { buildImage } from "../../../image/manager.ts";
 import { getProfileDir, profileExists } from "../../../profile/manager.ts";
 
 export default defineCommand({
-  meta: { description: "Build a local Docker image for a profile" },
   args: {
-    profile: { type: "string", description: "Profile name" },
     dockerfile: {
-      type: "string",
       description: "Dockerfile path (overrides profile)",
-    },
-    tag: {
       type: "string",
+    },
+    profile: { description: "Profile name", type: "string" },
+    tag: {
       description: "Image tag (overrides auto-generated)",
+      type: "string",
     },
   },
+  meta: { description: "Build a local Docker image for a profile" },
   async run({ args }) {
     const projectConfig = loadProjectConfig(process.cwd());
     const profileName = args.profile ?? projectConfig?.profile ?? "default";

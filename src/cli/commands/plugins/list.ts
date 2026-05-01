@@ -9,13 +9,13 @@ import {
 import { profileExists } from "../../../profile/manager.ts";
 
 export default defineCommand({
-  meta: { description: "List plugins installed in a profile's volume" },
   args: {
     profile: {
-      type: "string",
       description: "Profile name (default: from .ccpod.yml or 'default')",
+      type: "string",
     },
   },
+  meta: { description: "List plugins installed in a profile's volume" },
   async run({ args }) {
     const projectConfig = loadProjectConfig(process.cwd());
     const profileName = args.profile ?? projectConfig?.profile ?? "default";

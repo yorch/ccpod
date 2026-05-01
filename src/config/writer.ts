@@ -16,8 +16,8 @@ export function writeMergedConfig(
   mergedSettings: object,
 ): string {
   const content = JSON.stringify({
-    settings: mergedSettings,
     claudeMd: mergedClaudeMd,
+    settings: mergedSettings,
   });
   const hash = createHash("sha256").update(content).digest("hex").slice(0, 16);
   const outDir = join(tmpdir(), `ccpod-${hash}`);

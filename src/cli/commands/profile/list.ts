@@ -22,18 +22,18 @@ export default defineCommand({
         const source =
           cfg.config.source === "git" ? `git (${cfg.config.sync})` : "local";
         return {
-          name,
           image: cfg.image.use,
           imageDisplay: cfg.image.use,
+          name,
           source,
           state: cfg.state,
           sync: syncStr,
         };
       } catch {
         return {
-          name,
           image: "[invalid]",
           imageDisplay: chalk.red("[invalid]"),
+          name,
           source: "-",
           state: "-",
           sync: "-",

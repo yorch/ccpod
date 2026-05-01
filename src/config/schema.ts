@@ -2,81 +2,81 @@ import { z } from "zod";
 
 const portsConfigSchema = z
   .object({
-    list: z.array(z.string()).default([]),
     autoDetectMcp: z.boolean().default(true),
+    list: z.array(z.string()).default([]),
   })
-  .default({ list: [], autoDetectMcp: true });
+  .default({ autoDetectMcp: true, list: [] });
 
 const serviceConfigSchema = z.object({
-  image: z.string(),
   env: z.record(z.string(), z.string()).optional(),
-  volumes: z.array(z.string()).optional(),
+  image: z.string(),
   ports: z.array(z.string()).optional(),
+  volumes: z.array(z.string()).optional(),
 });
 
 export const profileConfigSchema = z.object({
-  name: z.string(),
-  description: z.string().optional(),
-  config: z.object({
-    source: z.enum(["local", "git"]),
-    path: z.string().optional(),
-    repo: z.string().optional(),
-    sync: z.enum(["always", "daily", "pin"]).default("daily"),
-    ref: z.string().optional(),
-  }),
-  image: z
-    .object({
-      use: z.string().default("ghcr.io/ccpod/base:latest"),
-      dockerfile: z.string().optional(),
-    })
-    .default({ use: "ghcr.io/ccpod/base:latest" }),
   auth: z
     .object({
-      type: z.enum(["api-key", "oauth"]).default("api-key"),
       keyEnv: z.string().default("ANTHROPIC_API_KEY"),
       keyFile: z.string().optional(),
+      type: z.enum(["api-key", "oauth"]).default("api-key"),
     })
-    .default({ type: "api-key", keyEnv: "ANTHROPIC_API_KEY" }),
-  state: z.enum(["ephemeral", "persistent"]).default("ephemeral"),
+    .default({ keyEnv: "ANTHROPIC_API_KEY", type: "api-key" }),
+  config: z.object({
+    path: z.string().optional(),
+    ref: z.string().optional(),
+    repo: z.string().optional(),
+    source: z.enum(["local", "git"]),
+    sync: z.enum(["always", "daily", "pin"]).default("daily"),
+  }),
+  description: z.string().optional(),
+  env: z.array(z.string()).default([]),
+  image: z
+    .object({
+      dockerfile: z.string().optional(),
+      use: z.string().default("ghcr.io/ccpod/base:latest"),
+    })
+    .default({ use: "ghcr.io/ccpod/base:latest" }),
+  name: z.string(),
+  network: z
+    .object({
+      allow: z.array(z.string()).default([]),
+      policy: z.enum(["full", "restricted"]).default("full"),
+    })
+    .default({ allow: [], policy: "full" }),
+  ports: portsConfigSchema,
+  services: z.record(z.string(), serviceConfigSchema).default({}),
   ssh: z
     .object({
       agentForward: z.boolean().default(true),
       mountSshDir: z.boolean().default(false),
     })
     .default({ agentForward: true, mountSshDir: false }),
-  network: z
-    .object({
-      policy: z.enum(["full", "restricted"]).default("full"),
-      allow: z.array(z.string()).default([]),
-    })
-    .default({ policy: "full", allow: [] }),
-  ports: portsConfigSchema,
-  services: z.record(z.string(), serviceConfigSchema).default({}),
-  env: z.array(z.string()).default([]),
+  state: z.enum(["ephemeral", "persistent"]).default("ephemeral"),
 });
 
 export const projectConfigSchema = z.object({
-  profile: z.string().optional(),
-  merge: z.enum(["deep", "override"]).default("deep"),
   config: z
     .object({
       claudeMd: z.enum(["append", "override"]).default("append"),
     })
     .optional(),
+  env: z.array(z.string()).optional(),
+  merge: z.enum(["deep", "override"]).default("deep"),
   network: z
     .object({
-      policy: z.enum(["full", "restricted"]).optional(),
       allow: z.array(z.string()).optional(),
+      policy: z.enum(["full", "restricted"]).optional(),
     })
     .optional(),
   ports: z
     .object({
-      list: z.array(z.string()).optional(),
       autoDetectMcp: z.boolean().optional(),
+      list: z.array(z.string()).optional(),
     })
     .optional(),
+  profile: z.string().optional(),
   services: z.record(z.string(), serviceConfigSchema).optional(),
-  env: z.array(z.string()).optional(),
 });
 
 export type ProfileConfigInput = z.input<typeof profileConfigSchema>;

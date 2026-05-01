@@ -11,24 +11,24 @@ export async function dockerExec(
 ): Promise<{ stdout: string; stderr: string; exitCode: number }> {
   const proc = Bun.spawn(["docker", ...args], {
     env: dockerEnv(),
-    stdout: "pipe",
     stderr: "pipe",
+    stdout: "pipe",
   });
   const [stdout, stderr, exitCode] = await Promise.all([
     new Response(proc.stdout).text(),
     new Response(proc.stderr).text(),
     proc.exited,
   ]);
-  return { stdout: stdout.trim(), stderr: stderr.trim(), exitCode };
+  return { exitCode, stderr: stderr.trim(), stdout: stdout.trim() };
 }
 
 /** Run a docker command with inherited stdio. Returns container exit code. */
 export async function dockerSpawn(args: string[]): Promise<number> {
   const proc = Bun.spawn(["docker", ...args], {
     env: dockerEnv(),
+    stderr: "inherit",
     stdin: "inherit",
     stdout: "inherit",
-    stderr: "inherit",
   });
   return proc.exited;
 }

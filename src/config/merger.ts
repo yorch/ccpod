@@ -15,8 +15,8 @@ export function mergeConfigs(
   // override: project replaces the section using schema defaults for omitted keys,
   // NOT profile values — spreading from profile would leak profile's allow list.
   const NETWORK_DEFAULTS: ProfileConfig["network"] = {
-    policy: "full",
     allow: [],
+    policy: "full",
   };
   const network =
     strategy === "override" && project?.network
@@ -24,8 +24,8 @@ export function mergeConfigs(
       : deepmerge(profile.network, project?.network ?? {});
 
   const ports = {
-    list: [...(profile.ports.list ?? []), ...(project?.ports?.list ?? [])],
     autoDetectMcp: project?.ports?.autoDetectMcp ?? profile.ports.autoDetectMcp,
+    list: [...(profile.ports.list ?? []), ...(project?.ports?.list ?? [])],
   };
 
   const services =
@@ -36,17 +36,17 @@ export function mergeConfigs(
   const _env = [...new Set([...profile.env, ...(project?.env ?? [])])];
 
   return {
-    profileName: profile.name,
-    image: profile.image.use,
-    dockerfile: profile.image.dockerfile,
     auth: profile.auth,
-    state: overrides.state ?? profile.state,
-    ssh: profile.ssh,
+    autoDetectMcp: ports.autoDetectMcp,
+    dockerfile: profile.image.dockerfile,
+    env: {},
+    image: profile.image.use,
     network,
     ports: parsePorts(ports.list),
-    autoDetectMcp: ports.autoDetectMcp,
+    profileName: profile.name,
     services,
-    env: {},
+    ssh: profile.ssh,
+    state: overrides.state ?? profile.state,
   };
 }
 
@@ -55,7 +55,7 @@ function parsePorts(
 ): Array<{ host: number; container: number }> {
   return list.map((entry) => {
     const [hostStr = entry, containerStr = entry] = entry.split(":");
-    return { host: Number(hostStr), container: Number(containerStr) };
+    return { container: Number(containerStr), host: Number(hostStr) };
   });
 }
 

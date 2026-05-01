@@ -9,16 +9,16 @@ import {
 import { profileExists } from "../../../profile/manager.ts";
 
 export default defineCommand({
+  args: {
+    profile: { description: "Profile name", type: "string" },
+    reset: {
+      default: false,
+      description: "Remove the volume entirely",
+      type: "boolean",
+    },
+  },
   meta: {
     description: "Reset the plugins volume (forces reinstall on next run)",
-  },
-  args: {
-    profile: { type: "string", description: "Profile name" },
-    reset: {
-      type: "boolean",
-      description: "Remove the volume entirely",
-      default: false,
-    },
   },
   async run({ args }) {
     const projectConfig = loadProjectConfig(process.cwd());

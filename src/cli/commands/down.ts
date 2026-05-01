@@ -4,16 +4,16 @@ import { defineCommand } from "citty";
 import { dockerExec } from "../../runtime/docker.ts";
 
 export default defineCommand({
-  meta: {
-    description: "Stop and remove ccpod containers for the current project",
-  },
   args: {
     all: {
-      type: "boolean",
-      description: "Stop all ccpod containers on this machine",
       default: false,
+      description: "Stop all ccpod containers on this machine",
+      type: "boolean",
     },
-    profile: { type: "string", description: "Limit to a specific profile" },
+    profile: { description: "Limit to a specific profile", type: "string" },
+  },
+  meta: {
+    description: "Stop and remove ccpod containers for the current project",
   },
   async run({ args }) {
     const projectHash = createHash("sha256")

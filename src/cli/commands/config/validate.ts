@@ -11,10 +11,10 @@ import {
 import { getProfileDir, profileExists } from "../../../profile/manager.ts";
 
 export default defineCommand({
-  meta: { description: "Validate profile and project config files" },
   args: {
-    profile: { type: "string", description: "Profile name to validate" },
+    profile: { description: "Profile name to validate", type: "string" },
   },
+  meta: { description: "Validate profile and project config files" },
   run({ args }) {
     const cwd = process.cwd();
     let allOk = true;

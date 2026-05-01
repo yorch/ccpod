@@ -14,14 +14,14 @@ function parseLabels(raw: string): Record<string, string> {
 }
 
 export default defineCommand({
-  meta: { description: "List ccpod containers" },
   args: {
     all: {
-      type: "boolean",
-      description: "Include stopped containers",
       default: false,
+      description: "Include stopped containers",
+      type: "boolean",
     },
   },
+  meta: { description: "List ccpod containers" },
   async run({ args }) {
     const filterArgs = args.all ? ["-a"] : [];
     const { stdout } = await dockerExec([

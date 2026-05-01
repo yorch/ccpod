@@ -4,16 +4,16 @@ import type { ProfileConfig } from "../../../src/types/index.ts";
 
 function makeProfile(overrides: Partial<ProfileConfig> = {}): ProfileConfig {
   return {
-    name: "base",
-    config: { source: "local", path: "/tmp/cfg", sync: "daily" },
-    image: { use: "ghcr.io/ccpod/base:latest" },
-    auth: { type: "api-key", keyEnv: "ANTHROPIC_API_KEY" },
-    state: "ephemeral",
-    ssh: { agentForward: true, mountSshDir: false },
-    network: { policy: "full", allow: [] },
-    ports: { list: [], autoDetectMcp: true },
-    services: {},
+    auth: { keyEnv: "ANTHROPIC_API_KEY", type: "api-key" },
+    config: { path: "/tmp/cfg", source: "local", sync: "daily" },
     env: [],
+    image: { use: "ghcr.io/ccpod/base:latest" },
+    name: "base",
+    network: { allow: [], policy: "full" },
+    ports: { autoDetectMcp: true, list: [] },
+    services: {},
+    ssh: { agentForward: true, mountSshDir: false },
+    state: "ephemeral",
     ...overrides,
   };
 }
@@ -36,7 +36,7 @@ describe("mergeConfigs", () => {
 
   it("deep merge: project network.allow appended to profile allow", () => {
     const profile = makeProfile({
-      network: { policy: "restricted", allow: ["github.com"] },
+      network: { allow: ["github.com"], policy: "restricted" },
     });
     const result = mergeConfigs(profile, {
       merge: "deep",
@@ -48,7 +48,7 @@ describe("mergeConfigs", () => {
 
   it("override strategy: project network fully replaces profile network", () => {
     const profile = makeProfile({
-      network: { policy: "restricted", allow: ["github.com"] },
+      network: { allow: ["github.com"], policy: "restricted" },
     });
     const result = mergeConfigs(profile, {
       merge: "override",
@@ -60,16 +60,16 @@ describe("mergeConfigs", () => {
 
   it("port lists concatenate across profile and project", () => {
     const profile = makeProfile({
-      ports: { list: ["3000:3000"], autoDetectMcp: true },
+      ports: { autoDetectMcp: true, list: ["3000:3000"] },
     });
     const result = mergeConfigs(profile, { ports: { list: ["4000:4000"] } });
     expect(result.ports).toHaveLength(2);
-    expect(result.ports[0]).toEqual({ host: 3000, container: 3000 });
-    expect(result.ports[1]).toEqual({ host: 4000, container: 4000 });
+    expect(result.ports[0]).toEqual({ container: 3000, host: 3000 });
+    expect(result.ports[1]).toEqual({ container: 4000, host: 4000 });
   });
 
   it("project autoDetectMcp overrides profile", () => {
-    const profile = makeProfile({ ports: { list: [], autoDetectMcp: true } });
+    const profile = makeProfile({ ports: { autoDetectMcp: true, list: [] } });
     const result = mergeConfigs(profile, { ports: { autoDetectMcp: false } });
     expect(result.autoDetectMcp).toBe(false);
   });

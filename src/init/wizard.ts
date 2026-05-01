@@ -33,27 +33,27 @@ export async function runWizard(profileName = "default"): Promise<void> {
   // Step 2 — auth
   console.log();
   const authMethod = await select({
-    message: "[2/5] Auth method",
     choices: [
       { name: "API key — environment variable", value: "env" },
       { name: "API key — file on disk", value: "file" },
       { name: "OAuth (browser login via claude)", value: "oauth" },
     ],
+    message: "[2/5] Auth method",
   });
 
   let authConfig: ProfileConfigInput["auth"];
   if (authMethod === "env") {
     const keyEnv = await input({
-      message: "     Env var name",
       default: "ANTHROPIC_API_KEY",
+      message: "     Env var name",
     });
-    authConfig = { type: "api-key", keyEnv };
+    authConfig = { keyEnv, type: "api-key" };
   } else if (authMethod === "file") {
     const keyFile = await input({
-      message: "     Key file path",
       default: "~/.anthropic/api_key",
+      message: "     Key file path",
     });
-    authConfig = { type: "api-key", keyFile };
+    authConfig = { keyFile, type: "api-key" };
   } else {
     authConfig = { type: "oauth" };
     console.log(
@@ -66,48 +66,48 @@ export async function runWizard(profileName = "default"): Promise<void> {
   // Step 3 — config source
   console.log();
   const configSource = await select({
-    message:
-      "[3/5] Config source (CLAUDE.md, settings.json, skills, extensions)",
     choices: [
       { name: "Start empty", value: "empty" },
       { name: "Local directory", value: "local" },
       { name: "Git repository", value: "git" },
     ],
+    message:
+      "[3/5] Config source (CLAUDE.md, settings.json, skills, extensions)",
   });
 
   let configConfig: ProfileConfigInput["config"];
   if (configSource === "empty") {
     const emptyDir = join(PROFILES_DIR, profileName, "config");
     mkdirSync(emptyDir, { recursive: true });
-    configConfig = { source: "local", path: emptyDir };
+    configConfig = { path: emptyDir, source: "local" };
   } else if (configSource === "local") {
     const path = await input({ message: "     Config directory path" });
-    configConfig = { source: "local", path };
+    configConfig = { path, source: "local" };
   } else {
     const repo = await input({ message: "     Git repo URL" });
     const ref = await input({
-      message: "     Branch / tag / ref",
       default: "main",
+      message: "     Branch / tag / ref",
     });
     const sync = (await select({
-      message: "     Sync strategy",
       choices: [
         { name: "Daily (once per day)", value: "daily" },
         { name: "Always (every run)", value: "always" },
         { name: "Pin (never update)", value: "pin" },
       ],
+      message: "     Sync strategy",
     })) as "always" | "daily" | "pin";
-    configConfig = { source: "git", repo, ref, sync };
+    configConfig = { ref, repo, source: "git", sync };
   }
 
   // Step 4 — network policy
   console.log();
   const networkPolicy = (await select({
-    message: "[4/5] Default network policy",
     choices: [
       { name: "Full — unrestricted outbound", value: "full" },
       { name: "Restricted — iptables allow-list", value: "restricted" },
     ],
+    message: "[4/5] Default network policy",
   })) as "full" | "restricted";
 
   // Step 5 — confirm & write
@@ -116,8 +116,8 @@ export async function runWizard(profileName = "default"): Promise<void> {
 
   if (profileExists(profileName)) {
     const overwrite = await confirm({
-      message: `[5/5] Profile '${profileName}' already exists. Overwrite?`,
       default: false,
+      message: `[5/5] Profile '${profileName}' already exists. Overwrite?`,
     });
     if (!overwrite) {
       console.log("Aborted.");
@@ -125,8 +125,8 @@ export async function runWizard(profileName = "default"): Promise<void> {
     }
   } else {
     const ok = await confirm({
-      message: `[5/5] Write profile '${profileName}' to ${profileDir}?`,
       default: true,
+      message: `[5/5] Write profile '${profileName}' to ${profileDir}?`,
     });
     if (!ok) {
       console.log("Aborted.");
@@ -138,16 +138,16 @@ export async function runWizard(profileName = "default"): Promise<void> {
   mkdirSync(profileDir, { recursive: true });
 
   const profile: ProfileConfigInput = {
-    name: profileName,
-    config: configConfig,
     auth: authConfig,
-    image: { use: "ghcr.io/ccpod/base:latest" },
-    state: "ephemeral",
-    ssh: { agentForward: true, mountSshDir: false },
-    network: { policy: networkPolicy, allow: [] },
-    ports: { list: [], autoDetectMcp: true },
-    services: {},
+    config: configConfig,
     env: [],
+    image: { use: "ghcr.io/ccpod/base:latest" },
+    name: profileName,
+    network: { allow: [], policy: networkPolicy },
+    ports: { autoDetectMcp: true, list: [] },
+    services: {},
+    ssh: { agentForward: true, mountSshDir: false },
+    state: "ephemeral",
   };
 
   writeFileSync(
