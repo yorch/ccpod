@@ -5,7 +5,7 @@ import chalk from 'chalk';
 import type { ProfileConfigInput } from '../config/schema.ts';
 import {
   ensureCcpodDirs,
-  PROFILES_DIR,
+  getProfileDir,
   profileExists,
 } from '../profile/manager.ts';
 import { detectRuntime } from '../runtime/detector.ts';
@@ -86,6 +86,7 @@ export async function runWizard(profileName = 'default'): Promise<void> {
     return writeProfile(profileName, totalSteps, {
       auth: authConfig,
       config: buildEmptyConfig(profileName),
+      createConfigDir: true,
       image: { use: DEFAULT_IMAGE },
       network: { allow: [], policy: 'full' },
       ssh: { agentForward: true, mountSshDir: false },
@@ -107,8 +108,10 @@ export async function runWizard(profileName = 'default'): Promise<void> {
   });
 
   let configConfig: ProfileConfigInput['config'];
+  let createConfigDir = false;
   if (configSource === 'empty') {
     configConfig = buildEmptyConfig(profileName);
+    createConfigDir = true;
   } else if (configSource === 'local') {
     const path = await input({
       message: '     Config directory path',
@@ -183,6 +186,7 @@ export async function runWizard(profileName = 'default'): Promise<void> {
   return writeProfile(profileName, totalSteps, {
     auth: authConfig,
     config: configConfig,
+    createConfigDir,
     image: { use: imageRef },
     network: { allow: [], policy: networkPolicy },
     ssh: { agentForward, mountSshDir },
@@ -191,7 +195,7 @@ export async function runWizard(profileName = 'default'): Promise<void> {
 }
 
 function buildEmptyConfig(profileName: string): ProfileConfigInput['config'] {
-  return { path: join(PROFILES_DIR, profileName, 'config'), source: 'local' };
+  return { path: join(getProfileDir(profileName), 'config'), source: 'local' };
 }
 
 async function writeProfile(
@@ -200,13 +204,14 @@ async function writeProfile(
   opts: {
     auth: ProfileConfigInput['auth'];
     config: ProfileConfigInput['config'];
+    createConfigDir?: boolean;
     network: NonNullable<ProfileConfigInput['network']>;
     state: 'ephemeral' | 'persistent';
     ssh: NonNullable<ProfileConfigInput['ssh']>;
     image: NonNullable<ProfileConfigInput['image']>;
   },
 ): Promise<void> {
-  const profileDir = join(PROFILES_DIR, profileName);
+  const profileDir = getProfileDir(profileName);
 
   console.log();
   if (profileExists(profileName)) {
@@ -231,7 +236,7 @@ async function writeProfile(
 
   ensureCcpodDirs();
   mkdirSync(profileDir, { recursive: true });
-  if (opts.config?.source === 'local' && opts.config.path) {
+  if (opts.createConfigDir && opts.config?.path) {
     mkdirSync(opts.config.path, { recursive: true });
   }
 
