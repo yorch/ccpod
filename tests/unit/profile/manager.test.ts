@@ -3,6 +3,7 @@ import {
   existsSync,
   mkdirSync,
   mkdtempSync,
+  readFileSync,
   rmSync,
   writeFileSync,
 } from 'node:fs';
@@ -15,6 +16,8 @@ import {
   getProfileDir,
   listProfiles,
   profileExists,
+  updateProfileDockerfile,
+  updateProfileImage,
 } from '../../../src/profile/manager.ts';
 
 let testBase: string;
@@ -117,5 +120,68 @@ describe('ensureCcpodDirs', () => {
   it('does not throw if dirs already exist', () => {
     ensureCcpodDirs();
     expect(() => ensureCcpodDirs()).not.toThrow();
+  });
+});
+
+describe('updateProfileImage', () => {
+  it('throws when profile does not exist', () => {
+    expect(() => updateProfileImage('ghost', 'myimage:latest')).toThrow(
+      'Profile not found: ghost',
+    );
+  });
+
+  it('sets image.use in profile.yml', () => {
+    makeProfile('p1');
+    updateProfileImage('p1', 'ghcr.io/custom:v2');
+    const content = readFileSync(
+      join(testBase, 'profiles', 'p1', 'profile.yml'),
+      'utf8',
+    );
+    expect(content).toContain('use: ghcr.io/custom:v2');
+  });
+
+  it('preserves existing keys when updating image.use', () => {
+    makeProfile('p1');
+    updateProfileImage('p1', 'img:v1');
+    updateProfileDockerfile('p1', '/path/to/Dockerfile');
+    updateProfileImage('p1', 'img:v2');
+    const content = readFileSync(
+      join(testBase, 'profiles', 'p1', 'profile.yml'),
+      'utf8',
+    );
+    expect(content).toContain('use: img:v2');
+    expect(content).toContain('dockerfile: /path/to/Dockerfile');
+  });
+});
+
+describe('updateProfileDockerfile', () => {
+  it('throws when profile does not exist', () => {
+    expect(() => updateProfileDockerfile('ghost', '/path/Dockerfile')).toThrow(
+      'Profile not found: ghost',
+    );
+  });
+
+  it('sets image.dockerfile in profile.yml', () => {
+    makeProfile('p1');
+    updateProfileDockerfile('p1', '/home/user/.ccpod/profiles/p1/Dockerfile');
+    const content = readFileSync(
+      join(testBase, 'profiles', 'p1', 'profile.yml'),
+      'utf8',
+    );
+    expect(content).toContain(
+      'dockerfile: /home/user/.ccpod/profiles/p1/Dockerfile',
+    );
+  });
+
+  it('preserves existing image.use when setting dockerfile', () => {
+    makeProfile('p1');
+    updateProfileImage('p1', 'myimage:latest');
+    updateProfileDockerfile('p1', '/path/Dockerfile');
+    const content = readFileSync(
+      join(testBase, 'profiles', 'p1', 'profile.yml'),
+      'utf8',
+    );
+    expect(content).toContain('use: myimage:latest');
+    expect(content).toContain('dockerfile: /path/Dockerfile');
   });
 });

@@ -1,4 +1,3 @@
-import { createHash } from 'node:crypto';
 import { existsSync, readFileSync } from 'node:fs';
 import { dirname, isAbsolute, join, normalize } from 'node:path';
 import chalk from 'chalk';
@@ -15,6 +14,7 @@ import {
 } from '../../container/builder.ts';
 import { runContainer } from '../../container/runner.ts';
 import { sidecarNetworkName, startSidecars } from '../../container/sidecars.ts';
+import { computeDockerfileHash } from '../../image/hash.ts';
 import { ensureImage, ensureLocalImage } from '../../image/manager.ts';
 import { runWizard } from '../../init/wizard.ts';
 import { extractHttpMcpPorts, parseMcpJson } from '../../mcp/parser.ts';
@@ -197,12 +197,7 @@ export default defineCommand({
         const dockerfileAbs = isAbsolute(dockerfile)
           ? dockerfile
           : join(cwd, dockerfile);
-        const dockerfileHash = existsSync(dockerfileAbs)
-          ? createHash('sha256')
-              .update(readFileSync(dockerfileAbs))
-              .digest('hex')
-              .slice(0, 16)
-          : createHash('sha256').update(dockerfile).digest('hex').slice(0, 16);
+        const dockerfileHash = computeDockerfileHash(dockerfile, cwd);
         const tag = `ccpod-local-${profileName}-${dockerfileHash}:latest`;
         const contextDir = dirname(dockerfileAbs);
         await ensureLocalImage(

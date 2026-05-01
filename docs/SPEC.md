@@ -104,7 +104,7 @@ The `~/.claude/` directory has three distinct categories requiring different per
 | F-40 | Official base image: `ghcr.io/yorch/ccpod` with Claude Code pre-installed |
 | F-41 | Override with `image: my-registry/my-image:tag` in profile |
 | F-42 | `dockerfile:` path: if absolute, context dir = `dirname(dockerfile)`; if relative, context dir = `$PWD` |
-| F-42a | When `dockerfile:` is set, ccpod auto-builds on first run using tag `ccpod-local-<profile>-<sha256-of-dockerfile-path>`; subsequent runs reuse that tag unless `--rebuild` is passed |
+| F-42a | When `dockerfile:` is set, ccpod auto-builds on first run using tag `ccpod-local-<profile>-<sha256-of-dockerfile-contents>` (falls back to path hash if file not found); subsequent runs reuse that tag unless `--rebuild` is passed |
 | F-43 | `ccpod image build [profile]` — explicit local build |
 | F-44 | `ccpod image pull [profile]` — pull latest base or declared image |
 | F-45 | `ccpod image init [profile]` — download a Dockerfile into the profile directory for local customization; defaults to the official ccpod Dockerfile; `--from <url>` accepts any raw URL; updates `image.dockerfile` in profile.yml |
