@@ -75,6 +75,7 @@ export function buildContainerSpec(
     labels: {
       "ccpod.profile": config.profileName,
       "ccpod.project": projectHash,
+      "ccpod.workdir": projectDir,
       "ccpod.type": "main",
       "ccpod.version": VERSION,
     },

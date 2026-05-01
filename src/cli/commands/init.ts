@@ -1,9 +1,12 @@
 import { defineCommand } from "citty";
+import { runWizard } from "../../init/wizard.ts";
 
 export default defineCommand({
-  meta: { description: "Interactive setup wizard" },
-  run() {
-    // TODO: implement wizard
-    console.log("ccpod init — not yet implemented");
+  meta: { description: "Interactive first-run setup wizard" },
+  args: {
+    profile: { type: "string", description: "Profile name to create", default: "default" },
+  },
+  async run({ args }) {
+    await runWizard(args.profile ?? "default");
   },
 });
