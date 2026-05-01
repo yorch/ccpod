@@ -164,15 +164,20 @@ export default defineCommand({
       let image = partial.image;
       if (image === 'build') {
         const dockerfile = partial.dockerfile ?? 'Dockerfile';
-        const dockerfileHash = createHash('sha256')
-          .update(dockerfile)
-          .digest('hex')
-          .slice(0, 16);
+        const dockerfileAbs = isAbsolute(dockerfile)
+          ? dockerfile
+          : join(cwd, dockerfile);
+        const dockerfileHash = existsSync(dockerfileAbs)
+          ? createHash('sha256')
+              .update(readFileSync(dockerfileAbs))
+              .digest('hex')
+              .slice(0, 16)
+          : createHash('sha256').update(dockerfile).digest('hex').slice(0, 16);
         const tag = `ccpod-local-${profileName}-${dockerfileHash}:latest`;
-        const contextDir = isAbsolute(dockerfile) ? dirname(dockerfile) : cwd;
+        const contextDir = dirname(dockerfileAbs);
         await ensureLocalImage(
           tag,
-          dockerfile,
+          dockerfileAbs,
           contextDir,
           args.rebuild ?? false,
         );
