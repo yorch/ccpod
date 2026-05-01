@@ -141,7 +141,7 @@ export async function runWizard(profileName = "default"): Promise<void> {
     auth: authConfig,
     config: configConfig,
     env: [],
-    image: { use: "ghcr.io/ccpod/base:latest" },
+    image: { use: "ghcr.io/yorch/ccpod:latest" },
     name: profileName,
     network: { allow: [], policy: networkPolicy },
     ports: { autoDetectMcp: true, list: [] },

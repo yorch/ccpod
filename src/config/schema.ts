@@ -34,9 +34,9 @@ export const profileConfigSchema = z.object({
   image: z
     .object({
       dockerfile: z.string().optional(),
-      use: z.string().default("ghcr.io/ccpod/base:latest"),
+      use: z.string().default("ghcr.io/yorch/ccpod:latest"),
     })
-    .default({ use: "ghcr.io/ccpod/base:latest" }),
+    .default({ use: "ghcr.io/yorch/ccpod:latest" }),
   name: z.string(),
   network: z
     .object({
