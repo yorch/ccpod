@@ -1,4 +1,5 @@
-import { dirname, isAbsolute } from 'node:path';
+import { existsSync } from 'node:fs';
+import { dirname, isAbsolute, join } from 'node:path';
 import chalk from 'chalk';
 import { defineCommand } from 'citty';
 import {
@@ -40,13 +41,35 @@ export default defineCommand({
     }
 
     const profile = loadProfileConfig(getProfileDir(profileName));
-    const dockerfile =
-      args.dockerfile ?? profile.image.dockerfile ?? 'Dockerfile';
-    const tag = args.tag ?? `ccpod-local-${profileName}:latest`;
+    const dockerfile = args.dockerfile ?? profile.image.dockerfile;
 
+    if (!dockerfile) {
+      console.error(
+        `${chalk.red('error:')} No Dockerfile configured for profile '${profileName}'.`,
+      );
+      console.error(
+        chalk.dim(
+          `  Run 'ccpod image init' to download the official Dockerfile, then customize it.`,
+        ),
+      );
+      process.exit(1);
+    }
+
+    const tag = args.tag ?? `ccpod-local-${profileName}:latest`;
     const contextDir = isAbsolute(dockerfile)
       ? dirname(dockerfile)
       : process.cwd();
+
+    const resolvedDockerfile = isAbsolute(dockerfile)
+      ? dockerfile
+      : join(contextDir, dockerfile);
+    if (!existsSync(resolvedDockerfile)) {
+      console.error(
+        `${chalk.red('error:')} Dockerfile not found: ${resolvedDockerfile}`,
+      );
+      process.exit(1);
+    }
+
     console.log(chalk.dim(`Building ${dockerfile} → ${tag}`));
     await buildImage(dockerfile, tag, contextDir);
     console.log(chalk.green(`\n✓ Built: ${tag}`));
