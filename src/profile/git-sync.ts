@@ -1,7 +1,7 @@
-import { existsSync } from "node:fs";
-import simpleGit from "simple-git";
-import type { SyncStrategy } from "../types/index.ts";
-import { shouldSync, writeSyncLock } from "./lock.ts";
+import { existsSync } from 'node:fs';
+import simpleGit from 'simple-git';
+import type { SyncStrategy } from '../types/index.ts';
+import { shouldSync, writeSyncLock } from './lock.ts';
 
 export async function syncGitConfig(
   profileDir: string,
@@ -13,7 +13,7 @@ export async function syncGitConfig(
 
   if (!existsSync(configDir)) {
     const git = simpleGit();
-    await git.clone(repo, configDir, ["--depth", "1", "--branch", ref]);
+    await git.clone(repo, configDir, ['--depth', '1', '--branch', ref]);
     writeSyncLock(profileDir);
     return;
   }
@@ -21,7 +21,7 @@ export async function syncGitConfig(
   if (!shouldSync(profileDir, strategy)) return;
 
   const git = simpleGit(configDir);
-  await git.fetch("origin", ref, { "--depth": "1" });
-  await git.reset(["--hard", `origin/${ref}`]);
+  await git.fetch('origin', ref, { '--depth': '1' });
+  await git.reset(['--hard', `origin/${ref}`]);
   writeSyncLock(profileDir);
 }

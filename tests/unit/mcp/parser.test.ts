@@ -1,8 +1,8 @@
-import { afterEach, describe, expect, it } from "bun:test";
-import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
-import { tmpdir } from "node:os";
-import { join } from "node:path";
-import { extractHttpMcpPorts, parseMcpJson } from "../../../src/mcp/parser.ts";
+import { afterEach, describe, expect, it } from 'bun:test';
+import { mkdtempSync, rmSync, writeFileSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
+import { extractHttpMcpPorts, parseMcpJson } from '../../../src/mcp/parser.ts';
 
 const tempDirs: string[] = [];
 
@@ -12,92 +12,92 @@ afterEach(() => {
 });
 
 function makeTempDir(): string {
-  const dir = mkdtempSync(join(tmpdir(), "ccpod-mcp-test-"));
+  const dir = mkdtempSync(join(tmpdir(), 'ccpod-mcp-test-'));
   tempDirs.push(dir);
   return dir;
 }
 
-describe("parseMcpJson", () => {
-  it("returns null when .mcp.json does not exist", () => {
+describe('parseMcpJson', () => {
+  it('returns null when .mcp.json does not exist', () => {
     expect(parseMcpJson(makeTempDir())).toBeNull();
   });
 
-  it("parses valid file with mcpServers", () => {
+  it('parses valid file with mcpServers', () => {
     const dir = makeTempDir();
     writeFileSync(
-      join(dir, ".mcp.json"),
+      join(dir, '.mcp.json'),
       JSON.stringify({
-        mcpServers: { foo: { type: "http", url: "http://localhost:3000" } },
+        mcpServers: { foo: { type: 'http', url: 'http://localhost:3000' } },
       }),
     );
     const result = parseMcpJson(dir);
     expect(result).not.toBeNull();
-    expect(result?.mcpServers?.foo.type).toBe("http");
+    expect(result?.mcpServers?.foo.type).toBe('http');
   });
 
-  it("parses file with no mcpServers key", () => {
+  it('parses file with no mcpServers key', () => {
     const dir = makeTempDir();
-    writeFileSync(join(dir, ".mcp.json"), "{}");
+    writeFileSync(join(dir, '.mcp.json'), '{}');
     const result = parseMcpJson(dir);
     expect(result).not.toBeNull();
     expect(result?.mcpServers).toBeUndefined();
   });
 });
 
-describe("extractHttpMcpPorts", () => {
-  it("extracts port from http server", () => {
+describe('extractHttpMcpPorts', () => {
+  it('extracts port from http server', () => {
     expect(
       extractHttpMcpPorts({
-        mcpServers: { a: { type: "http", url: "http://localhost:8080" } },
+        mcpServers: { a: { type: 'http', url: 'http://localhost:8080' } },
       }),
     ).toEqual([8080]);
   });
 
-  it("extracts port from sse server", () => {
+  it('extracts port from sse server', () => {
     expect(
       extractHttpMcpPorts({
-        mcpServers: { a: { type: "sse", url: "http://localhost:9000/sse" } },
+        mcpServers: { a: { type: 'sse', url: 'http://localhost:9000/sse' } },
       }),
     ).toEqual([9000]);
   });
 
-  it("skips stdio servers", () => {
+  it('skips stdio servers', () => {
     expect(
       extractHttpMcpPorts({
-        mcpServers: { a: { command: "node server.js", type: "stdio" } },
+        mcpServers: { a: { command: 'node server.js', type: 'stdio' } },
       }),
     ).toEqual([]);
   });
 
-  it("skips servers with no url", () => {
+  it('skips servers with no url', () => {
     expect(
-      extractHttpMcpPorts({ mcpServers: { a: { type: "http" } } }),
+      extractHttpMcpPorts({ mcpServers: { a: { type: 'http' } } }),
     ).toEqual([]);
   });
 
-  it("deduplicates identical ports across servers", () => {
+  it('deduplicates identical ports across servers', () => {
     const ports = extractHttpMcpPorts({
       mcpServers: {
-        a: { type: "http", url: "http://localhost:3000" },
-        b: { type: "sse", url: "http://localhost:3000/events" },
+        a: { type: 'http', url: 'http://localhost:3000' },
+        b: { type: 'sse', url: 'http://localhost:3000/events' },
       },
     });
     expect(ports).toEqual([3000]);
   });
 
-  it("ignores invalid URLs without throwing", () => {
+  it('ignores invalid URLs without throwing', () => {
     expect(
       extractHttpMcpPorts({
-        mcpServers: { a: { type: "http", url: "not-a-url" } },
+        mcpServers: { a: { type: 'http', url: 'not-a-url' } },
       }),
     ).toEqual([]);
   });
 
-  it("returns empty array for empty mcpServers", () => {
+  it('returns empty array for empty mcpServers', () => {
     expect(extractHttpMcpPorts({ mcpServers: {} })).toEqual([]);
   });
 
-  it("returns empty array when mcpServers absent", () => {
+  it('returns empty array when mcpServers absent', () => {
     expect(extractHttpMcpPorts({})).toEqual([]);
   });
 });

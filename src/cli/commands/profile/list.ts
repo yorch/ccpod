@@ -1,15 +1,15 @@
-import chalk from "chalk";
-import { defineCommand } from "citty";
-import { loadProfileConfig } from "../../../config/loader.ts";
-import { getLastSync } from "../../../profile/lock.ts";
-import { getProfileDir, listProfiles } from "../../../profile/manager.ts";
+import chalk from 'chalk';
+import { defineCommand } from 'citty';
+import { loadProfileConfig } from '../../../config/loader.ts';
+import { getLastSync } from '../../../profile/lock.ts';
+import { getProfileDir, listProfiles } from '../../../profile/manager.ts';
 
 export default defineCommand({
-  meta: { description: "List all profiles" },
+  meta: { description: 'List all profiles' },
   run() {
     const profiles = listProfiles();
     if (profiles.length === 0) {
-      console.log("No profiles found. Run `ccpod init` to create one.");
+      console.log('No profiles found. Run `ccpod init` to create one.');
       return;
     }
 
@@ -18,9 +18,9 @@ export default defineCommand({
       try {
         const cfg = loadProfileConfig(profileDir);
         const lastSync = getLastSync(profileDir);
-        const syncStr = lastSync ? lastSync.toLocaleDateString() : "-";
+        const syncStr = lastSync ? lastSync.toLocaleDateString() : '-';
         const source =
-          cfg.config.source === "git" ? `git (${cfg.config.sync})` : "local";
+          cfg.config.source === 'git' ? `git (${cfg.config.sync})` : 'local';
         return {
           image: cfg.image.use,
           imageDisplay: cfg.image.use,
@@ -31,12 +31,12 @@ export default defineCommand({
         };
       } catch {
         return {
-          image: "[invalid]",
-          imageDisplay: chalk.red("[invalid]"),
+          image: '[invalid]',
+          imageDisplay: chalk.red('[invalid]'),
           name,
-          source: "-",
-          state: "-",
-          sync: "-",
+          source: '-',
+          state: '-',
+          sync: '-',
         };
       }
     });
@@ -48,11 +48,11 @@ export default defineCommand({
 
     const pad = (s: string, w: number) => s.padEnd(w);
     const padDisplay = (display: string, raw: string, w: number) =>
-      display + " ".repeat(w - raw.length);
+      display + ' '.repeat(w - raw.length);
 
     console.log(
       chalk.dim(
-        `${pad("NAME", nameW)}  ${pad("IMAGE", imageW)}  ${pad("SOURCE", sourceW)}  ${pad("STATE", stateW)}  LAST SYNC`,
+        `${pad('NAME', nameW)}  ${pad('IMAGE', imageW)}  ${pad('SOURCE', sourceW)}  ${pad('STATE', stateW)}  LAST SYNC`,
       ),
     );
     for (const r of rows) {

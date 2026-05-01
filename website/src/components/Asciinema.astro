@@ -1,5 +1,5 @@
 ---
-import { withBase } from "../lib/url";
+import { withBase } from '../lib/url';
 
 interface Props {
   autoplay?: boolean;
@@ -13,7 +13,7 @@ interface Props {
 
 const {
   src,
-  poster = "npt:0:05",
+  poster = 'npt:0:05',
   cols = 100,
   rows = 28,
   speed = 1.5,
@@ -24,7 +24,7 @@ const {
 const id = `asciinema-${Math.random().toString(36).slice(2, 9)}`;
 const resolvedSrc = withBase(src);
 
-const PLAYER_VERSION = "3.15.1";
+const PLAYER_VERSION = '3.15.1';
 const playerCss = `https://cdn.jsdelivr.net/npm/asciinema-player@${PLAYER_VERSION}/dist/bundle/asciinema-player.css`;
 const playerJs = `https://cdn.jsdelivr.net/npm/asciinema-player@${PLAYER_VERSION}/dist/bundle/asciinema-player.min.js`;
 ---

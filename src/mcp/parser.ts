@@ -1,9 +1,9 @@
-import { existsSync, readFileSync } from "node:fs";
-import { join } from "node:path";
+import { existsSync, readFileSync } from 'node:fs';
+import { join } from 'node:path';
 
 interface McpServer {
   command?: string;
-  type?: "stdio" | "http" | "sse";
+  type?: 'stdio' | 'http' | 'sse';
   url?: string;
 }
 
@@ -12,10 +12,10 @@ interface McpConfig {
 }
 
 export function parseMcpJson(projectDir: string): McpConfig | null {
-  const mcpPath = join(projectDir, ".mcp.json");
+  const mcpPath = join(projectDir, '.mcp.json');
   if (!existsSync(mcpPath)) return null;
   try {
-    return JSON.parse(readFileSync(mcpPath, "utf8")) as McpConfig;
+    return JSON.parse(readFileSync(mcpPath, 'utf8')) as McpConfig;
   } catch {
     return null;
   }
@@ -24,7 +24,7 @@ export function parseMcpJson(projectDir: string): McpConfig | null {
 export function extractHttpMcpPorts(config: McpConfig): number[] {
   const ports: number[] = [];
   for (const server of Object.values(config.mcpServers ?? {})) {
-    if ((server.type === "http" || server.type === "sse") && server.url) {
+    if ((server.type === 'http' || server.type === 'sse') && server.url) {
       try {
         const port = new URL(server.url).port;
         if (port) ports.push(Number(port));

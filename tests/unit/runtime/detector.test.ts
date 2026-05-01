@@ -1,8 +1,8 @@
-import { afterEach, describe, expect, it } from "bun:test";
-import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
-import { tmpdir } from "node:os";
-import { join } from "node:path";
-import { detectRuntime } from "../../../src/runtime/detector.ts";
+import { afterEach, describe, expect, it } from 'bun:test';
+import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
+import { detectRuntime } from '../../../src/runtime/detector.ts';
 
 const savedEnv: Record<string, string | undefined> = {};
 const tempDirs: string[] = [];
@@ -22,79 +22,79 @@ function saveEnv(...keys: string[]) {
 }
 
 function makeFakeHome(): string {
-  const dir = mkdtempSync(join(tmpdir(), "ccpod-home-"));
+  const dir = mkdtempSync(join(tmpdir(), 'ccpod-home-'));
   tempDirs.push(dir);
   return dir;
 }
 
 function touchFile(path: string): void {
-  mkdirSync(path.substring(0, path.lastIndexOf("/")), { recursive: true });
-  writeFileSync(path, "");
+  mkdirSync(path.substring(0, path.lastIndexOf('/')), { recursive: true });
+  writeFileSync(path, '');
 }
 
-describe("detectRuntime", () => {
-  it("detects OrbStack when its socket exists", () => {
-    saveEnv("HOME");
+describe('detectRuntime', () => {
+  it('detects OrbStack when its socket exists', () => {
+    saveEnv('HOME');
     const home = makeFakeHome();
     process.env.HOME = home;
-    touchFile(join(home, ".orbstack/run/docker.sock"));
+    touchFile(join(home, '.orbstack/run/docker.sock'));
 
     const result = detectRuntime();
-    expect(result.name).toBe("orbstack");
-    expect(result.socketPath).toBe(join(home, ".orbstack/run/docker.sock"));
+    expect(result.name).toBe('orbstack');
+    expect(result.socketPath).toBe(join(home, '.orbstack/run/docker.sock'));
   });
 
-  it("prefers OrbStack over Docker when both sockets present", () => {
-    saveEnv("HOME");
+  it('prefers OrbStack over Docker when both sockets present', () => {
+    saveEnv('HOME');
     const home = makeFakeHome();
     process.env.HOME = home;
-    touchFile(join(home, ".orbstack/run/docker.sock"));
-    touchFile(join(home, ".docker/run/docker.sock"));
+    touchFile(join(home, '.orbstack/run/docker.sock'));
+    touchFile(join(home, '.docker/run/docker.sock'));
 
-    expect(detectRuntime().name).toBe("orbstack");
+    expect(detectRuntime().name).toBe('orbstack');
   });
 
-  it("detects Docker via home-based socket", () => {
-    saveEnv("HOME");
+  it('detects Docker via home-based socket', () => {
+    saveEnv('HOME');
     const home = makeFakeHome();
     process.env.HOME = home;
-    touchFile(join(home, ".docker/run/docker.sock"));
+    touchFile(join(home, '.docker/run/docker.sock'));
 
     // OrbStack socket absent in fake home; result is docker (may use /var/run/docker.sock or home path)
-    expect(detectRuntime().name).toBe("docker");
+    expect(detectRuntime().name).toBe('docker');
   });
 
-  it("detects Colima when its socket exists and Docker absent", () => {
-    saveEnv("HOME", "DOCKER_SOCKET_PATH");
+  it('detects Colima when its socket exists and Docker absent', () => {
+    saveEnv('HOME', 'DOCKER_SOCKET_PATH');
     const home = makeFakeHome();
     process.env.HOME = home;
-    process.env.DOCKER_SOCKET_PATH = join(home, "nonexistent-docker.sock");
-    touchFile(join(home, ".colima/default/docker.sock"));
+    process.env.DOCKER_SOCKET_PATH = join(home, 'nonexistent-docker.sock');
+    touchFile(join(home, '.colima/default/docker.sock'));
 
-    expect(detectRuntime().name).toBe("colima");
+    expect(detectRuntime().name).toBe('colima');
   });
 
-  it("detects Podman via XDG_RUNTIME_DIR socket", () => {
-    saveEnv("HOME", "XDG_RUNTIME_DIR", "DOCKER_SOCKET_PATH");
+  it('detects Podman via XDG_RUNTIME_DIR socket', () => {
+    saveEnv('HOME', 'XDG_RUNTIME_DIR', 'DOCKER_SOCKET_PATH');
     const home = makeFakeHome();
     const xdg = makeFakeHome();
     process.env.HOME = home;
     process.env.XDG_RUNTIME_DIR = xdg;
-    process.env.DOCKER_SOCKET_PATH = join(home, "nonexistent-docker.sock");
-    touchFile(join(xdg, "podman/podman.sock"));
+    process.env.DOCKER_SOCKET_PATH = join(home, 'nonexistent-docker.sock');
+    touchFile(join(xdg, 'podman/podman.sock'));
 
     const result = detectRuntime();
-    expect(result.name).toBe("podman");
-    expect(result.socketPath).toBe(join(xdg, "podman/podman.sock"));
+    expect(result.name).toBe('podman');
+    expect(result.socketPath).toBe(join(xdg, 'podman/podman.sock'));
   });
 
-  it("throws descriptive error when no sockets exist", () => {
-    saveEnv("HOME", "XDG_RUNTIME_DIR", "DOCKER_SOCKET_PATH");
+  it('throws descriptive error when no sockets exist', () => {
+    saveEnv('HOME', 'XDG_RUNTIME_DIR', 'DOCKER_SOCKET_PATH');
     const home = makeFakeHome();
     process.env.HOME = home;
     process.env.XDG_RUNTIME_DIR = home;
-    process.env.DOCKER_SOCKET_PATH = join(home, "nonexistent-docker.sock");
+    process.env.DOCKER_SOCKET_PATH = join(home, 'nonexistent-docker.sock');
 
-    expect(() => detectRuntime()).toThrow("No container runtime detected");
+    expect(() => detectRuntime()).toThrow('No container runtime detected');
   });
 });

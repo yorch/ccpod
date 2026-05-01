@@ -1,7 +1,7 @@
-import chalk from "chalk";
-import { dockerExec } from "../runtime/docker.ts";
-import type { ServiceConfig } from "../types/index.ts";
-import { VERSION } from "../version.ts";
+import chalk from 'chalk';
+import { dockerExec } from '../runtime/docker.ts';
+import type { ServiceConfig } from '../types/index.ts';
+import { VERSION } from '../version.ts';
 
 export function sidecarNetworkName(projectHash: string): string {
   return `ccpod-net-${projectHash}`;
@@ -43,15 +43,15 @@ export async function startSidecars(
 }
 
 export async function removeSidecarNetwork(networkName: string): Promise<void> {
-  await dockerExec(["network", "rm", networkName]);
+  await dockerExec(['network', 'rm', networkName]);
 }
 
 async function ensureNetwork(name: string): Promise<void> {
-  const { exitCode } = await dockerExec(["network", "inspect", name]);
+  const { exitCode } = await dockerExec(['network', 'inspect', name]);
   if (exitCode === 0) return;
   const { exitCode: createCode, stderr } = await dockerExec([
-    "network",
-    "create",
+    'network',
+    'create',
     name,
   ]);
   if (createCode !== 0)
@@ -67,45 +67,45 @@ async function startSidecar(
   serviceName: string,
 ): Promise<void> {
   const { exitCode, stdout } = await dockerExec([
-    "inspect",
-    "--format",
-    "{{.State.Status}}",
+    'inspect',
+    '--format',
+    '{{.State.Status}}',
     containerName,
   ]);
 
   if (exitCode === 0) {
-    if (stdout === "running") {
+    if (stdout === 'running') {
       console.log(`  Sidecar already running: ${chalk.cyan(serviceName)}`);
       return;
     }
-    await dockerExec(["rm", containerName]);
+    await dockerExec(['rm', containerName]);
   }
 
   const args = [
-    "run",
-    "-d",
-    "--name",
+    'run',
+    '-d',
+    '--name',
     containerName,
-    "--network",
+    '--network',
     networkName,
-    "--label",
+    '--label',
     `ccpod.profile=${profileName}`,
-    "--label",
+    '--label',
     `ccpod.project=${projectHash}`,
-    "--label",
+    '--label',
     `ccpod.type=${serviceName}`,
-    "--label",
+    '--label',
     `ccpod.version=${VERSION}`,
   ];
 
   for (const [k, v] of Object.entries(svc.env ?? {})) {
-    args.push("-e", `${k}=${v}`);
+    args.push('-e', `${k}=${v}`);
   }
   for (const vol of svc.volumes ?? []) {
-    args.push("-v", vol);
+    args.push('-v', vol);
   }
   for (const port of svc.ports ?? []) {
-    args.push("-p", port);
+    args.push('-p', port);
   }
 
   args.push(svc.image);

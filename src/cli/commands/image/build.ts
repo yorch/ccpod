@@ -1,37 +1,37 @@
-import chalk from "chalk";
-import { defineCommand } from "citty";
+import chalk from 'chalk';
+import { defineCommand } from 'citty';
 import {
   loadProfileConfig,
   loadProjectConfig,
-} from "../../../config/loader.ts";
-import { buildImage } from "../../../image/manager.ts";
+} from '../../../config/loader.ts';
+import { buildImage } from '../../../image/manager.ts';
 import {
   getProfileDir,
   profileExists,
   updateProfileImage,
-} from "../../../profile/manager.ts";
+} from '../../../profile/manager.ts';
 
 export default defineCommand({
   args: {
     apply: {
       default: false,
-      description: "Update profile image.use to the built tag after build",
-      type: "boolean",
+      description: 'Update profile image.use to the built tag after build',
+      type: 'boolean',
     },
     dockerfile: {
-      description: "Dockerfile path (overrides profile)",
-      type: "string",
+      description: 'Dockerfile path (overrides profile)',
+      type: 'string',
     },
-    profile: { description: "Profile name", type: "string" },
+    profile: { description: 'Profile name', type: 'string' },
     tag: {
-      description: "Image tag (overrides auto-generated)",
-      type: "string",
+      description: 'Image tag (overrides auto-generated)',
+      type: 'string',
     },
   },
-  meta: { description: "Build a local Docker image for a profile" },
+  meta: { description: 'Build a local Docker image for a profile' },
   async run({ args }) {
     const projectConfig = loadProjectConfig(process.cwd());
-    const profileName = args.profile ?? projectConfig?.profile ?? "default";
+    const profileName = args.profile ?? projectConfig?.profile ?? 'default';
 
     if (!profileExists(profileName)) {
       console.error(`Profile '${profileName}' not found.`);
@@ -40,7 +40,7 @@ export default defineCommand({
 
     const profile = loadProfileConfig(getProfileDir(profileName));
     const dockerfile =
-      args.dockerfile ?? profile.image.dockerfile ?? "Dockerfile";
+      args.dockerfile ?? profile.image.dockerfile ?? 'Dockerfile';
     const tag = args.tag ?? `ccpod-local-${profileName}:latest`;
 
     console.log(chalk.dim(`Building ${dockerfile} → ${tag}`));

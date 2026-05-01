@@ -1,9 +1,9 @@
-export type SyncStrategy = "always" | "daily" | "pin";
-export type MergeStrategy = "deep" | "override";
-export type StateMode = "ephemeral" | "persistent";
-export type NetworkPolicy = "full" | "restricted";
-export type AuthType = "api-key" | "oauth";
-export type ClaudeMdMerge = "append" | "override";
+export type SyncStrategy = 'always' | 'daily' | 'pin';
+export type MergeStrategy = 'deep' | 'override';
+export type StateMode = 'ephemeral' | 'persistent';
+export type NetworkPolicy = 'full' | 'restricted';
+export type AuthType = 'api-key' | 'oauth';
+export type ClaudeMdMerge = 'append' | 'override';
 
 export interface PortsConfig {
   autoDetectMcp: boolean;
@@ -17,7 +17,7 @@ export interface ProfileConfig {
     keyFile?: string;
   };
   config: {
-    source: "local" | "git";
+    source: 'local' | 'git';
     path?: string;
     repo?: string;
     sync?: SyncStrategy;
@@ -50,7 +50,7 @@ export interface ProjectConfig {
   };
   env?: string[];
   merge?: MergeStrategy;
-  network?: Partial<ProfileConfig["network"]>;
+  network?: Partial<ProfileConfig['network']>;
   ports?: Partial<PortsConfig>;
   profile?: string;
   services?: Record<string, ServiceConfig>;
@@ -69,19 +69,19 @@ export interface PortMapping {
 }
 
 export interface ResolvedConfig {
-  auth: ProfileConfig["auth"];
+  auth: ProfileConfig['auth'];
   autoDetectMcp: boolean;
   claudeArgs: string[];
   dockerfile?: string;
   env: Record<string, string>;
   image: string;
   mergedConfigDir: string;
-  network: ProfileConfig["network"];
+  network: ProfileConfig['network'];
   plugins: string[];
   ports: PortMapping[];
   profileName: string;
   services: Record<string, ServiceConfig>;
-  ssh: ProfileConfig["ssh"];
+  ssh: ProfileConfig['ssh'];
   state: StateMode;
 }
 
@@ -91,9 +91,9 @@ export interface DetectedRuntime {
 }
 
 export interface ContainerLabels {
-  "ccpod.profile": string;
-  "ccpod.project": string;
-  "ccpod.type": "main" | string;
-  "ccpod.version": string;
-  "ccpod.workdir": string;
+  'ccpod.profile': string;
+  'ccpod.project': string;
+  'ccpod.type': 'main' | string;
+  'ccpod.version': string;
+  'ccpod.workdir': string;
 }

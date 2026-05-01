@@ -1,8 +1,8 @@
-import { createHash } from "node:crypto";
-import { homedir } from "node:os";
-import { getCredentialsDir, getStateDir } from "../profile/manager.ts";
-import type { ResolvedConfig } from "../types/index.ts";
-import { VERSION } from "../version.ts";
+import { createHash } from 'node:crypto';
+import { homedir } from 'node:os';
+import { getCredentialsDir, getStateDir } from '../profile/manager.ts';
+import type { ResolvedConfig } from '../types/index.ts';
+import { VERSION } from '../version.ts';
 
 export interface ContainerSpec {
   binds: string[];
@@ -21,7 +21,7 @@ export interface ContainerSpec {
 }
 
 export function computeProjectHash(projectDir: string): string {
-  return createHash("sha256").update(projectDir).digest("hex").slice(0, 16);
+  return createHash('sha256').update(projectDir).digest('hex').slice(0, 16);
 }
 
 export function buildContainerSpec(
@@ -44,13 +44,13 @@ export function buildContainerSpec(
   }
 
   binds.push(`ccpod-plugins-${config.profileName}:/ccpod/plugins`);
-  if (config.state === "persistent") {
+  if (config.state === 'persistent') {
     binds.push(`${getStateDir(config.profileName)}:/ccpod/state:rw`);
   }
 
   const tmpfs: Record<string, string> = {};
-  if (config.state === "ephemeral") {
-    tmpfs["/ccpod/state"] = "rw,noexec,nosuid,size=256m";
+  if (config.state === 'ephemeral') {
+    tmpfs['/ccpod/state'] = 'rw,noexec,nosuid,size=256m';
   }
 
   const portBindings: Record<string, Array<{ HostPort: string }>> = {};
@@ -62,22 +62,22 @@ export function buildContainerSpec(
   env.push(`CCPOD_STATE=${config.state}`);
 
   if (config.plugins.length > 0) {
-    env.push(`CCPOD_PLUGINS_TO_INSTALL=${config.plugins.join(",")}`);
+    env.push(`CCPOD_PLUGINS_TO_INSTALL=${config.plugins.join(',')}`);
   }
 
   const capAdd: string[] = [];
-  if (config.network.policy === "restricted") {
-    capAdd.push("NET_ADMIN");
-    env.push("CCPOD_NETWORK_POLICY=restricted");
+  if (config.network.policy === 'restricted') {
+    capAdd.push('NET_ADMIN');
+    env.push('CCPOD_NETWORK_POLICY=restricted');
     if (config.network.allow.length > 0) {
-      env.push(`CCPOD_ALLOWED_HOSTS=${config.network.allow.join(",")}`);
+      env.push(`CCPOD_ALLOWED_HOSTS=${config.network.allow.join(',')}`);
     }
   }
 
   if (config.ssh.agentForward && process.env.SSH_AUTH_SOCK) {
     const sshSock = process.env.SSH_AUTH_SOCK;
-    if (!sshSock.includes(":")) {
-      env.push("SSH_AUTH_SOCK=/run/host-services/ssh-auth.sock");
+    if (!sshSock.includes(':')) {
+      env.push('SSH_AUTH_SOCK=/run/host-services/ssh-auth.sock');
       binds.push(`${sshSock}:/run/host-services/ssh-auth.sock:ro`);
     }
   }
@@ -87,19 +87,19 @@ export function buildContainerSpec(
     env,
     image: config.image,
     labels: {
-      "ccpod.profile": config.profileName,
-      "ccpod.project": hash,
-      "ccpod.type": "main",
-      "ccpod.version": VERSION,
-      "ccpod.workdir": projectDir,
+      'ccpod.profile': config.profileName,
+      'ccpod.project': hash,
+      'ccpod.type': 'main',
+      'ccpod.version': VERSION,
+      'ccpod.workdir': projectDir,
     },
     ...(capAdd.length > 0 ? { capAdd } : {}),
     name: `ccpod-${config.profileName}-${hash}`,
-    networkMode: networkName ?? "bridge",
+    networkMode: networkName ?? 'bridge',
     openStdin: tty,
     portBindings,
     tty,
-    workingDir: "/workspace",
+    workingDir: '/workspace',
     ...(Object.keys(tmpfs).length > 0 ? { tmpfs } : {}),
     ...(config.claudeArgs.length > 0 ? { cmd: config.claudeArgs } : {}),
   };

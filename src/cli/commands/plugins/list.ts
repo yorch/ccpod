@@ -1,24 +1,24 @@
-import chalk from "chalk";
-import { defineCommand } from "citty";
-import { loadProjectConfig } from "../../../config/loader.ts";
+import chalk from 'chalk';
+import { defineCommand } from 'citty';
+import { loadProjectConfig } from '../../../config/loader.ts';
 import {
   listVolumeEntries,
   pluginsVolumeName,
   volumeExists,
-} from "../../../plugins/volume.ts";
-import { profileExists } from "../../../profile/manager.ts";
+} from '../../../plugins/volume.ts';
+import { profileExists } from '../../../profile/manager.ts';
 
 export default defineCommand({
   args: {
     profile: {
       description: "Profile name (default: from .ccpod.yml or 'default')",
-      type: "string",
+      type: 'string',
     },
   },
   meta: { description: "List plugins installed in a profile's volume" },
   async run({ args }) {
     const projectConfig = loadProjectConfig(process.cwd());
-    const profileName = args.profile ?? projectConfig?.profile ?? "default";
+    const profileName = args.profile ?? projectConfig?.profile ?? 'default';
 
     if (!profileExists(profileName)) {
       console.error(`Profile '${profileName}' not found.`);
@@ -39,11 +39,11 @@ export default defineCommand({
 
     let entries: string[];
     try {
-      entries = await listVolumeEntries(volName, "/plugins");
+      entries = await listVolumeEntries(volName, '/plugins');
     } catch (_e) {
       console.log(
         chalk.yellow(
-          "Could not inspect volume (is Docker running with alpine image available?).",
+          'Could not inspect volume (is Docker running with alpine image available?).',
         ),
       );
       console.log(
@@ -54,9 +54,9 @@ export default defineCommand({
       return;
     }
 
-    const visible = entries.filter((e) => !e.startsWith("."));
+    const visible = entries.filter((e) => !e.startsWith('.'));
     if (visible.length === 0) {
-      console.log("No plugins installed yet.");
+      console.log('No plugins installed yet.');
     } else {
       for (const entry of visible) {
         console.log(`  ${entry}`);

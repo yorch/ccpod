@@ -1,8 +1,8 @@
-import { existsSync, readFileSync, writeFileSync } from "node:fs";
-import { homedir } from "node:os";
-import { join } from "node:path";
+import { existsSync, readFileSync, writeFileSync } from 'node:fs';
+import { homedir } from 'node:os';
+import { join } from 'node:path';
 
-const GITHUB_REPO = "yorch/ccpod";
+const GITHUB_REPO = 'yorch/ccpod';
 const CHECK_INTERVAL_MS = 24 * 60 * 60 * 1000;
 
 interface UpdateCache {
@@ -12,8 +12,8 @@ interface UpdateCache {
 
 export function cachePath(): string {
   return join(
-    process.env.CCPOD_TEST_DIR ?? join(homedir(), ".ccpod"),
-    "update-check.json",
+    process.env.CCPOD_TEST_DIR ?? join(homedir(), '.ccpod'),
+    'update-check.json',
   );
 }
 
@@ -21,7 +21,7 @@ function readCache(): UpdateCache | null {
   const path = cachePath();
   if (!existsSync(path)) return null;
   try {
-    return JSON.parse(readFileSync(path, "utf8")) as UpdateCache;
+    return JSON.parse(readFileSync(path, 'utf8')) as UpdateCache;
   } catch {
     return null;
   }
@@ -31,7 +31,7 @@ export function writeCache(latestVersion: string): void {
   writeFileSync(
     cachePath(),
     JSON.stringify({ checkedAt: new Date().toISOString(), latestVersion }),
-    "utf8",
+    'utf8',
   );
 }
 
@@ -40,7 +40,7 @@ function isFresh(cache: UpdateCache): boolean {
 }
 
 export function isNewer(latest: string, current: string): boolean {
-  const parse = (v: string) => v.replace(/^v/, "").split(".").map(Number);
+  const parse = (v: string) => v.replace(/^v/, '').split('.').map(Number);
   const [lMaj, lMin, lPatch] = parse(latest);
   const [cMaj, cMin, cPatch] = parse(current);
   if (lMaj !== cMaj) return (lMaj ?? 0) > (cMaj ?? 0);
@@ -54,7 +54,7 @@ export async function fetchLatestVersion(): Promise<string | null> {
   try {
     const res = await fetch(
       `https://api.github.com/repos/${GITHUB_REPO}/releases/latest`,
-      { headers: { "User-Agent": "ccpod-updater" }, signal: controller.signal },
+      { headers: { 'User-Agent': 'ccpod-updater' }, signal: controller.signal },
     );
     if (!res.ok) return null;
     const data = (await res.json()) as { tag_name?: string };

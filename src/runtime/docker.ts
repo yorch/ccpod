@@ -1,4 +1,4 @@
-import { detectRuntime } from "./detector.ts";
+import { detectRuntime } from './detector.ts';
 
 function dockerEnv(): NodeJS.ProcessEnv {
   const runtime = detectRuntime();
@@ -9,10 +9,10 @@ function dockerEnv(): NodeJS.ProcessEnv {
 export async function dockerExec(
   args: string[],
 ): Promise<{ stdout: string; stderr: string; exitCode: number }> {
-  const proc = Bun.spawn(["docker", ...args], {
+  const proc = Bun.spawn(['docker', ...args], {
     env: dockerEnv(),
-    stderr: "pipe",
-    stdout: "pipe",
+    stderr: 'pipe',
+    stdout: 'pipe',
   });
   const [stdout, stderr, exitCode] = await Promise.all([
     new Response(proc.stdout).text(),
@@ -24,11 +24,11 @@ export async function dockerExec(
 
 /** Run a docker command with inherited stdio. Returns container exit code. */
 export async function dockerSpawn(args: string[]): Promise<number> {
-  const proc = Bun.spawn(["docker", ...args], {
+  const proc = Bun.spawn(['docker', ...args], {
     env: dockerEnv(),
-    stderr: "inherit",
-    stdin: "inherit",
-    stdout: "inherit",
+    stderr: 'inherit',
+    stdin: 'inherit',
+    stdout: 'inherit',
   });
   return proc.exited;
 }

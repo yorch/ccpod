@@ -1,50 +1,50 @@
-import { existsSync, readFileSync } from "node:fs";
-import { isAbsolute, join, normalize } from "node:path";
-import chalk from "chalk";
-import { defineCommand } from "citty";
-import { ZodError } from "zod";
-import { resolveAuth, resolveEnvForwarding } from "../../auth/resolver.ts";
-import { loadProfileConfig, loadProjectConfig } from "../../config/loader.ts";
-import { mergeClaudes, mergeConfigs } from "../../config/merger.ts";
-import { writeMergedConfig } from "../../config/writer.ts";
+import { existsSync, readFileSync } from 'node:fs';
+import { isAbsolute, join, normalize } from 'node:path';
+import chalk from 'chalk';
+import { defineCommand } from 'citty';
+import { ZodError } from 'zod';
+import { resolveAuth, resolveEnvForwarding } from '../../auth/resolver.ts';
+import { loadProfileConfig, loadProjectConfig } from '../../config/loader.ts';
+import { mergeClaudes, mergeConfigs } from '../../config/merger.ts';
+import { writeMergedConfig } from '../../config/writer.ts';
 import {
   buildContainerSpec,
   computeProjectHash,
-} from "../../container/builder.ts";
-import { runContainer } from "../../container/runner.ts";
-import { sidecarNetworkName, startSidecars } from "../../container/sidecars.ts";
-import { ensureImage, ensureLocalImage } from "../../image/manager.ts";
-import { runWizard } from "../../init/wizard.ts";
-import { extractHttpMcpPorts, parseMcpJson } from "../../mcp/parser.ts";
-import { syncGitConfig } from "../../profile/git-sync.ts";
-import { getProfileDir, profileExists } from "../../profile/manager.ts";
-import type { ResolvedConfig } from "../../types/index.ts";
+} from '../../container/builder.ts';
+import { runContainer } from '../../container/runner.ts';
+import { sidecarNetworkName, startSidecars } from '../../container/sidecars.ts';
+import { ensureImage, ensureLocalImage } from '../../image/manager.ts';
+import { runWizard } from '../../init/wizard.ts';
+import { extractHttpMcpPorts, parseMcpJson } from '../../mcp/parser.ts';
+import { syncGitConfig } from '../../profile/git-sync.ts';
+import { getProfileDir, profileExists } from '../../profile/manager.ts';
+import type { ResolvedConfig } from '../../types/index.ts';
 
 export default defineCommand({
   args: {
     env: {
       array: true,
-      description: "Pass/override env var (KEY or KEY=VALUE)",
-      type: "string",
+      description: 'Pass/override env var (KEY or KEY=VALUE)',
+      type: 'string',
     },
-    file: { description: "Headless mode: path to prompt file", type: "string" },
-    "no-state": {
+    file: { description: 'Headless mode: path to prompt file', type: 'string' },
+    'no-state': {
       default: false,
-      description: "Force ephemeral state for this run",
-      type: "boolean",
+      description: 'Force ephemeral state for this run',
+      type: 'boolean',
     },
     profile: {
-      description: "Profile name (overrides .ccpod.yml)",
-      type: "string",
+      description: 'Profile name (overrides .ccpod.yml)',
+      type: 'string',
     },
     rebuild: {
       default: false,
-      description: "Force image rebuild/repull",
-      type: "boolean",
+      description: 'Force image rebuild/repull',
+      type: 'boolean',
     },
   },
   meta: {
-    description: "Run Claude Code in a container (interactive or headless)",
+    description: 'Run Claude Code in a container (interactive or headless)',
   },
   async run({ args }) {
     try {
@@ -54,9 +54,9 @@ export default defineCommand({
       let fileArg: string | undefined;
       if (args.file) {
         const normalized = normalize(args.file);
-        if (isAbsolute(normalized) || normalized.startsWith("..")) {
+        if (isAbsolute(normalized) || normalized.startsWith('..')) {
           console.error(
-            `${chalk.red("error:")} --file must be a relative path within the project directory`,
+            `${chalk.red('error:')} --file must be a relative path within the project directory`,
           );
           process.exit(1);
         }
@@ -66,17 +66,17 @@ export default defineCommand({
       // 1. Load project config first to get profile hint
       const projectConfig = loadProjectConfig(cwd);
       const explicitProfile = args.profile ?? projectConfig?.profile;
-      const profileName = explicitProfile ?? "default";
+      const profileName = explicitProfile ?? 'default';
 
       if (!profileExists(profileName)) {
         if (!explicitProfile) {
           console.log(
-            chalk.dim("No default profile found. Starting setup wizard...\n"),
+            chalk.dim('No default profile found. Starting setup wizard...\n'),
           );
-          await runWizard("default");
+          await runWizard('default');
         } else {
           console.error(
-            `${chalk.red("error:")} Profile '${profileName}' not found. Run 'ccpod init --profile ${profileName}'.`,
+            `${chalk.red('error:')} Profile '${profileName}' not found. Run 'ccpod init --profile ${profileName}'.`,
           );
           process.exit(1);
         }
@@ -86,18 +86,18 @@ export default defineCommand({
       const profileDir = getProfileDir(profileName);
       const profile = loadProfileConfig(profileDir);
 
-      if (profile.config.source === "git" && profile.config.repo) {
+      if (profile.config.source === 'git' && profile.config.repo) {
         await syncGitConfig(
           profileDir,
           profile.config.repo,
-          profile.config.ref ?? "main",
-          profile.config.sync ?? "daily",
+          profile.config.ref ?? 'main',
+          profile.config.sync ?? 'daily',
         );
       }
 
       // 3. Merge profile + project
-      const stateOverride = args["no-state"]
-        ? ("ephemeral" as const)
+      const stateOverride = args['no-state']
+        ? ('ephemeral' as const)
         : undefined;
       const partial = mergeConfigs(profile, projectConfig, {
         state: stateOverride,
@@ -119,11 +119,11 @@ export default defineCommand({
       // Headless mode requires auth — fail early to avoid a useless container run
       if (
         fileArg &&
-        profile.auth.type === "api-key" &&
+        profile.auth.type === 'api-key' &&
         Object.keys(authEnv).length === 0
       ) {
         console.error(
-          `${chalk.red("error:")} Headless mode requires auth. Set ${profile.auth.keyEnv ?? "ANTHROPIC_API_KEY"} or configure keyFile.`,
+          `${chalk.red('error:')} Headless mode requires auth. Set ${profile.auth.keyEnv ?? 'ANTHROPIC_API_KEY'} or configure keyFile.`,
         );
         process.exit(1);
       }
@@ -135,24 +135,24 @@ export default defineCommand({
 
       // 6. Build merged ~/.claude config dir
       const configSourceDir =
-        profile.config.source === "local"
+        profile.config.source === 'local'
           ? (profile.config.path ?? profileDir)
-          : join(profileDir, "config");
+          : join(profileDir, 'config');
 
-      const profileClaudeMd = readIfExists(join(configSourceDir, "CLAUDE.md"));
-      const projectClaudeMd = readIfExists(join(cwd, "CLAUDE.md"));
-      const claudeMdMode = projectConfig?.config?.claudeMd ?? "append";
+      const profileClaudeMd = readIfExists(join(configSourceDir, 'CLAUDE.md'));
+      const projectClaudeMd = readIfExists(join(cwd, 'CLAUDE.md'));
+      const claudeMdMode = projectConfig?.config?.claudeMd ?? 'append';
       const mergedClaudeMd =
         profileClaudeMd || projectClaudeMd
           ? mergeClaudes(
-              profileClaudeMd ?? "",
-              projectClaudeMd ?? "",
+              profileClaudeMd ?? '',
+              projectClaudeMd ?? '',
               claudeMdMode,
             )
-          : "";
+          : '';
 
       const profileSettings =
-        readJsonIfExists(join(configSourceDir, "settings.json")) ?? {};
+        readJsonIfExists(join(configSourceDir, 'settings.json')) ?? {};
       const mergedConfigDir = writeMergedConfig(
         configSourceDir,
         mergedClaudeMd,
@@ -161,9 +161,9 @@ export default defineCommand({
 
       // 7. Resolve image — build locally if use === "build", else pull
       let image = partial.image;
-      if (image === "build") {
+      if (image === 'build') {
         const tag = `ccpod-local-${profileName}:latest`;
-        const dockerfile = partial.dockerfile ?? "Dockerfile";
+        const dockerfile = partial.dockerfile ?? 'Dockerfile';
         await ensureLocalImage(tag, dockerfile, cwd, args.rebuild ?? false);
         image = tag;
       } else {
@@ -173,7 +173,7 @@ export default defineCommand({
       // 8. Build full config
       const config: ResolvedConfig = {
         ...partial,
-        claudeArgs: fileArg ? ["--file", `/workspace/${fileArg}`] : [],
+        claudeArgs: fileArg ? ['--file', `/workspace/${fileArg}`] : [],
         env,
         image,
         mergedConfigDir,
@@ -186,7 +186,7 @@ export default defineCommand({
 
       if (Object.keys(config.services).length > 0) {
         networkName = sidecarNetworkName(hash);
-        console.log(chalk.bold("Starting sidecars..."));
+        console.log(chalk.bold('Starting sidecars...'));
         await startSidecars(config.services, networkName, profileName, hash);
       }
 
@@ -197,14 +197,14 @@ export default defineCommand({
     } catch (err) {
       if (err instanceof ZodError) {
         const lines = err.issues.map(
-          (i) => `  ${i.path.join(".") || "(root)"}: ${i.message}`,
+          (i) => `  ${i.path.join('.') || '(root)'}: ${i.message}`,
         );
         console.error(
-          `${chalk.red("error:")} Config validation failed:\n${lines.join("\n")}`,
+          `${chalk.red('error:')} Config validation failed:\n${lines.join('\n')}`,
         );
       } else {
         const msg = err instanceof Error ? err.message : String(err);
-        console.error(`${chalk.red("error:")} ${msg}`);
+        console.error(`${chalk.red('error:')} ${msg}`);
       }
       process.exit(1);
     }
@@ -212,13 +212,13 @@ export default defineCommand({
 });
 
 function readIfExists(path: string): string | null {
-  return existsSync(path) ? readFileSync(path, "utf8") : null;
+  return existsSync(path) ? readFileSync(path, 'utf8') : null;
 }
 
 function readJsonIfExists(path: string): object | null {
   if (!existsSync(path)) return null;
   try {
-    return JSON.parse(readFileSync(path, "utf8")) as object;
+    return JSON.parse(readFileSync(path, 'utf8')) as object;
   } catch {
     return null;
   }

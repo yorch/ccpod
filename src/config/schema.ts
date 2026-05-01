@@ -1,4 +1,4 @@
-import { z } from "zod";
+import { z } from 'zod';
 
 const portsConfigSchema = z
   .object({
@@ -17,38 +17,38 @@ const serviceConfigSchema = z.object({
 export const profileConfigSchema = z.object({
   auth: z
     .object({
-      keyEnv: z.string().default("ANTHROPIC_API_KEY"),
+      keyEnv: z.string().default('ANTHROPIC_API_KEY'),
       keyFile: z.string().optional(),
-      type: z.enum(["api-key", "oauth"]).default("api-key"),
+      type: z.enum(['api-key', 'oauth']).default('api-key'),
     })
-    .default({ keyEnv: "ANTHROPIC_API_KEY", type: "api-key" }),
+    .default({ keyEnv: 'ANTHROPIC_API_KEY', type: 'api-key' }),
   config: z.object({
     path: z.string().optional(),
     ref: z.string().optional(),
     repo: z.string().optional(),
-    source: z.enum(["local", "git"]),
-    sync: z.enum(["always", "daily", "pin"]).default("daily"),
+    source: z.enum(['local', 'git']),
+    sync: z.enum(['always', 'daily', 'pin']).default('daily'),
   }),
   description: z.string().optional(),
   env: z.array(z.string()).default([]),
   image: z
     .object({
       dockerfile: z.string().optional(),
-      use: z.string().default("ghcr.io/yorch/ccpod:latest"),
+      use: z.string().default('ghcr.io/yorch/ccpod:latest'),
     })
-    .default({ use: "ghcr.io/yorch/ccpod:latest" }),
+    .default({ use: 'ghcr.io/yorch/ccpod:latest' }),
   name: z
     .string()
     .regex(
       /^[a-zA-Z0-9_-]{1,64}$/,
-      "Profile name may only contain letters, digits, hyphens, and underscores (max 64 chars)",
+      'Profile name may only contain letters, digits, hyphens, and underscores (max 64 chars)',
     ),
   network: z
     .object({
       allow: z.array(z.string()).default([]),
-      policy: z.enum(["full", "restricted"]).default("full"),
+      policy: z.enum(['full', 'restricted']).default('full'),
     })
-    .default({ allow: [], policy: "full" }),
+    .default({ allow: [], policy: 'full' }),
   plugins: z.array(z.string()).default([]),
   ports: portsConfigSchema,
   services: z.record(z.string(), serviceConfigSchema).default({}),
@@ -58,21 +58,21 @@ export const profileConfigSchema = z.object({
       mountSshDir: z.boolean().default(false),
     })
     .default({ agentForward: true, mountSshDir: false }),
-  state: z.enum(["ephemeral", "persistent"]).default("ephemeral"),
+  state: z.enum(['ephemeral', 'persistent']).default('ephemeral'),
 });
 
 export const projectConfigSchema = z.object({
   config: z
     .object({
-      claudeMd: z.enum(["append", "override"]).default("append"),
+      claudeMd: z.enum(['append', 'override']).default('append'),
     })
     .optional(),
   env: z.array(z.string()).optional(),
-  merge: z.enum(["deep", "override"]).default("deep"),
+  merge: z.enum(['deep', 'override']).default('deep'),
   network: z
     .object({
       allow: z.array(z.string()).optional(),
-      policy: z.enum(["full", "restricted"]).optional(),
+      policy: z.enum(['full', 'restricted']).optional(),
     })
     .optional(),
   ports: z
@@ -85,7 +85,7 @@ export const projectConfigSchema = z.object({
     .string()
     .regex(
       /^[a-zA-Z0-9_-]{1,64}$/,
-      "Profile name may only contain letters, digits, hyphens, and underscores (max 64 chars)",
+      'Profile name may only contain letters, digits, hyphens, and underscores (max 64 chars)',
     )
     .optional(),
   services: z.record(z.string(), serviceConfigSchema).optional(),

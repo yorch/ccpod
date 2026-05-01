@@ -1,27 +1,27 @@
-import { existsSync, readFileSync } from "node:fs";
-import { join } from "node:path";
-import chalk from "chalk";
-import { defineCommand } from "citty";
-import { stringify as yamlStringify } from "yaml";
+import { existsSync, readFileSync } from 'node:fs';
+import { join } from 'node:path';
+import chalk from 'chalk';
+import { defineCommand } from 'citty';
+import { stringify as yamlStringify } from 'yaml';
 import {
   loadProfileConfig,
   loadProjectConfig,
-} from "../../../config/loader.ts";
-import { mergeClaudes, mergeConfigs } from "../../../config/merger.ts";
-import { getProfileDir, profileExists } from "../../../profile/manager.ts";
+} from '../../../config/loader.ts';
+import { mergeClaudes, mergeConfigs } from '../../../config/merger.ts';
+import { getProfileDir, profileExists } from '../../../profile/manager.ts';
 
 export default defineCommand({
   args: {
-    json: { default: false, description: "Output as JSON", type: "boolean" },
-    profile: { description: "Override profile name", type: "string" },
+    json: { default: false, description: 'Output as JSON', type: 'boolean' },
+    profile: { description: 'Override profile name', type: 'string' },
   },
   meta: {
-    description: "Show effective merged config for the current directory",
+    description: 'Show effective merged config for the current directory',
   },
   run({ args }) {
     const cwd = process.cwd();
     const projectConfig = loadProjectConfig(cwd);
-    const profileName = args.profile ?? projectConfig?.profile ?? "default";
+    const profileName = args.profile ?? projectConfig?.profile ?? 'default';
 
     if (!profileExists(profileName)) {
       console.error(`Profile '${profileName}' not found. Run 'ccpod init'.`);
@@ -37,16 +37,16 @@ export default defineCommand({
     ];
     const envDisplay: Record<string, string> = {};
     for (const key of envKeys) {
-      const eqIdx = key.indexOf("=");
+      const eqIdx = key.indexOf('=');
       if (eqIdx !== -1) {
         const k = key.slice(0, eqIdx);
         const v = key.slice(eqIdx + 1);
         envDisplay[k] =
-          k.toLowerCase().includes("key") || k.toLowerCase().includes("token")
-            ? `${"*".repeat(Math.min(v.length, 8))} (${v.length} chars)`
+          k.toLowerCase().includes('key') || k.toLowerCase().includes('token')
+            ? `${'*'.repeat(Math.min(v.length, 8))} (${v.length} chars)`
             : v;
       } else {
-        envDisplay[key] = "<forwarded from host env>";
+        envDisplay[key] = '<forwarded from host env>';
       }
     }
 
@@ -55,8 +55,8 @@ export default defineCommand({
       autoDetectMcp: merged.autoDetectMcp,
       env: envDisplay,
       image:
-        merged.image === "build"
-          ? `build (${merged.dockerfile ?? "Dockerfile"})`
+        merged.image === 'build'
+          ? `build (${merged.dockerfile ?? 'Dockerfile'})`
           : merged.image,
       network: merged.network,
       ports: merged.ports,
@@ -76,28 +76,28 @@ export default defineCommand({
 
     // Show CLAUDE.md preview
     const configSourceDir =
-      profile.config.source === "local"
+      profile.config.source === 'local'
         ? (profile.config.path ?? getProfileDir(profileName))
-        : join(getProfileDir(profileName), "config");
+        : join(getProfileDir(profileName), 'config');
 
-    const profileMd = readIfExists(join(configSourceDir, "CLAUDE.md"));
-    const projectMd = readIfExists(join(cwd, "CLAUDE.md"));
+    const profileMd = readIfExists(join(configSourceDir, 'CLAUDE.md'));
+    const projectMd = readIfExists(join(cwd, 'CLAUDE.md'));
 
     if (profileMd || projectMd) {
-      const mode = projectConfig?.config?.claudeMd ?? "append";
-      const merged = mergeClaudes(profileMd ?? "", projectMd ?? "", mode);
+      const mode = projectConfig?.config?.claudeMd ?? 'append';
+      const merged = mergeClaudes(profileMd ?? '', projectMd ?? '', mode);
       console.log(
-        chalk.bold("CLAUDE.md") +
+        chalk.bold('CLAUDE.md') +
           chalk.dim(` (${mode} mode, ${merged.length} chars)`),
       );
-      const preview = merged.split("\n").slice(0, 8).join("\n");
+      const preview = merged.split('\n').slice(0, 8).join('\n');
       console.log(chalk.dim(preview));
-      if (merged.split("\n").length > 8) console.log(chalk.dim("..."));
+      if (merged.split('\n').length > 8) console.log(chalk.dim('...'));
       console.log();
     }
   },
 });
 
 function readIfExists(path: string): string | null {
-  return existsSync(path) ? readFileSync(path, "utf8") : null;
+  return existsSync(path) ? readFileSync(path, 'utf8') : null;
 }
