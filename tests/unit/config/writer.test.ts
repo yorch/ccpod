@@ -1,6 +1,7 @@
 import { afterEach, describe, expect, it } from 'bun:test';
 import {
   existsSync,
+  mkdirSync,
   mkdtempSync,
   readFileSync,
   rmSync,
@@ -180,5 +181,16 @@ describe('writeMergedConfig', () => {
       '/nonexistent/project/.claude',
     );
     expect(readFileSync(join(out, 'CLAUDE.md'), 'utf8')).toBe('no-project');
+  });
+
+  it('skips nested symlinks inside subdirectories', () => {
+    const profileDir = makeTempDir();
+    const skillsDir = join(profileDir, 'skills');
+    mkdirSync(skillsDir);
+    writeFileSync(join(skillsDir, 'real.md'), 'skill');
+    symlinkSync(join(skillsDir, 'real.md'), join(skillsDir, 'link.md'));
+    const out = run(profileDir, '', {});
+    expect(existsSync(join(out, 'skills', 'real.md'))).toBe(true);
+    expect(existsSync(join(out, 'skills', 'link.md'))).toBe(false);
   });
 });

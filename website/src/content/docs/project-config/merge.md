@@ -40,7 +40,9 @@ Run-level flags take final precedence:
 | `--env KEY=VALUE` | Inject an env var (or override one already forwarded). |
 | `--rebuild` | Force image rebuild / repull regardless of cache. |
 | `--no-state` | Force `state: ephemeral` for this run only. |
-| `--file <path>` | Headless mode. Path is normalized; absolute paths and `..` traversals are rejected. |
+| `--file <path>` | Headless mode via file. Path is normalized; absolute paths and `..` traversals are rejected. |
+| `"prompt text"` | Headless mode via inline prompt. Mutually exclusive with `--file`. |
+| `-- <args>` | Flags appended verbatim to the `claude` command. Appended after `claudeArgs` from profile/project. |
 
 ## Inspecting the result
 

@@ -1,8 +1,9 @@
 import { createHash } from 'node:crypto';
 import {
-  cpSync,
+  copyFileSync,
   existsSync,
   lstatSync,
+  mkdirSync,
   mkdtempSync,
   readdirSync,
   renameSync,
@@ -33,13 +34,26 @@ function hashProfileDir(dir: string): string {
   return hash.digest('hex').slice(0, 8);
 }
 
+function copyTreeSkipSymlinks(src: string, dest: string): void {
+  const stat = lstatSync(src);
+  if (stat.isSymbolicLink()) return;
+  if (stat.isDirectory()) {
+    mkdirSync(dest, { recursive: true });
+    for (const entry of readdirSync(src)) {
+      copyTreeSkipSymlinks(join(src, entry), join(dest, entry));
+    }
+  } else {
+    copyFileSync(src, dest);
+  }
+}
+
 function copyAssets(srcDir: string, destDir: string): void {
   if (!existsSync(srcDir)) return;
   for (const entry of readdirSync(srcDir)) {
+    if (entry === 'CLAUDE.md' || entry === 'settings.json') continue;
     const src = join(srcDir, entry);
     if (lstatSync(src).isSymbolicLink()) continue;
-    if (entry === 'CLAUDE.md' || entry === 'settings.json') continue;
-    cpSync(src, join(destDir, entry), { recursive: true });
+    copyTreeSkipSymlinks(src, join(destDir, entry));
   }
 }
 

@@ -70,6 +70,7 @@ Docker volumes:
 - **Config temp dirs** are written mode `0o700`, files mode `0o600`.
 - **`SSH_AUTH_SOCK`** is rejected if it contains `:` (would corrupt Docker bind spec).
 - **`DOCKER_SOCKET_PATH`** env var overrides the hardcoded `/var/run/docker.sock` path (useful in tests and non-standard Docker setups).
+- **Project `.claude/settings.json`** deep-merges into profile settings (project wins on conflicts) — same trust level as `claudeArgs` passthrough. Only run ccpod against repos you control.
 
 ### Testing
 

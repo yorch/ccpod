@@ -221,6 +221,13 @@ export default defineCommand({
       const passthroughArgs =
         passthroughIdx >= 0 ? process.argv.slice(passthroughIdx + 1) : [];
 
+      if (promptArg && passthroughArgs.some((a) => !a.startsWith('-'))) {
+        console.error(
+          `${chalk.red('error:')} cannot combine inline prompt with bare positional args after --`,
+        );
+        process.exit(1);
+      }
+
       const config: ResolvedConfig = {
         ...partial,
         claudeArgs: [
