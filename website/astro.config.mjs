@@ -7,6 +7,24 @@ export default defineConfig({
   base: '/',
   integrations: [
     starlight({
+      head: [
+        {
+          tag: 'script',
+          attrs: {
+            src: 'https://www.googletagmanager.com/gtag/js?id=G-VJXW4GZXT6',
+            async: true,
+          },
+        },
+        {
+          tag: 'script',
+          content: `
+window.dataLayer = window.dataLayer || [];
+function gtag(){dataLayer.push(arguments);}
+gtag('js', new Date());
+gtag('config', 'G-VJXW4GZXT6');
+`,
+        },
+      ],
       components: {
         Footer: './src/components/Footer.astro',
       },
