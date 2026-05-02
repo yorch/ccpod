@@ -84,6 +84,9 @@ ports:
 plugins:
   - mcp-server-brave-search  # delta-installed on first run; skipped if already present
 
+claudeArgs:                  # extra flags passed to claude on every run
+  - "--dangerously-skip-permissions"
+
 env:
   - DATABASE_URL             # host env vars to forward into container
 
@@ -137,13 +140,15 @@ env:
 
 ```
 ccpod run                        Interactive Claude session
-ccpod run --file prompt.txt      Headless mode (pipe stdout/stderr, exit with container code)
+ccpod run "fix lint errors"      Headless: inline prompt
+ccpod run --file prompt.txt      Headless: prompt from file (exit with container code)
 ccpod run --profile <name>       Use a specific profile
 ccpod run --env KEY=VALUE        Pass/override env var for this run
 ccpod run --rebuild              Force image rebuild or repull
 ccpod run --no-state             Force ephemeral state for this run
 
 ccpod init                       First-run setup wizard
+ccpod init --profile <name>      Create a named profile
 
 ccpod profile create <name>
 ccpod profile list
@@ -153,16 +158,22 @@ ccpod profile delete <name>
 ccpod plugins list [profile]
 ccpod plugins update [profile]   Flush and reinstall all plugins
 
+ccpod image init [profile]       Download Dockerfile for local customization
 ccpod image build [profile]      Build local Dockerfile image
 ccpod image pull [profile]       Pull latest base or declared image
 
 ccpod ps                         List running ccpod containers
+ccpod ps --all                   Include stopped containers
 ccpod down                       Stop Claude container + sidecars for $PWD
 
-ccpod state clear [profile]      Delete state volume (resets history/memory)
+ccpod state clear [profile]      Delete state directory (resets projects/todos)
 
+ccpod config get <key>           Get a global config value
+ccpod config set <key> <value>   Set a global config value
 ccpod config show                Print resolved merged config
 ccpod config validate            Validate .ccpod.yml
+
+ccpod update                     Update ccpod to the latest release
 ```
 
 ---
@@ -184,11 +195,13 @@ Reset: `ccpod state clear [profile]` — deletes `~/.ccpod/state/<profile>/`
 
 ```
 ~/.ccpod/
+  config.yml                # global ccpod config (autoCheckUpdates, etc.)
   profiles/<name>/
     profile.yml
     .ccpod-sync-lock        # timestamp of last git sync
+    config/                 # cloned Claude config (only if source: git)
   credentials/<name>/       # auth tokens — persist across container restarts
-  state/<name>/             # history, projects, todos (persistent mode only)
+  state/<name>/             # projects, todos, statsig (persistent mode only)
 
 Docker named volumes (managed by ccpod):
   ccpod-plugins-<profile>   # installed Claude plugins

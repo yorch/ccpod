@@ -38,6 +38,16 @@ ccpod init --profile team      # create a named profile
 
 Re-run at any time to add another profile. The generated `profile.yml` is fully annotated — all fields can be edited by hand after setup.
 
+## `ccpod update`
+
+Update ccpod to the latest release.
+
+```sh
+ccpod update                   # download and replace current binary
+```
+
+Checks GitHub releases for the latest version. If permission denied, run with `sudo ccpod update`.
+
 ## Profile commands
 
 ```sh
@@ -64,12 +74,32 @@ ccpod image build [profile]         # build from profile's dockerfile
 ccpod image pull [profile]          # pull (or update) the profile's image
 ```
 
-`ccpod image init` downloads the official ccpod Dockerfile to `~/.ccpod/profiles/<profile>/Dockerfile` and sets `image.dockerfile` in `profile.yml`. Use `--from <url>` to download from a custom URL instead. After editing the Dockerfile, run `ccpod image build --apply` to build and activate it.
+### `ccpod image init`
+
+Downloads the official ccpod Dockerfile to `~/.ccpod/profiles/<profile>/Dockerfile` and sets `image.dockerfile` in `profile.yml`.
+
+**Flags:**
+- `--from <url>` — download from a custom URL instead of the official Dockerfile
+- `--force` — overwrite existing Dockerfile
+- `--profile <name>` — target profile (defaults to current project's profile or `default`)
+
+### `ccpod image build`
+
+Build a local Docker image from the profile's Dockerfile.
+
+**Flags:**
+- `--apply` — update `profile.yml` `image.use` to the built tag after build
+- `--dockerfile <path>` — Dockerfile path (overrides profile's `image.dockerfile`)
+- `--tag <tag>` — custom image tag (overrides auto-generated `ccpod-local-<profile>-<hash>:latest`)
+- `--profile <name>` — target profile (defaults to current project's profile or `default`)
+
+After editing the Dockerfile, run `ccpod image build --apply` to build and activate it.
 
 ## Lifecycle commands
 
 ```sh
 ccpod ps                            # list running ccpod containers (any profile/project)
+ccpod ps --all                      # include stopped containers
 ccpod down                          # stop Claude container + sidecars for $PWD
 ccpod state clear [profile]         # delete persistent state directory (~/.ccpod/state/<profile>/)
 ```
@@ -81,6 +111,21 @@ ccpod state clear [profile]         # delete persistent state directory (~/.ccpo
 ```sh
 ccpod config show                   # print resolved merged ResolvedConfig
 ccpod config validate               # validate .ccpod.yml + profile without running
+ccpod config get <key>              # get a global config value
+ccpod config set <key> <value>      # set a global config value
+```
+
+### `ccpod config get/set`
+
+Reads and writes global ccpod configuration at `~/.ccpod/config.yml`.
+
+**Known keys:**
+- `autoCheckUpdates` — boolean (true/false) — whether to check for updates on startup
+
+Example:
+```sh
+ccpod config get autoCheckUpdates
+ccpod config set autoCheckUpdates false
 ```
 
 ## Global flags

@@ -28,10 +28,9 @@ ccpod run --no-state           # force ephemeral, regardless of profile
 
 When `state: persistent`, the entrypoint symlinks these into the volume:
 
-- `history.jsonl`
 - `projects/`
 - `todos/`
-- `sessions/`
+- `statsig/`
 
 Settings, plugins, skills, `CLAUDE.md`, and credentials are *not* in this volume — they come from the merged config and credential mounts, so they regenerate cleanly on every run.
 

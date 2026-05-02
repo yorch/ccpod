@@ -46,10 +46,10 @@ bun run dev -- --version
 
 ccpod looks for a Docker-compatible socket in the following order:
 
-1. Docker (`/var/run/docker.sock`, `~/.docker/run/docker.sock`)
-2. OrbStack (`~/.orbstack/run/docker.sock`)
-3. Colima (`~/.colima/default/docker.sock`)
-4. Podman (`$XDG_RUNTIME_DIR/podman/podman.sock`)
+1. OrbStack (`~/.orbstack/run/docker.sock`)
+2. Docker (`/var/run/docker.sock`, `~/.docker/run/docker.sock`)
+3. Colima (`~/.colima/default/docker.sock`, `~/.colima/docker.sock`)
+4. Podman (`$XDG_RUNTIME_DIR/podman/podman.sock`, `~/.local/share/containers/podman/machine/podman.sock`)
 
 You can override the path with `DOCKER_SOCKET_PATH` if you run a non-standard setup.
 

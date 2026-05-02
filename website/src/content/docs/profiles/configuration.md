@@ -82,7 +82,7 @@ services:
 | `use` | string | Image reference (e.g. `ghcr.io/yorch/ccpod:latest`) or the literal `build`. |
 | `dockerfile` | string | Required when `use: build`. Path relative to `$PWD`. |
 
-When `use: build`, ccpod tags the local build as `ccpod-local-<profile>-<sha256(dockerfile-path)>`. Bump it with `ccpod run --rebuild`.
+When `use: build`, `ccpod run` tags the local image as `ccpod-local-<profile>-<hash>:latest` (hash derived from the dockerfile path). `ccpod image build` uses `ccpod-local-<profile>:latest` by default (override with `--tag`). Force a rebuild with `ccpod run --rebuild` or `ccpod image build --apply`.
 
 ### `auth` *(required)*
 
@@ -134,6 +134,15 @@ See [Network Policy](/ccpod/features/network/).
 ### `env`
 
 A list of env-var **names** on the host. ccpod forwards their values into the container. Names only — never values. To set a literal, use `ccpod run --env KEY=VALUE`.
+
+### `claudeArgs`
+
+A list of extra CLI flags passed verbatim to the `claude` command on every run. These are appended before any `claudeArgs` in the project config.
+
+```yaml
+claudeArgs:
+  - "--dangerously-skip-permissions"
+```
 
 ### `services`
 

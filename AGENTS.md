@@ -38,14 +38,18 @@ bun test tests/unit/config/merger.test.ts  # single test file
 | `src/runtime/detector.ts` | Auto-detects OrbStack / Docker / Colima / Podman socket |
 | `src/runtime/docker.ts` | `dockerExec` (capture stdout/stderr) and `dockerSpawn` (inherit stdio) |
 | `src/profile/manager.ts` | `~/.ccpod/` directory layout, profile CRUD |
+| `src/global/config.ts` | Read/write `~/.ccpod/config.yml` (global settings like `autoCheckUpdates`) |
 | `src/mcp/parser.ts` | Reads `.mcp.json` to auto-expose MCP HTTP ports |
 | `src/image/manager.ts` | Pull or `docker build` the container image |
 | `src/container/sidecars.ts` | Shared network creation and sidecar container lifecycle |
+| `src/update/checker.ts` | Checks GitHub releases for newer version |
+| `src/update/updater.ts` | Downloads and replaces the ccpod binary in-place |
 
 ### Storage layout
 
 ```
 ~/.ccpod/
+  config.yml             # global ccpod settings (autoCheckUpdates, etc.)
   profiles/<name>/
     profile.yml          # profile config
     config/              # Claude config dir (if source: git, cloned here)

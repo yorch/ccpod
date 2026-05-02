@@ -61,7 +61,7 @@ export interface ProfileConfig {
     allow: string[];
   };
   ports: {
-    list: PortMapping[];
+    list: string[];
     autoDetectMcp: boolean;
   };
   services: Record<string, ServiceConfig>;
@@ -238,9 +238,9 @@ write_merged_config(result) → /tmp/ccpod-<sha256(content)>/
 ccpod run [-- claude-args]
 │
 ├─ 1. Detect container runtime
-│     try: Docker (/var/run/docker.sock)
-│          OrbStack (~/.orbstack/run/docker.sock)
-│          Colima (~/.colima/default/docker.sock)
+│     try: OrbStack (~/.orbstack/run/docker.sock)
+│          Docker (/var/run/docker.sock, ~/.docker/run/docker.sock)
+│          Colima (~/.colima/default/docker.sock, ~/.colima/docker.sock)
 │          Podman ($XDG_RUNTIME_DIR/podman/podman.sock)
 │     error if none available
 │

@@ -9,6 +9,7 @@ ccpod stores everything under `~/.ccpod/` plus a small set of Docker named volum
 
 ```
 ~/.ccpod/
+├── config.yml                      # global ccpod config (autoCheckUpdates, etc.)
 ├── profiles/
 │   ├── default/
 │   │   ├── profile.yml             # the profile definition
@@ -20,7 +21,7 @@ ccpod stores everything under `~/.ccpod/` plus a small set of Docker named volum
 │   ├── default/                    # auth tokens for "default" profile
 │   └── team/                       # auth tokens for "team" profile
 └── state/                          # only when state: persistent
-    ├── default/                    # projects, todos, history for "default"
+    ├── default/                    # projects, todos, statsig for "default"
     └── team/
 ```
 
@@ -36,7 +37,7 @@ Plus per-project networks for sidecars: `ccpod-net-<sha256($PWD)>`.
 
 ## Host state directory
 
-When `state: persistent`, Claude's history, projects, todos, and sessions are stored on the host at:
+When `state: persistent`, Claude's projects, todos, and statsig data are stored on the host at:
 
 ```
 ~/.ccpod/state/<profile>/

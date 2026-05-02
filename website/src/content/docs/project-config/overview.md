@@ -57,7 +57,7 @@ services:
 | `claudeArgs` | string[] | Extra CLI flags passed to `claude`. Deep: appended after profile args. Override: replaces. |
 | `config.claudeMd` | `append` \| `override` | How to combine `CLAUDE.md` files. |
 | `network` | partial network block | Adds to (or replaces) the profile's network config. |
-| `ports` | array | Extra port mappings. |
+| `ports` | object | Extra port mappings (`list`, `autoDetectMcp`). |
 | `services` | object | Extra sidecars; merged by key. |
 | `env` | string[] | Extra env-var names to forward. |
 
