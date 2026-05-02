@@ -1,53 +1,96 @@
-#!/usr/bin/env bash
-set -euo pipefail
+#!/bin/sh
+set -e
 
 REPO="yorch/ccpod"
 BINARY="ccpod"
-INSTALL_DIR="${CCPOD_INSTALL_DIR:-/usr/local/bin}"
 
-# Detect OS
-OS="$(uname -s)"
+# ── Platform detection ────────────────────────────────────────────────────────
+
+OS=$(uname -s | tr '[:upper:]' '[:lower:]')
+ARCH=$(uname -m)
+
 case "$OS" in
-  Linux*)  OS=linux ;;
-  Darwin*) OS=darwin ;;
-  *) echo "error: unsupported OS: $OS" >&2; exit 1 ;;
+  darwin|linux) ;;
+  *)
+    echo "error: unsupported OS: $OS" >&2
+    exit 1
+    ;;
 esac
 
-# Detect architecture (map to Bun target names)
-ARCH="$(uname -m)"
 case "$ARCH" in
-  x86_64)        ARCH=x64 ;;
-  arm64|aarch64) ARCH=arm64 ;;
-  *) echo "error: unsupported architecture: $ARCH" >&2; exit 1 ;;
+  x86_64)        ARCH="x64" ;;
+  aarch64|arm64) ARCH="arm64" ;;
+  *)
+    echo "error: unsupported architecture: $ARCH" >&2
+    exit 1
+    ;;
 esac
 
-# Resolve version
-VERSION="${CCPOD_VERSION:-}"
-if [ -z "$VERSION" ]; then
-  VERSION="$(curl -fsSL "https://api.github.com/repos/${REPO}/releases/latest" \
+ASSET="${BINARY}-${OS}-${ARCH}"
+
+# ── Version resolution ────────────────────────────────────────────────────────
+
+if [ -n "${CCPOD_VERSION:-}" ]; then
+  TAG="$CCPOD_VERSION"
+else
+  TAG=$(curl -fsSL "https://api.github.com/repos/${REPO}/releases/latest" \
     | grep '"tag_name"' \
-    | sed 's/.*"tag_name": "\(.*\)".*/\1/')"
+    | sed 's/.*"tag_name": *"\([^"]*\)".*/\1/')
+  if [ -z "$TAG" ]; then
+    echo "error: could not determine latest release tag" >&2
+    exit 1
+  fi
 fi
 
-if [ -z "$VERSION" ]; then
-  echo "error: could not determine latest release version" >&2
+DOWNLOAD_URL="https://github.com/${REPO}/releases/download/${TAG}/${ASSET}"
+
+# ── Install destination ───────────────────────────────────────────────────────
+
+if [ -n "${CCPOD_INSTALL_DIR:-}" ]; then
+  INSTALL_DIR="$CCPOD_INSTALL_DIR"
+elif [ -w "/usr/local/bin" ]; then
+  INSTALL_DIR="/usr/local/bin"
+else
+  INSTALL_DIR="${HOME}/.local/bin"
+fi
+
+mkdir -p "$INSTALL_DIR"
+INSTALL_PATH="${INSTALL_DIR}/${BINARY}"
+
+# ── Download and install ──────────────────────────────────────────────────────
+
+echo "Downloading ccpod ${TAG} (${OS}/${ARCH})..."
+
+TMP_PATH="${INSTALL_PATH}.tmp.$$"
+
+if command -v curl >/dev/null 2>&1; then
+  curl -fsSL "$DOWNLOAD_URL" -o "$TMP_PATH"
+elif command -v wget >/dev/null 2>&1; then
+  wget -qO "$TMP_PATH" "$DOWNLOAD_URL"
+else
+  echo "error: curl or wget required" >&2
   exit 1
 fi
 
-FILENAME="${BINARY}-${OS}-${ARCH}"
-URL="https://github.com/${REPO}/releases/download/${VERSION}/${FILENAME}"
+chmod +x "$TMP_PATH"
 
-echo "Installing ${BINARY} ${VERSION} (${OS}/${ARCH})..."
-
-# Use sudo only if install dir is not writable
-if [ -w "$INSTALL_DIR" ]; then
-  SUDO=""
-else
-  SUDO="sudo"
+if ! mv "$TMP_PATH" "$INSTALL_PATH" 2>/dev/null; then
+  rm -f "$TMP_PATH"
+  echo "error: cannot write to ${INSTALL_DIR}" >&2
+  echo "       try: CCPOD_INSTALL_DIR=~/.local/bin sh install.sh" >&2
+  echo "       or:  sudo sh install.sh" >&2
+  exit 1
 fi
 
-$SUDO curl -fsSL "$URL" -o "${INSTALL_DIR}/${BINARY}"
-$SUDO chmod +x "${INSTALL_DIR}/${BINARY}"
+# ── PATH hint ─────────────────────────────────────────────────────────────────
 
-echo "Installed: ${INSTALL_DIR}/${BINARY}"
-echo "Run 'ccpod init' to get started."
+echo "✓ ccpod ${TAG} installed to ${INSTALL_PATH}"
+
+case ":${PATH}:" in
+  *":${INSTALL_DIR}:"*) ;;
+  *)
+    printf "\n  Add to your PATH:\n    export PATH=\"%s:\$PATH\"\n" "$INSTALL_DIR"
+    ;;
+esac
+
+printf "\n  Get started: ccpod init\n"
