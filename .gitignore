@@ -42,3 +42,8 @@ website/public/install.sh
 
 # AI
 .claude/settings.local.json
+
+# lockfiles from other package managers (project uses bun exclusively)
+package-lock.json
+yarn.lock
+pnpm-lock.yaml

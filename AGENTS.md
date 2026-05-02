@@ -2,6 +2,10 @@
 
 This file provides guidance to AI agents when working with code in this repository.
 
+## Package manager
+
+This project uses **bun** exclusively. Never use `npm`, `pnpm`, or `yarn`. Always run `bun install`, `bun run <script>`, `bun test`, etc. The website (`website/`) also uses bun — same rule applies there.
+
 ## Commands
 
 ```sh
@@ -11,6 +15,15 @@ bun run typecheck        # tsc --noEmit
 bun run check            # biome format + lint (writes fixes)
 bun test                 # all tests
 bun test tests/unit/config/merger.test.ts  # single test file
+```
+
+### Website commands
+
+```sh
+cd website
+bun run dev              # start Astro dev server
+bun run build            # build to website/dist/
+bun run preview          # preview built site
 ```
 
 ## Architecture
