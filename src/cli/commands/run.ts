@@ -192,6 +192,7 @@ export default defineCommand({
       );
 
       // 7. Resolve image — build locally if use === "build", else pull
+      console.log(chalk.dim('Checking image...'));
       let image = partial.image;
       if (image === 'build') {
         const dockerfile = partial.dockerfile ?? 'Dockerfile';
