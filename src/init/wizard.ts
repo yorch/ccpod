@@ -3,6 +3,7 @@ import { join } from 'node:path';
 import { confirm, input, select } from '@inquirer/prompts';
 import chalk from 'chalk';
 import type { ProfileConfigInput } from '../config/schema.ts';
+import { downloadOfficialDockerfile } from '../image/downloader.ts';
 import {
   ensureCcpodDirs,
   getProfileDir,
@@ -83,7 +84,7 @@ export async function runWizard(profileName = 'default'): Promise<void> {
 
   // Quick mode — defaults for everything else
   if (mode === 'quick') {
-    return writeProfile(profileName, totalSteps, {
+    await writeProfile(profileName, totalSteps, {
       auth: authConfig,
       config: buildEmptyConfig(profileName),
       createConfigDir: true,
@@ -92,6 +93,7 @@ export async function runWizard(profileName = 'default'): Promise<void> {
       ssh: { agentForward: true, mountSshDir: false },
       state: 'ephemeral',
     });
+    return;
   }
 
   // Full mode — steps 3–7
@@ -178,20 +180,83 @@ export async function runWizard(profileName = 'default'): Promise<void> {
 
   // Step 7 — image
   console.log();
-  const imageRef = await input({
-    default: DEFAULT_IMAGE,
+  const imageChoice = (await select({
+    choices: [
+      {
+        description: 'Pre-built, always up-to-date. Best for most users.',
+        name: `Official image (${DEFAULT_IMAGE})`,
+        value: 'official',
+      },
+      {
+        description:
+          'Use any image from a registry (e.g. your own fork or a private image).',
+        name: 'Custom image reference',
+        value: 'custom',
+      },
+      {
+        description:
+          'Add tools, pin versions, or install packages. Requires a local build step.',
+        name: 'Build your own — download Dockerfile for local customization',
+        value: 'build',
+      },
+    ],
     message: `[7/${totalSteps}] Docker image`,
-  });
+  })) as 'build' | 'custom' | 'official';
 
-  return writeProfile(profileName, totalSteps, {
+  let imageConfig: NonNullable<ProfileConfigInput['image']>;
+  if (imageChoice === 'custom') {
+    const imageRef = await input({
+      message: '     Image reference',
+      validate: (v) => v.trim() !== '' || 'Image reference cannot be empty',
+    });
+    imageConfig = { use: imageRef.trim() };
+  } else if (imageChoice === 'build') {
+    const profileDir = getProfileDir(profileName);
+    imageConfig = {
+      dockerfile: join(profileDir, 'Dockerfile'),
+      use: 'build',
+    };
+  } else {
+    imageConfig = { use: DEFAULT_IMAGE };
+  }
+
+  const written = await writeProfile(profileName, totalSteps, {
     auth: authConfig,
     config: configConfig,
     createConfigDir,
-    image: { use: imageRef },
+    image: imageConfig,
     network: { allow: [], policy: networkPolicy },
     ssh: { agentForward, mountSshDir },
     state,
   });
+
+  if (written && imageChoice === 'build') {
+    const profileDir = getProfileDir(profileName);
+    console.log();
+    console.log(chalk.dim('Downloading Dockerfile and entrypoint.sh...'));
+    try {
+      await downloadOfficialDockerfile(profileDir);
+      console.log(
+        chalk.green(`✓ Dockerfile saved to ${join(profileDir, 'Dockerfile')}`),
+      );
+      console.log(
+        chalk.green(
+          `✓ entrypoint.sh saved to ${join(profileDir, 'entrypoint.sh')}`,
+        ),
+      );
+      console.log(
+        chalk.dim(
+          `\nEdit ${join(profileDir, 'Dockerfile')}, then run: ccpod image build --apply`,
+        ),
+      );
+    } catch (err) {
+      console.log(
+        chalk.yellow(
+          `⚠ Download failed: ${err}. Run 'ccpod image init' manually.`,
+        ),
+      );
+    }
+  }
 }
 
 function buildEmptyConfig(profileName: string): ProfileConfigInput['config'] {
@@ -210,7 +275,7 @@ async function writeProfile(
     ssh: NonNullable<ProfileConfigInput['ssh']>;
     image: NonNullable<ProfileConfigInput['image']>;
   },
-): Promise<void> {
+): Promise<boolean> {
   const profileDir = getProfileDir(profileName);
 
   console.log();
@@ -221,7 +286,7 @@ async function writeProfile(
     });
     if (!overwrite) {
       console.log('Aborted.');
-      return;
+      return false;
     }
   } else {
     const ok = await confirm({
@@ -230,7 +295,7 @@ async function writeProfile(
     });
     if (!ok) {
       console.log('Aborted.');
-      return;
+      return false;
     }
   }
 
@@ -264,6 +329,7 @@ async function writeProfile(
   console.log(chalk.green(`\n✓ Profile '${profileName}' created.`));
   console.log(chalk.dim(`  ${join(profileDir, 'profile.yml')}`));
   console.log(chalk.dim("\nRun 'ccpod run' to launch Claude Code.\n"));
+  return true;
 }
 
 export function q(val: string): string {

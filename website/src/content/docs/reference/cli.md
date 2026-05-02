@@ -29,7 +29,7 @@ Everything after `--` is forwarded verbatim to the `claude` command inside the c
 First-run setup wizard. Detects the container runtime, then offers two modes:
 
 - **Quick** — asks for auth only; everything else (network, state, SSH, image) uses sensible defaults. Done in ~3 steps.
-- **Full** — walks through all options: auth, config source, network policy, session state, SSH forwarding, and Docker image.
+- **Full** — walks through all options: auth, config source, network policy, session state, SSH forwarding, and Docker image (official / custom registry / build your own).
 
 ```sh
 ccpod init

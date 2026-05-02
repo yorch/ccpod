@@ -4,15 +4,15 @@ import chalk from 'chalk';
 import { defineCommand } from 'citty';
 import { loadProjectConfig } from '../../../config/loader.ts';
 import {
+  downloadOfficialDockerfile,
+  OFFICIAL_DOCKERFILE_URL,
+  OFFICIAL_ENTRYPOINT_URL,
+} from '../../../image/downloader.ts';
+import {
   getProfileDir,
   profileExists,
   updateProfileDockerfile,
 } from '../../../profile/manager.ts';
-import { VERSION } from '../../../version.ts';
-
-const DOCKER_BASE_URL = `https://raw.githubusercontent.com/yorch/ccpod/v${VERSION}/docker`;
-const OFFICIAL_DOCKERFILE_URL = `${DOCKER_BASE_URL}/Dockerfile`;
-const OFFICIAL_ENTRYPOINT_URL = `${DOCKER_BASE_URL}/entrypoint.sh`;
 
 export default defineCommand({
   args: {
@@ -65,41 +65,40 @@ export default defineCommand({
       process.exit(1);
     }
 
-    console.log(chalk.dim(`Downloading Dockerfile from ${url}...`));
-
-    const res = await fetch(url);
-    if (!res.ok) {
-      console.error(`Failed to download Dockerfile: HTTP ${res.status}`);
-      process.exit(1);
-    }
-
-    const content = await res.text();
-    writeFileSync(destPath, content, { mode: 0o644 });
-
-    const entrypointPath = join(profileDir, 'entrypoint.sh');
-    const entrypointUrl = args.from ? null : OFFICIAL_ENTRYPOINT_URL;
-
-    if (entrypointUrl) {
-      console.log(
-        chalk.dim(`Downloading entrypoint.sh from ${entrypointUrl}...`),
-      );
-      const entrypointRes = await fetch(entrypointUrl);
-      if (!entrypointRes.ok) {
-        console.error(
-          `Failed to download entrypoint.sh: HTTP ${entrypointRes.status}`,
-        );
+    if (args.from) {
+      // Custom URL: only fetch the Dockerfile
+      console.log(chalk.dim(`Downloading Dockerfile from ${url}...`));
+      const res = await fetch(url);
+      if (!res.ok) {
+        console.error(`Failed to download Dockerfile: HTTP ${res.status}`);
         process.exit(1);
       }
-      writeFileSync(entrypointPath, await entrypointRes.text(), {
-        mode: 0o755,
-      });
+      writeFileSync(destPath, await res.text(), { mode: 0o644 });
+    } else {
+      // Official: use shared downloader (fetches Dockerfile + entrypoint.sh)
+      console.log(chalk.dim(`Downloading Dockerfile from ${url}...`));
+      console.log(
+        chalk.dim(
+          `Downloading entrypoint.sh from ${OFFICIAL_ENTRYPOINT_URL}...`,
+        ),
+      );
+      try {
+        await downloadOfficialDockerfile(profileDir);
+      } catch (err) {
+        console.error(String(err));
+        process.exit(1);
+      }
     }
 
     updateProfileDockerfile(profileName, destPath);
 
     console.log(chalk.green(`✓ Dockerfile saved to ${destPath}`));
-    if (entrypointUrl) {
-      console.log(chalk.green(`✓ entrypoint.sh saved to ${entrypointPath}`));
+    if (!args.from) {
+      console.log(
+        chalk.green(
+          `✓ entrypoint.sh saved to ${join(profileDir, 'entrypoint.sh')}`,
+        ),
+      );
     }
     console.log(
       chalk.green(`✓ Profile '${profileName}' image.dockerfile updated`),
