@@ -38,4 +38,4 @@ ccpod splits configuration into two layers:
 - It does not require Docker specifically. OrbStack, Colima, and Podman all work; the runtime is auto-detected.
 - It does not lock you into a hosted service. Profiles are plain YAML in your home directory or a git repo of your choice.
 
-Ready? Head to [Installation](/getting-started/installation/).
+Ready? Head to [Installation](../installation/).

@@ -53,4 +53,4 @@ Plus per-profile storage managed automatically:
 - `ccpod-plugins-<name>` Docker volume — installed Claude plugins
 - `~/.ccpod/state/<name>/` host directory — history, projects, sessions (only when `state: persistent`)
 
-## Next: [Configuration reference](/profiles/configuration/)
+## Next: [Configuration reference](../configuration/)

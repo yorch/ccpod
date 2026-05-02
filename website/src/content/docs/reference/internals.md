@@ -365,5 +365,5 @@ Pin to a specific release in your profile with `image.use: ghcr.io/yorch/ccpod:1
 
 ## See also
 
-- [Architecture overview](/reference/architecture/)
-- [Storage Layout](/reference/storage/)
+- [Architecture overview](../architecture/)
+- [Storage Layout](../storage/)

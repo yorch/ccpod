@@ -122,7 +122,7 @@ plugins:
 | `policy` | `full` (bridge with internet) or `restricted` (allow-list only). |
 | `allow` | Hostnames/IPs to allow in restricted mode. Resolved at container start. |
 
-See [Network Policy](/features/network/).
+See [Network Policy](../../features/network/).
 
 ### `ports`
 
@@ -146,7 +146,7 @@ claudeArgs:
 
 ### `services`
 
-Sidecar containers (Postgres, Redis, queues, anything with a Docker image). Reachable from the Claude container by service name on a shared network. See [Sidecar Services](/features/sidecars/).
+Sidecar containers (Postgres, Redis, queues, anything with a Docker image). Reachable from the Claude container by service name on a shared network. See [Sidecar Services](../../features/sidecars/).
 
 ## Validate it
 

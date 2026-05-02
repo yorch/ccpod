@@ -53,4 +53,4 @@ ccpod looks for a Docker-compatible socket in the following order:
 
 You can override the path with `DOCKER_SOCKET_PATH` if you run a non-standard setup.
 
-## Next: [Quick Start](/getting-started/quick-start/)
+## Next: [Quick Start](../quick-start/)
