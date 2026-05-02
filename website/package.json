@@ -17,6 +17,6 @@
     "@astrojs/starlight": "0.38.4",
     "astro": "6.2.1",
     "sharp": "0.34.5",
-    "starlight-llms-txt": "^0.8.1"
+    "starlight-llms-txt": "0.8.1"
   }
 }
