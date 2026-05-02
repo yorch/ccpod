@@ -2,6 +2,8 @@
 
 This file provides guidance to AI agents when working with code in this repository.
 
+> `CLAUDE.md` is a symlink to `AGENTS.md` — any changes here should be reflected in `CLAUDE.md` and vice versa.
+
 ## Package manager
 
 This project uses **bun** exclusively. Never use `npm`, `pnpm`, or `yarn`. Always run `bun install`, `bun run <script>`, `bun test`, etc. The website (`website/`) also uses bun — same rule applies there.
