@@ -1,4 +1,13 @@
-import { mkdirSync, readFileSync, writeFileSync } from 'node:fs';
+import { execFileSync } from 'node:child_process';
+import {
+  chmodSync,
+  copyFileSync,
+  existsSync,
+  mkdirSync,
+  readFileSync,
+  writeFileSync,
+} from 'node:fs';
+import { homedir } from 'node:os';
 import { join } from 'node:path';
 import { confirm, input, select } from '@inquirer/prompts';
 import chalk from 'chalk';
@@ -11,6 +20,7 @@ import { OFFICIAL_IMAGE } from '../constants.ts';
 import { downloadOfficialDockerfile } from '../image/downloader.ts';
 import {
   ensureCcpodDirs,
+  getCredentialsDir,
   getProfileDir,
   listProfiles,
   profileExists,
@@ -19,6 +29,7 @@ import { detectRuntime } from '../runtime/detector.ts';
 
 type DetectedAuth = {
   envKey: string | undefined;
+  hostKeychainToken: string | undefined;
   profiles: Array<{ name: string; auth: ProfileConfigInput['auth'] }>;
 };
 
@@ -26,6 +37,25 @@ function detectAuth(currentProfile: string): DetectedAuth {
   const envKey = process.env.ANTHROPIC_API_KEY
     ? 'ANTHROPIC_API_KEY'
     : undefined;
+
+  let hostKeychainToken: string | undefined;
+  if (process.platform === 'darwin') {
+    try {
+      hostKeychainToken =
+        execFileSync(
+          'security',
+          ['find-generic-password', '-s', 'Claude Code-credentials', '-w'],
+          {
+            encoding: 'utf8',
+            stdio: ['ignore', 'pipe', 'ignore'],
+            timeout: 3000,
+          },
+        ).trim() || undefined;
+    } catch {
+      // not found or access denied
+    }
+  }
+
   const profiles: DetectedAuth['profiles'] = [];
   for (const name of listProfiles()) {
     if (name === currentProfile) continue;
@@ -41,7 +71,7 @@ function detectAuth(currentProfile: string): DetectedAuth {
       // skip unreadable profiles
     }
   }
-  return { envKey, profiles };
+  return { envKey, hostKeychainToken, profiles };
 }
 
 export async function runWizard(profileName = 'default'): Promise<void> {
@@ -95,9 +125,19 @@ export async function runWizard(profileName = 'default'): Promise<void> {
 
   // Step 2 — auth
   console.log();
-  const { envKey, profiles: existingProfiles } = detectAuth(profileName);
+  const {
+    envKey,
+    hostKeychainToken,
+    profiles: existingProfiles,
+  } = detectAuth(profileName);
 
   const authChoices: { name: string; value: string }[] = [];
+  if (hostKeychainToken) {
+    authChoices.push({
+      name: 'Use host Claude Code OAuth (macOS Keychain)',
+      value: 'host-keychain',
+    });
+  }
   if (envKey) {
     authChoices.push({
       name: `API key — ${envKey} (detected in env)`,
@@ -128,7 +168,12 @@ export async function runWizard(profileName = 'default'): Promise<void> {
   });
 
   let authConfig: ProfileConfigInput['auth'];
-  if (authMethod.startsWith('detected:')) {
+  let credentialSourceProfile: string | undefined;
+  let hostKeychainTokenToWrite: string | undefined;
+  if (authMethod === 'host-keychain') {
+    authConfig = { type: 'oauth' };
+    hostKeychainTokenToWrite = hostKeychainToken;
+  } else if (authMethod.startsWith('detected:')) {
     authConfig = {
       keyEnv: authMethod.slice('detected:'.length),
       type: 'api-key',
@@ -147,6 +192,7 @@ export async function runWizard(profileName = 'default'): Promise<void> {
       keyEnv: 'ANTHROPIC_API_KEY',
       type: 'api-key',
     };
+    if (found?.auth?.type === 'oauth') credentialSourceProfile = sourceName;
   } else if (authMethod === 'env') {
     const keyEnv = await input({
       default: 'ANTHROPIC_API_KEY',
@@ -170,7 +216,7 @@ export async function runWizard(profileName = 'default'): Promise<void> {
 
   // Quick mode — defaults for everything else
   if (mode === 'quick') {
-    await writeProfile(profileName, totalSteps, {
+    const written = await writeProfile(profileName, totalSteps, {
       auth: authConfig,
       config: buildEmptyConfig(profileName),
       createConfigDir: true,
@@ -179,6 +225,10 @@ export async function runWizard(profileName = 'default'): Promise<void> {
       ssh: { agentForward: true, mountSshDir: false },
       state: 'ephemeral',
     });
+    if (written) {
+      copyCredentials(credentialSourceProfile, profileName);
+      writeKeychainCredentials(hostKeychainTokenToWrite, profileName);
+    }
     return;
   }
 
@@ -316,6 +366,11 @@ export async function runWizard(profileName = 'default'): Promise<void> {
     state,
   });
 
+  if (written) {
+    copyCredentials(credentialSourceProfile, profileName);
+    writeKeychainCredentials(hostKeychainTokenToWrite, profileName);
+  }
+
   if (written && imageChoice === 'build') {
     const profileDir = getProfileDir(profileName);
     console.log();
@@ -341,6 +396,43 @@ export async function runWizard(profileName = 'default'): Promise<void> {
           `⚠ Download failed: ${err}. Run 'ccpod image init' manually.`,
         ),
       );
+    }
+  }
+}
+
+function copyCredentials(
+  sourceProfile: string | undefined,
+  destProfile: string,
+): void {
+  if (!sourceProfile) return;
+  const srcDir = getCredentialsDir(sourceProfile);
+  const destDir = getCredentialsDir(destProfile);
+  for (const file of ['.credentials.json', '.claude.json']) {
+    const dest = join(destDir, file);
+    try {
+      copyFileSync(join(srcDir, file), dest);
+      chmodSync(dest, 0o600);
+    } catch {
+      // file absent — container may not have run yet; skip silently
+    }
+  }
+}
+
+function writeKeychainCredentials(
+  token: string | undefined,
+  destProfile: string,
+): void {
+  if (!token) return;
+  const destDir = getCredentialsDir(destProfile);
+  writeFileSync(join(destDir, '.credentials.json'), token, { mode: 0o600 });
+  const hostClaudeJson = join(homedir(), '.claude.json');
+  if (existsSync(hostClaudeJson)) {
+    try {
+      const dest = join(destDir, '.claude.json');
+      copyFileSync(hostClaudeJson, dest);
+      chmodSync(dest, 0o600);
+    } catch {
+      // skip if unreadable
     }
   }
 }
