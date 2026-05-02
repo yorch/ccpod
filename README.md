@@ -14,7 +14,7 @@ Works with Docker, Podman, OrbStack, and Colima — auto-detected.
 
 ```sh
 # macOS / Linux — one-liner installer
-curl -fsSL https://raw.githubusercontent.com/yorch/ccpod/main/install.sh | bash
+curl -fsSL https://raw.githubusercontent.com/yorch/ccpod/main/install.sh | sh
 
 # Or build from source (requires Bun)
 bun run build   # outputs dist/ccpod
@@ -155,18 +155,20 @@ ccpod profile list
 ccpod profile update <name>      Force-pull git-based config
 ccpod profile delete <name>
 
-ccpod plugins list [profile]
-ccpod plugins update [profile]   Flush and reinstall all plugins
+ccpod plugins list [--profile <name>]
+ccpod plugins update [--profile <name>]   Flush and reinstall all plugins
 
-ccpod image init [profile]       Download Dockerfile for local customization
-ccpod image build [profile]      Build local Dockerfile image
-ccpod image pull [profile]       Pull latest base or declared image
+ccpod image init [--profile <name>]       Download Dockerfile for local customization
+ccpod image init --from <url>             Use a custom Dockerfile URL
+ccpod image build [--profile <name>]      Build local Dockerfile image
+ccpod image build --apply                 Also update profile image.use to the built tag
+ccpod image pull [--profile <name>]       Pull latest base or declared image
 
 ccpod ps                         List running ccpod containers
 ccpod ps --all                   Include stopped containers
 ccpod down                       Stop Claude container + sidecars for $PWD
 
-ccpod state clear [profile]      Delete state directory (resets projects/todos)
+ccpod state clear [--profile <name>]      Delete state directory (resets projects/todos)
 
 ccpod config get <key>           Get a global config value
 ccpod config set <key> <value>   Set a global config value
@@ -205,6 +207,21 @@ Reset: `ccpod state clear [profile]` — deletes `~/.ccpod/state/<profile>/`
 
 Docker named volumes (managed by ccpod):
   ccpod-plugins-<profile>   # installed Claude plugins
+```
+
+---
+
+## Global config
+
+`~/.ccpod/config.yml` controls ccpod's own behaviour (not the container).
+
+| Key | Default | Description |
+|-----|---------|-------------|
+| `autoCheckUpdates` | `true` | Check for new ccpod releases on startup |
+
+```sh
+ccpod config set autoCheckUpdates false   # disable startup update checks
+ccpod config set autoCheckUpdates true    # re-enable
 ```
 
 ---
