@@ -5,26 +5,45 @@ import chalk from 'chalk';
 import type { ProfileConfigInput } from '../config/schema.ts';
 import {
   ensureCcpodDirs,
-  PROFILES_DIR,
+  getProfileDir,
   profileExists,
 } from '../profile/manager.ts';
 import { detectRuntime } from '../runtime/detector.ts';
 
+const DEFAULT_IMAGE = 'ghcr.io/yorch/ccpod:latest';
+
 export async function runWizard(profileName = 'default'): Promise<void> {
   console.log(chalk.bold('\nccpod setup wizard\n'));
 
-  // Step 1 — runtime detection
+  const mode = (await select({
+    choices: [
+      {
+        name: 'Quick — auth only, sensible defaults for everything else',
+        value: 'quick',
+      },
+      {
+        name: 'Full — configure network, state, SSH, image, and more',
+        value: 'full',
+      },
+    ],
+    message: 'Setup mode',
+  })) as 'full' | 'quick';
+
+  const totalSteps = mode === 'quick' ? 3 : 8;
+
+  // Step 1 — runtime detection (auto)
+  console.log();
   console.log(chalk.dim('Detecting container runtime...'));
   try {
     const runtime = detectRuntime();
     console.log(
-      chalk.green(`✓ [1/5] ${capitalize(runtime.name)} detected`) +
+      chalk.green(`✓ [1/${totalSteps}] ${capitalize(runtime.name)} detected`) +
         chalk.dim(` (${runtime.socketPath})`),
     );
   } catch {
     console.log(
       chalk.yellow(
-        '⚠ [1/5] No runtime detected — install Docker, OrbStack, Colima, or Podman before running containers.',
+        `⚠ [1/${totalSteps}] No runtime detected — install Docker, OrbStack, Colima, or Podman before running containers.`,
       ),
     );
   }
@@ -37,7 +56,7 @@ export async function runWizard(profileName = 'default'): Promise<void> {
       { name: 'API key — file on disk', value: 'file' },
       { name: 'OAuth (browser login via claude)', value: 'oauth' },
     ],
-    message: '[2/5] Auth method',
+    message: `[2/${totalSteps}] Auth method`,
   });
 
   let authConfig: ProfileConfigInput['auth'];
@@ -57,10 +76,25 @@ export async function runWizard(profileName = 'default'): Promise<void> {
     authConfig = { type: 'oauth' };
     console.log(
       chalk.dim(
-        '     OAuth tokens will be stored in ~/.ccpod/credentials/default/',
+        `     OAuth tokens will be stored in ~/.ccpod/credentials/${profileName}/`,
       ),
     );
   }
+
+  // Quick mode — defaults for everything else
+  if (mode === 'quick') {
+    return writeProfile(profileName, totalSteps, {
+      auth: authConfig,
+      config: buildEmptyConfig(profileName),
+      createConfigDir: true,
+      image: { use: DEFAULT_IMAGE },
+      network: { allow: [], policy: 'full' },
+      ssh: { agentForward: true, mountSshDir: false },
+      state: 'ephemeral',
+    });
+  }
+
+  // Full mode — steps 3–7
 
   // Step 3 — config source
   console.log();
@@ -70,20 +104,25 @@ export async function runWizard(profileName = 'default'): Promise<void> {
       { name: 'Local directory', value: 'local' },
       { name: 'Git repository', value: 'git' },
     ],
-    message:
-      '[3/5] Config source (CLAUDE.md, settings.json, skills, extensions)',
+    message: `[3/${totalSteps}] Config source (CLAUDE.md, settings.json, skills, extensions)`,
   });
 
   let configConfig: ProfileConfigInput['config'];
+  let createConfigDir = false;
   if (configSource === 'empty') {
-    const emptyDir = join(PROFILES_DIR, profileName, 'config');
-    mkdirSync(emptyDir, { recursive: true });
-    configConfig = { path: emptyDir, source: 'local' };
+    configConfig = buildEmptyConfig(profileName);
+    createConfigDir = true;
   } else if (configSource === 'local') {
-    const path = await input({ message: '     Config directory path' });
-    configConfig = { path, source: 'local' };
+    const path = await input({
+      message: '     Config directory path',
+      validate: (v) => v.trim() !== '' || 'Path cannot be empty',
+    });
+    configConfig = { path: path.trim(), source: 'local' };
   } else {
-    const repo = await input({ message: '     Git repo URL' });
+    const repo = await input({
+      message: '     Git repo URL',
+      validate: (v) => v.trim() !== '' || 'Repo URL cannot be empty',
+    });
     const ref = await input({
       default: 'main',
       message: '     Branch / tag / ref',
@@ -96,7 +135,7 @@ export async function runWizard(profileName = 'default'): Promise<void> {
       ],
       message: '     Sync strategy',
     })) as 'always' | 'daily' | 'pin';
-    configConfig = { ref, repo, source: 'git', sync };
+    configConfig = { ref, repo: repo.trim(), source: 'git', sync };
   }
 
   // Step 4 — network policy
@@ -106,17 +145,79 @@ export async function runWizard(profileName = 'default'): Promise<void> {
       { name: 'Full — unrestricted outbound', value: 'full' },
       { name: 'Restricted — iptables allow-list', value: 'restricted' },
     ],
-    message: '[4/5] Default network policy',
+    message: `[4/${totalSteps}] Default network policy`,
   })) as 'full' | 'restricted';
 
-  // Step 5 — confirm & write
+  // Step 5 — state persistence
   console.log();
-  const profileDir = join(PROFILES_DIR, profileName);
+  const state = (await select({
+    choices: [
+      {
+        name: 'Ephemeral — history lost when container is removed',
+        value: 'ephemeral',
+      },
+      {
+        name: 'Persistent — history survives container removal (Docker volume)',
+        value: 'persistent',
+      },
+    ],
+    message: `[5/${totalSteps}] Session state`,
+  })) as 'ephemeral' | 'persistent';
 
+  // Step 6 — SSH
+  console.log();
+  console.log(chalk.dim(`[6/${totalSteps}] SSH configuration`));
+  const agentForward = await confirm({
+    default: true,
+    message: '     Forward host SSH agent into container?',
+  });
+  const mountSshDir = await confirm({
+    default: false,
+    message: '     Bind-mount ~/.ssh (read-only) for direct key access?',
+  });
+
+  // Step 7 — image
+  console.log();
+  const imageRef = await input({
+    default: DEFAULT_IMAGE,
+    message: `[7/${totalSteps}] Docker image`,
+  });
+
+  return writeProfile(profileName, totalSteps, {
+    auth: authConfig,
+    config: configConfig,
+    createConfigDir,
+    image: { use: imageRef },
+    network: { allow: [], policy: networkPolicy },
+    ssh: { agentForward, mountSshDir },
+    state,
+  });
+}
+
+function buildEmptyConfig(profileName: string): ProfileConfigInput['config'] {
+  return { path: join(getProfileDir(profileName), 'config'), source: 'local' };
+}
+
+async function writeProfile(
+  profileName: string,
+  totalSteps: number,
+  opts: {
+    auth: ProfileConfigInput['auth'];
+    config: ProfileConfigInput['config'];
+    createConfigDir?: boolean;
+    network: NonNullable<ProfileConfigInput['network']>;
+    state: 'ephemeral' | 'persistent';
+    ssh: NonNullable<ProfileConfigInput['ssh']>;
+    image: NonNullable<ProfileConfigInput['image']>;
+  },
+): Promise<void> {
+  const profileDir = getProfileDir(profileName);
+
+  console.log();
   if (profileExists(profileName)) {
     const overwrite = await confirm({
       default: false,
-      message: `[5/5] Profile '${profileName}' already exists. Overwrite?`,
+      message: `[${totalSteps}/${totalSteps}] Profile '${profileName}' already exists. Overwrite?`,
     });
     if (!overwrite) {
       console.log('Aborted.');
@@ -125,7 +226,7 @@ export async function runWizard(profileName = 'default'): Promise<void> {
   } else {
     const ok = await confirm({
       default: true,
-      message: `[5/5] Write profile '${profileName}' to ${profileDir}?`,
+      message: `[${totalSteps}/${totalSteps}] Write profile '${profileName}' to ${profileDir}?`,
     });
     if (!ok) {
       console.log('Aborted.');
@@ -135,20 +236,23 @@ export async function runWizard(profileName = 'default'): Promise<void> {
 
   ensureCcpodDirs();
   mkdirSync(profileDir, { recursive: true });
+  if (opts.createConfigDir && opts.config?.path) {
+    mkdirSync(opts.config.path, { recursive: true });
+  }
 
   const profile: ProfileConfigInput = {
-    auth: authConfig,
+    auth: opts.auth,
     claudeArgs: [],
-    config: configConfig,
+    config: opts.config,
     env: [],
-    image: { use: 'ghcr.io/yorch/ccpod:latest' },
+    image: opts.image,
     name: profileName,
-    network: { allow: [], policy: networkPolicy },
+    network: opts.network,
     plugins: [],
     ports: { autoDetectMcp: true, list: [] },
     services: {},
-    ssh: { agentForward: true, mountSshDir: false },
-    state: 'ephemeral',
+    ssh: opts.ssh,
+    state: opts.state,
   };
 
   writeFileSync(
@@ -234,7 +338,7 @@ export function buildAnnotatedProfileYaml(profile: ProfileConfigInput): string {
     '# dockerfile: path to a local Dockerfile to build instead of pulling.',
   );
   s.push('image:');
-  s.push(`  use: ${q(profile.image?.use ?? 'ghcr.io/yorch/ccpod:latest')}`);
+  s.push(`  use: ${q(profile.image?.use ?? DEFAULT_IMAGE)}`);
   if (profile.image?.dockerfile)
     s.push(`  dockerfile: ${q(profile.image.dockerfile)}`);
   s.push('');

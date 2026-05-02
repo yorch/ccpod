@@ -26,13 +26,17 @@ Everything after `--` is forwarded verbatim to the `claude` command inside the c
 
 ## `ccpod init`
 
-First-run wizard. Detects the container runtime, asks for auth method, creates the `default` profile, and pulls the base image.
+First-run setup wizard. Detects the container runtime, then offers two modes:
+
+- **Quick** — asks for auth only; everything else (network, state, SSH, image) uses sensible defaults. Done in ~3 steps.
+- **Full** — walks through all options: auth, config source, network policy, session state, SSH forwarding, and Docker image.
 
 ```sh
 ccpod init
+ccpod init --profile team      # create a named profile
 ```
 
-Re-run later to add another profile via the wizard.
+Re-run at any time to add another profile. The generated `profile.yml` is fully annotated — all fields can be edited by hand after setup.
 
 ## Profile commands
 
