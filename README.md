@@ -14,7 +14,7 @@ Works with Docker, Podman, OrbStack, and Colima — auto-detected.
 
 ```sh
 # macOS / Linux — one-liner installer
-curl -fsSL https://raw.githubusercontent.com/yorch/ccpod/main/install.sh | sh
+curl -fsSL https://ccpod.brnby.com/install.sh | sh
 
 # Or build from source (requires Bun)
 bun run build   # outputs dist/ccpod
