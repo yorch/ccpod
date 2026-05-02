@@ -56,6 +56,7 @@ export default defineCommand({
   async run({ args }) {
     try {
       const cwd = process.cwd();
+      console.log(chalk.dim('Loading config...'));
 
       // Validate headless args — --file and prompt are mutually exclusive
       const promptArg = args.prompt as string | undefined;
@@ -251,6 +252,7 @@ export default defineCommand({
 
       const tty = !fileArg && !promptArg;
       const spec = buildContainerSpec(config, cwd, tty, networkName);
+      console.log(chalk.dim('Starting container...'));
       const exitCode = await runContainer(spec);
       process.exit(exitCode);
     } catch (err) {
