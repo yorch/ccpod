@@ -1,8 +1,8 @@
 import { existsSync, readFileSync, writeFileSync } from 'node:fs';
 import { homedir } from 'node:os';
 import { join } from 'node:path';
+import { GITHUB_REPO } from '../constants.ts';
 
-const GITHUB_REPO = 'yorch/ccpod';
 const CHECK_INTERVAL_MS = 24 * 60 * 60 * 1000;
 
 interface UpdateCache {

@@ -1,4 +1,5 @@
 import { z } from 'zod';
+import { OFFICIAL_IMAGE } from '../constants.ts';
 
 const portsConfigSchema = z
   .object({
@@ -35,9 +36,9 @@ export const profileConfigSchema = z.object({
   image: z
     .object({
       dockerfile: z.string().optional(),
-      use: z.string().default('ghcr.io/yorch/ccpod:latest'),
+      use: z.string().default(OFFICIAL_IMAGE),
     })
-    .default({ use: 'ghcr.io/yorch/ccpod:latest' }),
+    .default({ use: OFFICIAL_IMAGE }),
   name: z
     .string()
     .regex(

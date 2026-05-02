@@ -3,6 +3,7 @@ import { join } from 'node:path';
 import { confirm, input, select } from '@inquirer/prompts';
 import chalk from 'chalk';
 import type { ProfileConfigInput } from '../config/schema.ts';
+import { OFFICIAL_IMAGE } from '../constants.ts';
 import { downloadOfficialDockerfile } from '../image/downloader.ts';
 import {
   ensureCcpodDirs,
@@ -10,8 +11,6 @@ import {
   profileExists,
 } from '../profile/manager.ts';
 import { detectRuntime } from '../runtime/detector.ts';
-
-const DEFAULT_IMAGE = 'ghcr.io/yorch/ccpod:latest';
 
 export async function runWizard(profileName = 'default'): Promise<void> {
   console.log(chalk.bold('\nccpod setup wizard\n'));
@@ -88,7 +87,7 @@ export async function runWizard(profileName = 'default'): Promise<void> {
       auth: authConfig,
       config: buildEmptyConfig(profileName),
       createConfigDir: true,
-      image: { use: DEFAULT_IMAGE },
+      image: { use: OFFICIAL_IMAGE },
       network: { allow: [], policy: 'full' },
       ssh: { agentForward: true, mountSshDir: false },
       state: 'ephemeral',
@@ -184,7 +183,7 @@ export async function runWizard(profileName = 'default'): Promise<void> {
     choices: [
       {
         description: 'Pre-built, always up-to-date. Best for most users.',
-        name: `Official image (${DEFAULT_IMAGE})`,
+        name: `Official image (${OFFICIAL_IMAGE})`,
         value: 'official',
       },
       {
@@ -217,7 +216,7 @@ export async function runWizard(profileName = 'default'): Promise<void> {
       use: 'build',
     };
   } else {
-    imageConfig = { use: DEFAULT_IMAGE };
+    imageConfig = { use: OFFICIAL_IMAGE };
   }
 
   const written = await writeProfile(profileName, totalSteps, {
@@ -404,7 +403,7 @@ export function buildAnnotatedProfileYaml(profile: ProfileConfigInput): string {
     '# dockerfile: path to a local Dockerfile to build instead of pulling.',
   );
   s.push('image:');
-  s.push(`  use: ${q(profile.image?.use ?? DEFAULT_IMAGE)}`);
+  s.push(`  use: ${q(profile.image?.use ?? OFFICIAL_IMAGE)}`);
   if (profile.image?.dockerfile)
     s.push(`  dockerfile: ${q(profile.image.dockerfile)}`);
   s.push('');

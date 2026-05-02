@@ -1,8 +1,7 @@
 import { chmodSync, copyFileSync, unlinkSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-
-const GITHUB_REPO = 'yorch/ccpod';
+import { GITHUB_REPO } from '../constants.ts';
 
 export function getAssetName(): string | null {
   const { platform, arch } = process;

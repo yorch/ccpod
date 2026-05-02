@@ -1,5 +1,6 @@
 import chalk from 'chalk';
 import { defineCommand } from 'citty';
+import { GITHUB_BASE_URL } from '../../constants.ts';
 import { isNewer } from '../../update/checker.ts';
 import {
   downloadAndReplace,
@@ -14,7 +15,7 @@ export default defineCommand({
     const assetName = getAssetName();
     if (!assetName) {
       console.error(
-        `${chalk.red('error:')} Unsupported platform (${process.platform}/${process.arch}). Download manually from https://github.com/yorch/ccpod/releases`,
+        `${chalk.red('error:')} Unsupported platform (${process.platform}/${process.arch}). Download manually from ${GITHUB_BASE_URL}/releases`,
       );
       process.exit(1);
     }

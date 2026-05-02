@@ -1,9 +1,10 @@
 import { writeFileSync } from 'node:fs';
 import { join } from 'node:path';
+import { GITHUB_RAW_BASE_URL } from '../constants.ts';
 import { VERSION } from '../version.ts';
 
-const DOCKER_BASE_URL = `https://raw.githubusercontent.com/yorch/ccpod/v${VERSION}/docker`;
-const DOCKER_FALLBACK_BASE_URL = `https://raw.githubusercontent.com/yorch/ccpod/main/docker`;
+const DOCKER_BASE_URL = `${GITHUB_RAW_BASE_URL}/v${VERSION}/docker`;
+const DOCKER_FALLBACK_BASE_URL = `${GITHUB_RAW_BASE_URL}/main/docker`;
 export const OFFICIAL_DOCKERFILE_URL = `${DOCKER_BASE_URL}/Dockerfile`;
 export const OFFICIAL_ENTRYPOINT_URL = `${DOCKER_BASE_URL}/entrypoint.sh`;
 
