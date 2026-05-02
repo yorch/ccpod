@@ -3,27 +3,45 @@ import { join } from 'node:path';
 import { VERSION } from '../version.ts';
 
 const DOCKER_BASE_URL = `https://raw.githubusercontent.com/yorch/ccpod/v${VERSION}/docker`;
+const DOCKER_FALLBACK_BASE_URL = `https://raw.githubusercontent.com/yorch/ccpod/main/docker`;
 export const OFFICIAL_DOCKERFILE_URL = `${DOCKER_BASE_URL}/Dockerfile`;
 export const OFFICIAL_ENTRYPOINT_URL = `${DOCKER_BASE_URL}/entrypoint.sh`;
+
+async function fetchWithFallback(
+  primaryUrl: string,
+  fallbackUrl: string,
+  label: string,
+): Promise<string> {
+  const res = await fetch(primaryUrl);
+  if (res.ok) return res.text();
+  if (res.status !== 404)
+    throw new Error(`Failed to download ${label}: HTTP ${res.status}`);
+  process.stderr.write(
+    `Warning: v${VERSION} tag not found for ${label}, falling back to main branch.\n`,
+  );
+  const fallback = await fetch(fallbackUrl);
+  if (fallback.ok) return fallback.text();
+  throw new Error(`Failed to download ${label}: HTTP ${fallback.status}`);
+}
 
 export async function downloadOfficialDockerfile(
   destDir: string,
 ): Promise<void> {
-  const dockerfileRes = await fetch(OFFICIAL_DOCKERFILE_URL);
-  if (!dockerfileRes.ok)
-    throw new Error(
-      `Failed to download Dockerfile: HTTP ${dockerfileRes.status}`,
-    );
-  writeFileSync(join(destDir, 'Dockerfile'), await dockerfileRes.text(), {
+  const dockerfileContent = await fetchWithFallback(
+    OFFICIAL_DOCKERFILE_URL,
+    `${DOCKER_FALLBACK_BASE_URL}/Dockerfile`,
+    'Dockerfile',
+  );
+  writeFileSync(join(destDir, 'Dockerfile'), dockerfileContent, {
     mode: 0o644,
   });
 
-  const entrypointRes = await fetch(OFFICIAL_ENTRYPOINT_URL);
-  if (!entrypointRes.ok)
-    throw new Error(
-      `Failed to download entrypoint.sh: HTTP ${entrypointRes.status}`,
-    );
-  writeFileSync(join(destDir, 'entrypoint.sh'), await entrypointRes.text(), {
+  const entrypointContent = await fetchWithFallback(
+    OFFICIAL_ENTRYPOINT_URL,
+    `${DOCKER_FALLBACK_BASE_URL}/entrypoint.sh`,
+    'entrypoint.sh',
+  );
+  writeFileSync(join(destDir, 'entrypoint.sh'), entrypointContent, {
     mode: 0o755,
   });
 }
