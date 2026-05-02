@@ -1,6 +1,7 @@
 // @ts-check
 
 import starlight from '@astrojs/starlight';
+import starlightLlmsTxt from 'starlight-llms-txt';
 import { defineConfig } from 'astro/config';
 
 export default defineConfig({
@@ -12,6 +13,26 @@ export default defineConfig({
       },
       customCss: ['./src/styles/custom.css'],
       description: 'Run Claude Code in Docker. Portable, composable profiles.',
+      plugins: [
+        starlightLlmsTxt({
+          projectName: 'ccpod',
+          description:
+            'Run Claude Code in Docker with portable, versioned profiles. Share, reproduce, and pin your Claude AI development environment across machines and teams.',
+          details: `
+## Install
+
+\`\`\`sh
+curl -fsSL https://ccpod.brnby.com/install.sh | sh
+ccpod init
+ccpod run
+\`\`\`
+
+## Source
+
+https://github.com/yorch/ccpod
+`,
+        }),
+      ],
       editLink: {
         baseUrl: 'https://github.com/yorch/ccpod/edit/main/website/',
       },
