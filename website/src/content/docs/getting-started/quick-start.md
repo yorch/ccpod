@@ -18,7 +18,7 @@ The wizard first asks which mode you want:
 
 Both modes:
 - Detect your container runtime (Docker / OrbStack / Colima / Podman)
-- Ask for your auth method (API key or OAuth)
+- Ask for your auth method — if `ANTHROPIC_API_KEY` is already set in your environment, or you have an existing profile, those are offered as first choices so you don't have to retype anything
 - Create a `default` profile at `~/.ccpod/profiles/default/profile.yml`
 
 The base image is pulled automatically on first `ccpod run`.

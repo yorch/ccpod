@@ -1,19 +1,64 @@
-import { mkdirSync, writeFileSync } from 'node:fs';
+import { mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { confirm, input, select } from '@inquirer/prompts';
 import chalk from 'chalk';
-import type { ProfileConfigInput } from '../config/schema.ts';
+import { parse } from 'yaml';
+import {
+  type ProfileConfigInput,
+  profileConfigSchema,
+} from '../config/schema.ts';
 import { OFFICIAL_IMAGE } from '../constants.ts';
 import { downloadOfficialDockerfile } from '../image/downloader.ts';
 import {
   ensureCcpodDirs,
   getProfileDir,
+  listProfiles,
   profileExists,
 } from '../profile/manager.ts';
 import { detectRuntime } from '../runtime/detector.ts';
 
+type DetectedAuth = {
+  envKey: string | undefined;
+  profiles: Array<{ name: string; auth: ProfileConfigInput['auth'] }>;
+};
+
+function detectAuth(currentProfile: string): DetectedAuth {
+  const envKey = process.env.ANTHROPIC_API_KEY
+    ? 'ANTHROPIC_API_KEY'
+    : undefined;
+  const profiles: DetectedAuth['profiles'] = [];
+  for (const name of listProfiles()) {
+    if (name === currentProfile) continue;
+    try {
+      const raw = readFileSync(
+        join(getProfileDir(name), 'profile.yml'),
+        'utf8',
+      );
+      const parsed = parse(raw) as { auth?: unknown };
+      const authResult = profileConfigSchema.shape.auth.safeParse(parsed?.auth);
+      if (authResult.success) profiles.push({ auth: authResult.data, name });
+    } catch {
+      // skip unreadable profiles
+    }
+  }
+  return { envKey, profiles };
+}
+
 export async function runWizard(profileName = 'default'): Promise<void> {
   console.log(chalk.bold('\nccpod setup wizard\n'));
+
+  if (profileExists(profileName)) {
+    console.log(chalk.yellow(`Profile '${profileName}' already exists.`));
+    const proceed = await confirm({
+      default: false,
+      message: 'Continue and overwrite it?',
+    });
+    if (!proceed) {
+      console.log('Aborted.');
+      return;
+    }
+    console.log();
+  }
 
   const mode = (await select({
     choices: [
@@ -50,17 +95,59 @@ export async function runWizard(profileName = 'default'): Promise<void> {
 
   // Step 2 — auth
   console.log();
+  const { envKey, profiles: existingProfiles } = detectAuth(profileName);
+
+  const authChoices: { name: string; value: string }[] = [];
+  if (envKey) {
+    authChoices.push({
+      name: `API key — ${envKey} (detected in env)`,
+      value: `detected:${envKey}`,
+    });
+  }
+  for (const { name, auth } of existingProfiles) {
+    const desc =
+      auth?.type === 'oauth'
+        ? 'OAuth'
+        : auth?.keyFile
+          ? `keyFile: ${auth.keyFile}`
+          : `keyEnv: ${auth?.keyEnv ?? 'ANTHROPIC_API_KEY'}`;
+    authChoices.push({
+      name: `Copy auth from profile '${name}' (${desc})`,
+      value: `profile:${name}`,
+    });
+  }
+  authChoices.push(
+    { name: 'API key — environment variable', value: 'env' },
+    { name: 'API key — file on disk', value: 'file' },
+    { name: 'OAuth (browser login via claude)', value: 'oauth' },
+  );
+
   const authMethod = await select({
-    choices: [
-      { name: 'API key — environment variable', value: 'env' },
-      { name: 'API key — file on disk', value: 'file' },
-      { name: 'OAuth (browser login via claude)', value: 'oauth' },
-    ],
+    choices: authChoices,
     message: `[2/${totalSteps}] Auth method`,
   });
 
   let authConfig: ProfileConfigInput['auth'];
-  if (authMethod === 'env') {
+  if (authMethod.startsWith('detected:')) {
+    authConfig = {
+      keyEnv: authMethod.slice('detected:'.length),
+      type: 'api-key',
+    };
+  } else if (authMethod.startsWith('profile:')) {
+    const sourceName = authMethod.slice('profile:'.length);
+    const found = existingProfiles.find((p) => p.name === sourceName);
+    if (!found) {
+      console.warn(
+        chalk.yellow(
+          `     Profile '${sourceName}' not found; using default API key config.`,
+        ),
+      );
+    }
+    authConfig = found?.auth ?? {
+      keyEnv: 'ANTHROPIC_API_KEY',
+      type: 'api-key',
+    };
+  } else if (authMethod === 'env') {
     const keyEnv = await input({
       default: 'ANTHROPIC_API_KEY',
       message: '     Env var name',
@@ -278,24 +365,13 @@ async function writeProfile(
   const profileDir = getProfileDir(profileName);
 
   console.log();
-  if (profileExists(profileName)) {
-    const overwrite = await confirm({
-      default: false,
-      message: `[${totalSteps}/${totalSteps}] Profile '${profileName}' already exists. Overwrite?`,
-    });
-    if (!overwrite) {
-      console.log('Aborted.');
-      return false;
-    }
-  } else {
-    const ok = await confirm({
-      default: true,
-      message: `[${totalSteps}/${totalSteps}] Write profile '${profileName}' to ${profileDir}?`,
-    });
-    if (!ok) {
-      console.log('Aborted.');
-      return false;
-    }
+  const ok = await confirm({
+    default: true,
+    message: `[${totalSteps}/${totalSteps}] Write profile '${profileName}' to ${profileDir}?`,
+  });
+  if (!ok) {
+    console.log('Aborted.');
+    return false;
   }
 
   ensureCcpodDirs();
