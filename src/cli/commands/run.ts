@@ -41,6 +41,7 @@ export default defineCommand({
     },
     prompt: {
       description: 'Headless mode: prompt text passed directly to claude',
+      required: false,
       type: 'positional',
     },
     rebuild: {
