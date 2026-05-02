@@ -52,7 +52,7 @@ If no profile is specified and the `default` profile doesn't exist, `ccpod run` 
 
 ### 3. Merge
 
-`src/config/merger.ts` combines profile + project per the documented [merge strategies](/ccpod/project-config/merge/). `CLAUDE.md` files are handled separately by `mergeClaudes()` (append vs. override).
+`src/config/merger.ts` combines profile + project per the documented [merge strategies](/project-config/merge/). `CLAUDE.md` files are handled separately by `mergeClaudes()` (append vs. override).
 
 ### 4. Auth
 
@@ -135,6 +135,6 @@ All ccpod-managed containers get these labels for discovery (used by `ccpod ps` 
 
 ## See also
 
-- [Internals](/ccpod/reference/internals/) — type definitions, entrypoint assembly, full startup sequence
-- [Storage Layout](/ccpod/reference/storage/)
-- [CLI Reference](/ccpod/reference/cli/)
+- [Internals](/reference/internals/) — type definitions, entrypoint assembly, full startup sequence
+- [Storage Layout](/reference/storage/)
+- [CLI Reference](/reference/cli/)

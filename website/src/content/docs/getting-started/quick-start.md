@@ -63,7 +63,7 @@ Useful in CI for "review this diff" or "summarize these docs" automations.
 
 ## What's next
 
-- [Profiles](/ccpod/profiles/overview/) — the unit of portability.
-- [Project config](/ccpod/project-config/overview/) — overlay a profile per repo.
-- [State persistence](/ccpod/features/state/) — keep history between sessions.
-- [CLI reference](/ccpod/reference/cli/) — every command and flag.
+- [Profiles](/profiles/overview/) — the unit of portability.
+- [Project config](/project-config/overview/) — overlay a profile per repo.
+- [State persistence](/features/state/) — keep history between sessions.
+- [CLI reference](/reference/cli/) — every command and flag.

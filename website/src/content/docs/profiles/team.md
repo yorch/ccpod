@@ -79,7 +79,7 @@ ccpod profile update team
 
 A team profile is a baseline. Individuals can:
 
-- override per project via `.ccpod.yml` (deep-merge by default — see [Merge Strategies](/ccpod/project-config/merge/))
+- override per project via `.ccpod.yml` (deep-merge by default — see [Merge Strategies](/project-config/merge/))
 - override per run via flags like `--env`, `--no-state`, `--rebuild`
 
 Profiles stay clean; project- and run-level overrides do *not* mutate the profile file.
