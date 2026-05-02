@@ -1,6 +1,6 @@
 ---
-title: Profiles
-description: A profile defines the complete Claude environment for a session.
+title: ccpod Profiles — Portable Claude Environments
+description: A ccpod profile bundles your Claude container image, auth, settings, plugins, CLAUDE.md, MCP servers, and network policy into a portable, versionable unit.
 ---
 
 A **profile** is the unit of portability in ccpod. It bundles everything that defines a Claude environment:

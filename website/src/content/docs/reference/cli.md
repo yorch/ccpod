@@ -1,6 +1,6 @@
 ---
-title: CLI Reference
-description: Every ccpod command and flag.
+title: ccpod CLI Reference
+description: Complete reference for every ccpod command and flag — run, init, update, profile, plugins, image, config, ps, and down.
 ---
 
 `ccpod` is a single binary. All commands accept `--help`.

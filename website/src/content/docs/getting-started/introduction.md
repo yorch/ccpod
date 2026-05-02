@@ -1,6 +1,6 @@
 ---
-title: Introduction
-description: What ccpod is, what problem it solves, and when to use it.
+title: Introduction to ccpod
+description: What ccpod is, what problem it solves, and when to use it. ccpod runs Claude Code in Docker with portable profiles for reproducible AI development environments.
 ---
 
 `ccpod` is a small CLI that runs [Claude Code](https://docs.claude.com/en/docs/claude-code) inside a container, with the entire Claude environment described by a portable **profile**.

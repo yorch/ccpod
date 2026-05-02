@@ -1,6 +1,6 @@
 ---
-title: Installation
-description: Install the ccpod binary or build it from source.
+title: Install ccpod
+description: Install the ccpod binary on macOS or Linux. Supports Docker, OrbStack, Colima, and Podman. Pre-built binaries for x86_64 and arm64.
 ---
 
 ccpod is a single static binary. You need a container runtime — Docker, OrbStack, Colima, or Podman — installed and running on the host. ccpod auto-detects the socket.

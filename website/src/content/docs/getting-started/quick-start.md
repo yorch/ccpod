@@ -1,6 +1,6 @@
 ---
-title: Quick Start
-description: Set up ccpod and run your first Claude session in under five minutes.
+title: Quick Start — Run Claude Code in Docker
+description: Set up ccpod and run your first Claude Code session in a Docker container in under five minutes. Init wizard, profile creation, and headless mode.
 ---
 
 This guide gets you from a fresh install to an interactive Claude session in your project.

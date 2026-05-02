@@ -1,6 +1,6 @@
 ---
-title: Architecture
-description: How the ccpod pipeline turns a profile + project config into a running Claude container.
+title: ccpod Architecture
+description: How the ccpod pipeline loads, merges, and runs a Claude Code container — from profile config to live Docker session. Covers the 8-step execution pipeline.
 ---
 
 ccpod is a CLI built with [citty](https://github.com/unjs/citty) that orchestrates the official Claude Code binary inside a container. This page walks the data flow end to end.
