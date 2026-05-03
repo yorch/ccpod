@@ -161,6 +161,26 @@ isolation: true
 
 > **Note:** `isolation` does not prevent profile selection — a project's `.ccpod.yml` can still specify `profile: my-isolated-profile` to opt into it. CLI flags (`--no-state`, `--env`, `--rebuild`) continue to work.
 
+### `permissions`
+
+Default: none (no preset injected). Sets a Claude Code `permissions.allow` preset as the lowest-priority layer — your profile and project `settings.json` always override it.
+
+| Preset | Allows without prompting |
+|--------|--------------------------|
+| `conservative` | `Read`, `Glob`, `Grep` — writes and bash still prompt |
+| `moderate` | All file ops + `Bash` — no prompts for typical dev work |
+| `permissive` | All tools including `WebSearch` and `WebFetch` — Docker is the trust boundary |
+
+```yaml
+permissions: moderate
+```
+
+The preset expands into `permissions.allow` entries in the merged `settings.json` written to the container. If your profile or project `settings.json` already defines `permissions.allow`, those entries are merged with the preset (with explicit entries winning on conflicts).
+
+:::note
+Without a preset, Claude Code uses its own defaults — which means permission prompts for most tool calls. Set `moderate` to eliminate prompt fatigue during typical development sessions inside a container.
+:::
+
 ### `services`
 
 Sidecar containers (Postgres, Redis, queues, anything with a Docker image). Reachable from the Claude container by service name on a shared network. See [Sidecar Services](../../features/sidecars/).

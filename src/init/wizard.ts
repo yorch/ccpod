@@ -713,6 +713,24 @@ export function buildAnnotatedProfileYaml(profile: ProfileConfigInput): string {
   s.push(`isolation: ${profile.isolation ?? false}`);
   s.push('');
 
+  s.push(
+    '# Injects a Claude Code permissions.allow preset as the lowest-priority layer.',
+  );
+  s.push('# Profile and project settings.json always override the preset.');
+  s.push('# conservative: allow Read, Glob, Grep (writes/bash still prompt)');
+  s.push(
+    '# moderate:     allow all file ops + Bash (no prompts for typical dev work)',
+  );
+  s.push(
+    '# permissive:   allow all tools including network (Docker is the trust boundary)',
+  );
+  if (profile.permissions) {
+    s.push(`permissions: ${profile.permissions}`);
+  } else {
+    s.push('# permissions: moderate');
+  }
+  s.push('');
+
   return s.join('\n');
 }
 

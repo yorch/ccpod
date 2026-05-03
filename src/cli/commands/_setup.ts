@@ -5,6 +5,7 @@ import deepmerge from 'deepmerge';
 import { resolveAuth, resolveEnvForwarding } from '../../auth/resolver.ts';
 import { loadProfileConfig, loadProjectConfig } from '../../config/loader.ts';
 import { mergeClaudes, mergeConfigs } from '../../config/merger.ts';
+import { expandPermissionsPreset } from '../../config/permissions.ts';
 import { writeMergedConfig } from '../../config/writer.ts';
 import { computeProjectHash } from '../../container/builder.ts';
 import { sidecarNetworkName, startSidecars } from '../../container/sidecars.ts';
@@ -117,8 +118,19 @@ export async function setupContainer(
       ? mergeClaudes(profileClaudeMd ?? '', projectClaudeMd ?? '', claudeMdMode)
       : '';
 
-  const profileSettings =
-    readJsonIfExists(join(configSourceDir, 'settings.json')) ?? {};
+  const presetSettings = expandPermissionsPreset(profile.permissions);
+  const profileSettings = deepmerge(
+    presetSettings,
+    readJsonIfExists(join(configSourceDir, 'settings.json')) ?? {},
+    {
+      arrayMerge: (dest: unknown[], src: unknown[]) => {
+        const combined = [...dest, ...src];
+        return combined.every((item) => typeof item === 'string')
+          ? [...new Set(combined as string[])]
+          : combined;
+      },
+    },
+  );
   const projectClaudeDir = join(cwd, '.claude');
   const projectSettings = profile.isolation
     ? {}

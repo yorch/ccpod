@@ -4,6 +4,7 @@ export type StateMode = 'ephemeral' | 'persistent';
 export type NetworkPolicy = 'full' | 'restricted';
 export type AuthType = 'api-key' | 'oauth';
 export type ClaudeMdMerge = 'append' | 'override';
+export type PermissionsPreset = 'conservative' | 'moderate' | 'permissive';
 
 export interface PortsConfig {
   autoDetectMcp: boolean;
@@ -36,6 +37,7 @@ export interface ProfileConfig {
     policy: NetworkPolicy;
     allow: string[];
   };
+  permissions?: PermissionsPreset;
   plugins: string[];
   ports: PortsConfig;
   services: Record<string, ServiceConfig>;
