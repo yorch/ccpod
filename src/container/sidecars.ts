@@ -21,7 +21,9 @@ export async function startSidecars(
   profileName: string,
   projectHash: string,
 ): Promise<void> {
-  if (Object.keys(services).length === 0) return;
+  if (Object.keys(services).length === 0) {
+    return;
+  }
 
   await ensureNetwork(networkName);
 
@@ -48,14 +50,17 @@ export async function removeSidecarNetwork(networkName: string): Promise<void> {
 
 async function ensureNetwork(name: string): Promise<void> {
   const { exitCode } = await dockerExec(['network', 'inspect', name]);
-  if (exitCode === 0) return;
+  if (exitCode === 0) {
+    return;
+  }
   const { exitCode: createCode, stderr } = await dockerExec([
     'network',
     'create',
     name,
   ]);
-  if (createCode !== 0)
+  if (createCode !== 0) {
     throw new Error(`Failed to create network ${name}: ${stderr}`);
+  }
 }
 
 async function startSidecar(

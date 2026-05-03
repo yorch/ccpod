@@ -20,7 +20,9 @@ export async function syncGitConfig(
     return;
   }
 
-  if (!shouldSync(profileDir, strategy)) return;
+  if (!shouldSync(profileDir, strategy)) {
+    return;
+  }
 
   console.log(chalk.dim('Syncing profile config...'));
   const git = simpleGit(configDir);

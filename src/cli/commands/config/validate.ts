@@ -44,7 +44,9 @@ export default defineCommand({
     const profilePath = join(profileDir, 'profile.yml');
     allOk =
       check(`profile.yml (${profilePath})`, () => {
-        if (!existsSync(profilePath)) throw new Error('File not found');
+        if (!existsSync(profilePath)) {
+          throw new Error('File not found');
+        }
         const raw = parseYaml(readFileSync(profilePath, 'utf8'));
         profileConfigSchema.parse(raw);
       }) && allOk;
@@ -69,8 +71,9 @@ export default defineCommand({
       if (src?.source === 'local' && src.path) {
         allOk =
           check(`config source path (${src.path})`, () => {
-            if (!existsSync(src.path ?? ''))
+            if (!existsSync(src.path ?? '')) {
               throw new Error('Directory not found');
+            }
           }) && allOk;
       }
       if (src?.source === 'git' && src.repo) {

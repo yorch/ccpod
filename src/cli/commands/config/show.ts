@@ -92,7 +92,9 @@ export default defineCommand({
       );
       const preview = merged.split('\n').slice(0, 8).join('\n');
       console.log(chalk.dim(preview));
-      if (merged.split('\n').length > 8) console.log(chalk.dim('...'));
+      if (merged.split('\n').length > 8) {
+        console.log(chalk.dim('...'));
+      }
       console.log();
     }
   },

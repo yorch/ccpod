@@ -288,7 +288,9 @@ function readIfExists(path: string): string | null {
 }
 
 function readJsonIfExists(path: string): object | null {
-  if (!existsSync(path)) return null;
+  if (!existsSync(path)) {
+    return null;
+  }
   try {
     return JSON.parse(readFileSync(path, 'utf8')) as object;
   } catch {

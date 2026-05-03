@@ -16,7 +16,9 @@ import { writeMergedConfig } from '../../../src/config/writer.ts';
 const cleanup: string[] = [];
 
 afterEach(() => {
-  for (const dir of cleanup) rmSync(dir, { force: true, recursive: true });
+  for (const dir of cleanup) {
+    rmSync(dir, { force: true, recursive: true });
+  }
   cleanup.length = 0;
 });
 

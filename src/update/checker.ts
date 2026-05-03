@@ -19,7 +19,9 @@ export function cachePath(): string {
 
 function readCache(): UpdateCache | null {
   const path = cachePath();
-  if (!existsSync(path)) return null;
+  if (!existsSync(path)) {
+    return null;
+  }
   try {
     return JSON.parse(readFileSync(path, 'utf8')) as UpdateCache;
   } catch {
@@ -43,8 +45,12 @@ export function isNewer(latest: string, current: string): boolean {
   const parse = (v: string) => v.replace(/^v/, '').split('.').map(Number);
   const [lMaj, lMin, lPatch] = parse(latest);
   const [cMaj, cMin, cPatch] = parse(current);
-  if (lMaj !== cMaj) return (lMaj ?? 0) > (cMaj ?? 0);
-  if (lMin !== cMin) return (lMin ?? 0) > (cMin ?? 0);
+  if (lMaj !== cMaj) {
+    return (lMaj ?? 0) > (cMaj ?? 0);
+  }
+  if (lMin !== cMin) {
+    return (lMin ?? 0) > (cMin ?? 0);
+  }
   return (lPatch ?? 0) > (cPatch ?? 0);
 }
 
@@ -56,7 +62,9 @@ export async function fetchLatestVersion(): Promise<string | null> {
       `https://api.github.com/repos/${GITHUB_REPO}/releases/latest`,
       { headers: { 'User-Agent': 'ccpod-updater' }, signal: controller.signal },
     );
-    if (!res.ok) return null;
+    if (!res.ok) {
+      return null;
+    }
     const data = (await res.json()) as { tag_name?: string };
     return data.tag_name ?? null;
   } catch {
@@ -74,12 +82,16 @@ export function checkForUpdate(currentVersion: string): string | null {
   if (!cache || !isFresh(cache)) {
     fetchLatestVersion()
       .then((v) => {
-        if (v) writeCache(v);
+        if (v) {
+          writeCache(v);
+        }
       })
       .catch(() => {});
   }
 
-  if (!cache) return null;
+  if (!cache) {
+    return null;
+  }
   return isNewer(cache.latestVersion, currentVersion)
     ? cache.latestVersion
     : null;

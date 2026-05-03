@@ -99,6 +99,8 @@ export function mergeClaudes(
   projectContent: string,
   mode: 'append' | 'override',
 ): string {
-  if (mode === 'override') return projectContent;
+  if (mode === 'override') {
+    return projectContent;
+  }
   return `${profileContent}\n\n---\n\n${projectContent}`;
 }

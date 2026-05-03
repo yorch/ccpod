@@ -21,7 +21,9 @@ function globalConfigPath(): string {
 
 export function loadGlobalConfig(): GlobalConfig {
   const path = globalConfigPath();
-  if (!existsSync(path)) return GlobalConfigSchema.parse({});
+  if (!existsSync(path)) {
+    return GlobalConfigSchema.parse({});
+  }
   try {
     return GlobalConfigSchema.parse(yamlParse(readFileSync(path, 'utf8')));
   } catch {

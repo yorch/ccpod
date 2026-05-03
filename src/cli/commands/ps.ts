@@ -8,7 +8,9 @@ function parseLabels(raw: string): Record<string, string> {
   const out: Record<string, string> = {};
   for (const pair of raw.split(',')) {
     const eq = pair.indexOf('=');
-    if (eq >= 0) out[pair.slice(0, eq)] = pair.slice(eq + 1);
+    if (eq >= 0) {
+      out[pair.slice(0, eq)] = pair.slice(eq + 1);
+    }
   }
   return out;
 }

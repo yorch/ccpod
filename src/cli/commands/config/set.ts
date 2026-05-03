@@ -5,8 +5,12 @@ import { loadGlobalConfig, saveGlobalConfig } from '../../../global/config.ts';
 
 export const KNOWN_KEYS = {
   autoCheckUpdates: (v: string): boolean => {
-    if (v === 'true' || v === '1') return true;
-    if (v === 'false' || v === '0') return false;
+    if (v === 'true' || v === '1') {
+      return true;
+    }
+    if (v === 'false' || v === '0') {
+      return false;
+    }
     throw new Error('expected boolean (true/false)');
   },
 } satisfies Record<keyof GlobalConfig, (v: string) => unknown>;

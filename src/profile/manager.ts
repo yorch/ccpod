@@ -55,7 +55,9 @@ export function getStateDir(profileName: string): string {
 
 export function listProfiles(): string[] {
   const pd = profilesDir();
-  if (!existsSync(pd)) return [];
+  if (!existsSync(pd)) {
+    return [];
+  }
   return readdirSync(pd).filter((entry) =>
     existsSync(join(pd, entry, 'profile.yml')),
   );
@@ -63,18 +65,25 @@ export function listProfiles(): string[] {
 
 export function deleteProfile(name: string): void {
   const dir = join(profilesDir(), name);
-  if (!existsSync(dir)) throw new Error(`Profile not found: ${name}`);
+  if (!existsSync(dir)) {
+    throw new Error(`Profile not found: ${name}`);
+  }
   rmSync(dir, { force: true, recursive: true });
   const credDir = join(credentialsBase(), name);
-  if (existsSync(credDir)) rmSync(credDir, { force: true, recursive: true });
+  if (existsSync(credDir)) {
+    rmSync(credDir, { force: true, recursive: true });
+  }
   const stateDir = join(baseDir(), 'state', name);
-  if (existsSync(stateDir)) rmSync(stateDir, { force: true, recursive: true });
+  if (existsSync(stateDir)) {
+    rmSync(stateDir, { force: true, recursive: true });
+  }
 }
 
 export function updateProfileImage(profileName: string, tag: string): void {
   const profilePath = join(profilesDir(), profileName, 'profile.yml');
-  if (!existsSync(profilePath))
+  if (!existsSync(profilePath)) {
     throw new Error(`Profile not found: ${profileName}`);
+  }
   const doc = parseDocument(readFileSync(profilePath, 'utf8'));
   doc.setIn(['image', 'use'], tag);
   writeFileSync(profilePath, doc.toString(), 'utf8');
@@ -85,8 +94,9 @@ export function updateProfileDockerfile(
   dockerfilePath: string,
 ): void {
   const profilePath = join(profilesDir(), profileName, 'profile.yml');
-  if (!existsSync(profilePath))
+  if (!existsSync(profilePath)) {
     throw new Error(`Profile not found: ${profileName}`);
+  }
   const doc = parseDocument(readFileSync(profilePath, 'utf8'));
   doc.setIn(['image', 'dockerfile'], dockerfilePath);
   writeFileSync(profilePath, doc.toString(), 'utf8');

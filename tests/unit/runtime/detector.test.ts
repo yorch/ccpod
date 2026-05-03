@@ -9,16 +9,25 @@ const tempDirs: string[] = [];
 
 afterEach(() => {
   for (const [k, v] of Object.entries(savedEnv)) {
-    if (v === undefined) delete process.env[k];
-    else process.env[k] = v;
+    if (v === undefined) {
+      delete process.env[k];
+    } else {
+      process.env[k] = v;
+    }
   }
-  for (const k of Object.keys(savedEnv)) delete savedEnv[k];
-  for (const dir of tempDirs) rmSync(dir, { force: true, recursive: true });
+  for (const k of Object.keys(savedEnv)) {
+    delete savedEnv[k];
+  }
+  for (const dir of tempDirs) {
+    rmSync(dir, { force: true, recursive: true });
+  }
   tempDirs.length = 0;
 });
 
 function saveEnv(...keys: string[]) {
-  for (const k of keys) savedEnv[k] = process.env[k];
+  for (const k of keys) {
+    savedEnv[k] = process.env[k];
+  }
 }
 
 function makeFakeHome(): string {

@@ -12,7 +12,9 @@ export function resolveAuth(
 
   const envVar = auth.keyEnv ?? 'ANTHROPIC_API_KEY';
   const fromEnv = process.env[envVar];
-  if (fromEnv) return { ANTHROPIC_API_KEY: fromEnv };
+  if (fromEnv) {
+    return { ANTHROPIC_API_KEY: fromEnv };
+  }
 
   if (auth.keyFile) {
     const keyPath = auth.keyFile.replace(/^~/, homedir());

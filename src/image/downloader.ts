@@ -14,14 +14,19 @@ async function fetchWithFallback(
   label: string,
 ): Promise<string> {
   const res = await fetch(primaryUrl);
-  if (res.ok) return res.text();
-  if (res.status !== 404)
+  if (res.ok) {
+    return res.text();
+  }
+  if (res.status !== 404) {
     throw new Error(`Failed to download ${label}: HTTP ${res.status}`);
+  }
   process.stderr.write(
     `Warning: v${VERSION} tag not found for ${label}, falling back to main branch.\n`,
   );
   const fallback = await fetch(fallbackUrl);
-  if (fallback.ok) return fallback.text();
+  if (fallback.ok) {
+    return fallback.text();
+  }
   throw new Error(`Failed to download ${label}: HTTP ${fallback.status}`);
 }
 

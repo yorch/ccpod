@@ -58,7 +58,9 @@ function detectAuth(currentProfile: string): DetectedAuth {
 
   const profiles: DetectedAuth['profiles'] = [];
   for (const name of listProfiles()) {
-    if (name === currentProfile) continue;
+    if (name === currentProfile) {
+      continue;
+    }
     try {
       const raw = readFileSync(
         join(getProfileDir(name), 'profile.yml'),
@@ -66,7 +68,9 @@ function detectAuth(currentProfile: string): DetectedAuth {
       );
       const parsed = parse(raw) as { auth?: unknown };
       const authResult = profileConfigSchema.shape.auth.safeParse(parsed?.auth);
-      if (authResult.success) profiles.push({ auth: authResult.data, name });
+      if (authResult.success) {
+        profiles.push({ auth: authResult.data, name });
+      }
     } catch {
       // skip unreadable profiles
     }
@@ -192,7 +196,9 @@ export async function runWizard(profileName = 'default'): Promise<void> {
       keyEnv: 'ANTHROPIC_API_KEY',
       type: 'api-key',
     };
-    if (found?.auth?.type === 'oauth') credentialSourceProfile = sourceName;
+    if (found?.auth?.type === 'oauth') {
+      credentialSourceProfile = sourceName;
+    }
   } else if (authMethod === 'env') {
     const keyEnv = await input({
       default: 'ANTHROPIC_API_KEY',
@@ -428,7 +434,9 @@ function sanitizeClaudeJson(src: string): string {
     >;
     const filtered: Record<string, unknown> = {};
     for (const key of CLAUDE_JSON_KEEP_KEYS) {
-      if (key in parsed) filtered[key] = parsed[key];
+      if (key in parsed) {
+        filtered[key] = parsed[key];
+      }
     }
     return JSON.stringify(filtered);
   } catch {
@@ -440,7 +448,9 @@ function copyCredentials(
   sourceProfile: string | undefined,
   destProfile: string,
 ): void {
-  if (!sourceProfile) return;
+  if (!sourceProfile) {
+    return;
+  }
   const srcDir = getCredentialsDir(sourceProfile);
   const destDir = getCredentialsDir(destProfile);
   const credFile = join(srcDir, '.credentials.json');
@@ -466,7 +476,9 @@ function writeKeychainCredentials(
   token: string | undefined,
   destProfile: string,
 ): void {
-  if (!token) return;
+  if (!token) {
+    return;
+  }
   const destDir = getCredentialsDir(destProfile);
   writeFileSync(join(destDir, '.credentials.json'), token, { mode: 0o600 });
   const hostClaudeJson = join(homedir(), '.claude.json');
@@ -607,10 +619,18 @@ export function buildAnnotatedProfileYaml(profile: ProfileConfigInput): string {
   s.push('# sync: always | daily | pin — how often to pull updates (git only)');
   s.push('config:');
   s.push(`  source: ${profile.config?.source}`);
-  if (profile.config?.path) s.push(`  path: ${q(profile.config.path)}`);
-  if (profile.config?.repo) s.push(`  repo: ${q(profile.config.repo)}`);
-  if (profile.config?.ref) s.push(`  ref: ${q(profile.config.ref)}`);
-  if (profile.config?.sync) s.push(`  sync: ${profile.config.sync}`);
+  if (profile.config?.path) {
+    s.push(`  path: ${q(profile.config.path)}`);
+  }
+  if (profile.config?.repo) {
+    s.push(`  repo: ${q(profile.config.repo)}`);
+  }
+  if (profile.config?.ref) {
+    s.push(`  ref: ${q(profile.config.ref)}`);
+  }
+  if (profile.config?.sync) {
+    s.push(`  sync: ${profile.config.sync}`);
+  }
   s.push('');
 
   s.push('# Extra environment variables passed into the container.');
@@ -625,8 +645,9 @@ export function buildAnnotatedProfileYaml(profile: ProfileConfigInput): string {
   );
   s.push('image:');
   s.push(`  use: ${q(profile.image?.use ?? OFFICIAL_IMAGE)}`);
-  if (profile.image?.dockerfile)
+  if (profile.image?.dockerfile) {
     s.push(`  dockerfile: ${q(profile.image.dockerfile)}`);
+  }
   s.push('');
 
   s.push('# Network policy applied to the container.');

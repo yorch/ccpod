@@ -7,7 +7,9 @@ import { extractHttpMcpPorts, parseMcpJson } from '../../../src/mcp/parser.ts';
 const tempDirs: string[] = [];
 
 afterEach(() => {
-  for (const dir of tempDirs) rmSync(dir, { force: true, recursive: true });
+  for (const dir of tempDirs) {
+    rmSync(dir, { force: true, recursive: true });
+  }
   tempDirs.length = 0;
 });
 

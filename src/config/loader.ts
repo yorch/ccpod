@@ -17,16 +17,22 @@ export function findProjectConfig(startDir: string): string | null {
   let dir = startDir;
   while (true) {
     const candidate = join(dir, '.ccpod.yml');
-    if (existsSync(candidate)) return candidate;
+    if (existsSync(candidate)) {
+      return candidate;
+    }
     const parent = dirname(dir);
-    if (parent === dir) return null;
+    if (parent === dir) {
+      return null;
+    }
     dir = parent;
   }
 }
 
 export function loadProjectConfig(projectDir: string): ProjectConfig | null {
   const configPath = findProjectConfig(projectDir);
-  if (!configPath) return null;
+  if (!configPath) {
+    return null;
+  }
   const raw = parseYaml(readFileSync(configPath, 'utf8'));
   return projectConfigSchema.parse(raw) as ProjectConfig;
 }

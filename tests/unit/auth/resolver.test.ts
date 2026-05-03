@@ -10,12 +10,17 @@ import {
 // Save env state around tests that mutate it
 const savedEnv: Record<string, string | undefined> = {};
 function saveEnv(...keys: string[]) {
-  for (const k of keys) savedEnv[k] = process.env[k];
+  for (const k of keys) {
+    savedEnv[k] = process.env[k];
+  }
 }
 afterEach(() => {
   for (const [k, v] of Object.entries(savedEnv)) {
-    if (v === undefined) delete process.env[k];
-    else process.env[k] = v;
+    if (v === undefined) {
+      delete process.env[k];
+    } else {
+      process.env[k] = v;
+    }
   }
   Object.keys(savedEnv).forEach((k) => {
     delete savedEnv[k];

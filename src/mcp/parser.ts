@@ -13,7 +13,9 @@ interface McpConfig {
 
 export function parseMcpJson(projectDir: string): McpConfig | null {
   const mcpPath = join(projectDir, '.mcp.json');
-  if (!existsSync(mcpPath)) return null;
+  if (!existsSync(mcpPath)) {
+    return null;
+  }
   try {
     return JSON.parse(readFileSync(mcpPath, 'utf8')) as McpConfig;
   } catch {
@@ -27,7 +29,9 @@ export function extractHttpMcpPorts(config: McpConfig): number[] {
     if ((server.type === 'http' || server.type === 'sse') && server.url) {
       try {
         const port = new URL(server.url).port;
-        if (port) ports.push(Number(port));
+        if (port) {
+          ports.push(Number(port));
+        }
       } catch {
         // ignore invalid URLs
       }

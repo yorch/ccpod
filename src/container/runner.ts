@@ -41,8 +41,12 @@ export async function stopContainer(
   deps: RunnerDeps = defaultDeps(),
 ): Promise<void> {
   const state = await containerState(name, deps.dockerExec);
-  if (state === 'not_found') return;
-  if (state === 'running') await deps.dockerExec(['stop', '-t', '5', name]);
+  if (state === 'not_found') {
+    return;
+  }
+  if (state === 'running') {
+    await deps.dockerExec(['stop', '-t', '5', name]);
+  }
   await deps.dockerExec(['rm', name]);
 }
 
@@ -56,19 +60,27 @@ async function containerState(
     '{{.State.Status}}',
     name,
   ]);
-  if (exitCode !== 0) return 'not_found';
+  if (exitCode !== 0) {
+    return 'not_found';
+  }
   return stdout === 'running' ? 'running' : 'stopped';
 }
 
 function buildRunArgs(spec: ContainerSpec): string[] {
   const args: string[] = ['run'];
 
-  if (spec.tty) args.push('-it');
+  if (spec.tty) {
+    args.push('-it');
+  }
 
   args.push('--name', spec.name, '-w', spec.workingDir);
 
-  for (const e of spec.env) args.push('-e', e);
-  for (const b of spec.binds) args.push('-v', b);
+  for (const e of spec.env) {
+    args.push('-e', e);
+  }
+  for (const b of spec.binds) {
+    args.push('-v', b);
+  }
 
   for (const [key, val] of Object.entries(spec.labels)) {
     args.push('--label', `${key}=${val}`);
@@ -94,7 +106,9 @@ function buildRunArgs(spec: ContainerSpec): string[] {
 
   args.push(spec.image);
 
-  if (spec.cmd && spec.cmd.length > 0) args.push(...spec.cmd);
+  if (spec.cmd && spec.cmd.length > 0) {
+    args.push(...spec.cmd);
+  }
 
   return args;
 }

@@ -11,7 +11,9 @@ export async function volumeExists(name: string): Promise<boolean> {
 
 export async function removeVolume(name: string): Promise<void> {
   const { exitCode, stderr } = await dockerExec(['volume', 'rm', name]);
-  if (exitCode !== 0) throw new Error(`docker volume rm failed: ${stderr}`);
+  if (exitCode !== 0) {
+    throw new Error(`docker volume rm failed: ${stderr}`);
+  }
 }
 
 export async function listVolumeEntries(

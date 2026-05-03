@@ -5,7 +5,9 @@ import { dockerExec, dockerSpawn } from '../runtime/docker.ts';
 export async function ensureImage(image: string, force = false): Promise<void> {
   if (!force) {
     const { exitCode } = await dockerExec(['image', 'inspect', image]);
-    if (exitCode === 0) return;
+    if (exitCode === 0) {
+      return;
+    }
   }
   await pullImage(image);
 }
@@ -28,7 +30,9 @@ export async function buildImage(
     tag,
     contextDir,
   ]);
-  if (exitCode !== 0) throw new Error(`docker build failed (exit ${exitCode})`);
+  if (exitCode !== 0) {
+    throw new Error(`docker build failed (exit ${exitCode})`);
+  }
 }
 
 export async function ensureLocalImage(
@@ -39,7 +43,9 @@ export async function ensureLocalImage(
 ): Promise<void> {
   if (!force) {
     const { exitCode } = await dockerExec(['image', 'inspect', tag]);
-    if (exitCode === 0) return;
+    if (exitCode === 0) {
+      return;
+    }
   }
   await buildImage(dockerfile, tag, contextDir);
 }
@@ -47,5 +53,7 @@ export async function ensureLocalImage(
 async function pullImage(image: string): Promise<void> {
   console.log(`Pulling image: ${image}`);
   const exitCode = await dockerSpawn(['pull', image]);
-  if (exitCode !== 0) throw new Error(`docker pull failed (exit ${exitCode})`);
+  if (exitCode !== 0) {
+    throw new Error(`docker pull failed (exit ${exitCode})`);
+  }
 }
