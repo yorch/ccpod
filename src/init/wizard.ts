@@ -104,7 +104,7 @@ export async function runWizard(profileName = 'default'): Promise<void> {
     message: 'Setup mode',
   })) as 'full' | 'quick';
 
-  const totalSteps = mode === 'quick' ? 3 : 8;
+  const totalSteps = mode === 'quick' ? 3 : 9;
 
   // Step 1 — runtime detection (auto)
   console.log();
@@ -314,7 +314,14 @@ export async function runWizard(profileName = 'default'): Promise<void> {
     message: '     Bind-mount ~/.ssh (read-only) for direct key access?',
   });
 
-  // Step 7 — image
+  // Step 7 — isolation
+  console.log();
+  const isolation = await confirm({
+    default: false,
+    message: `[7/${totalSteps}] Isolate profile from project config? (ignore project .ccpod.yml, CLAUDE.md, and .claude/settings.json)`,
+  });
+
+  // Step 8 — image
   console.log();
   const imageChoice = (await select({
     choices: [
@@ -336,7 +343,7 @@ export async function runWizard(profileName = 'default'): Promise<void> {
         value: 'build',
       },
     ],
-    message: `[7/${totalSteps}] Docker image`,
+    message: `[8/${totalSteps}] Docker image`,
   })) as 'build' | 'custom' | 'official';
 
   let imageConfig: NonNullable<ProfileConfigInput['image']>;
@@ -361,6 +368,7 @@ export async function runWizard(profileName = 'default'): Promise<void> {
     config: configConfig,
     createConfigDir,
     image: imageConfig,
+    isolation,
     network: { allow: [], policy: networkPolicy },
     ssh: { agentForward, mountSshDir },
     state,
@@ -400,6 +408,34 @@ export async function runWizard(profileName = 'default'): Promise<void> {
   }
 }
 
+// Only these keys are needed for auth/identity — everything else (mcpServers,
+// projects, recentFiles, etc.) belongs to the host and must not leak into containers.
+// anonymousId is omitted intentionally: it's a telemetry identifier; containers
+// should get a fresh one rather than inheriting the host's analytics identity.
+const CLAUDE_JSON_KEEP_KEYS = [
+  'oauthAccount',
+  'userID',
+  'hasCompletedOnboarding',
+  'lastOnboardingVersion',
+  'migrationVersion',
+] as const;
+
+function sanitizeClaudeJson(src: string): string {
+  try {
+    const parsed = JSON.parse(readFileSync(src, 'utf8')) as Record<
+      string,
+      unknown
+    >;
+    const filtered: Record<string, unknown> = {};
+    for (const key of CLAUDE_JSON_KEEP_KEYS) {
+      if (key in parsed) filtered[key] = parsed[key];
+    }
+    return JSON.stringify(filtered);
+  } catch {
+    return '{}';
+  }
+}
+
 function copyCredentials(
   sourceProfile: string | undefined,
   destProfile: string,
@@ -407,13 +443,21 @@ function copyCredentials(
   if (!sourceProfile) return;
   const srcDir = getCredentialsDir(sourceProfile);
   const destDir = getCredentialsDir(destProfile);
-  for (const file of ['.credentials.json', '.claude.json']) {
-    const dest = join(destDir, file);
+  const credFile = join(srcDir, '.credentials.json');
+  try {
+    const dest = join(destDir, '.credentials.json');
+    copyFileSync(credFile, dest);
+    chmodSync(dest, 0o600);
+  } catch {
+    // file absent — container may not have run yet; skip silently
+  }
+  const claudeJsonSrc = join(srcDir, '.claude.json');
+  if (existsSync(claudeJsonSrc)) {
     try {
-      copyFileSync(join(srcDir, file), dest);
-      chmodSync(dest, 0o600);
+      const dest = join(destDir, '.claude.json');
+      writeFileSync(dest, sanitizeClaudeJson(claudeJsonSrc), { mode: 0o600 });
     } catch {
-      // file absent — container may not have run yet; skip silently
+      // skip if unreadable
     }
   }
 }
@@ -429,8 +473,7 @@ function writeKeychainCredentials(
   if (existsSync(hostClaudeJson)) {
     try {
       const dest = join(destDir, '.claude.json');
-      copyFileSync(hostClaudeJson, dest);
-      chmodSync(dest, 0o600);
+      writeFileSync(dest, sanitizeClaudeJson(hostClaudeJson), { mode: 0o600 });
     } catch {
       // skip if unreadable
     }
@@ -448,10 +491,11 @@ async function writeProfile(
     auth: ProfileConfigInput['auth'];
     config: ProfileConfigInput['config'];
     createConfigDir?: boolean;
-    network: NonNullable<ProfileConfigInput['network']>;
-    state: 'ephemeral' | 'persistent';
-    ssh: NonNullable<ProfileConfigInput['ssh']>;
     image: NonNullable<ProfileConfigInput['image']>;
+    isolation?: boolean;
+    network: NonNullable<ProfileConfigInput['network']>;
+    ssh: NonNullable<ProfileConfigInput['ssh']>;
+    state: 'ephemeral' | 'persistent';
   },
 ): Promise<boolean> {
   const profileDir = getProfileDir(profileName);
@@ -478,6 +522,7 @@ async function writeProfile(
     config: opts.config,
     env: [],
     image: opts.image,
+    isolation: opts.isolation ?? false,
     name: profileName,
     network: opts.network,
     plugins: [],
@@ -515,6 +560,12 @@ export function buildAnnotatedProfileYaml(profile: ProfileConfigInput): string {
   s.push(`name: ${q(profile.name)}`);
   s.push('');
 
+  s.push(
+    '# Optional human-readable description shown in `ccpod profile list`.',
+  );
+  s.push(`description: ${profile.description ? q(profile.description) : '""'}`);
+  s.push('');
+
   s.push('# Authentication with the Anthropic API.');
   s.push(
     '# type: api-key (env var or file on disk) | oauth (browser login via claude)',
@@ -541,7 +592,9 @@ export function buildAnnotatedProfileYaml(profile: ProfileConfigInput): string {
     '# Extra CLI flags passed to the claude command on every run (profile-level baseline).',
   );
   s.push('# Example: ["--verbose", "--model", "claude-opus-4-5"]');
-  s.push(`claudeArgs: []`);
+  s.push(
+    `claudeArgs: ${profile.claudeArgs?.length ? JSON.stringify(profile.claudeArgs) : '[]'}`,
+  );
   s.push('');
 
   s.push(
@@ -628,6 +681,15 @@ export function buildAnnotatedProfileYaml(profile: ProfileConfigInput): string {
     '# persistent: stored in a named Docker volume; survives container removal',
   );
   s.push(`state: ${profile.state ?? 'ephemeral'}`);
+  s.push('');
+
+  s.push(
+    '# When true, project .ccpod.yml, CLAUDE.md, and .claude/settings.json are ignored.',
+  );
+  s.push(
+    '# The profile config is used as-is, regardless of the project being run.',
+  );
+  s.push(`isolation: ${profile.isolation ?? false}`);
   s.push('');
 
   return s.join('\n');
