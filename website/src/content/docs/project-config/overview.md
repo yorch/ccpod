@@ -53,13 +53,15 @@ services:
 | Field | Type | Notes |
 |---|---|---|
 | `profile` | string | Which profile to use. Falls back to `default`. |
-| `merge` | `deep` \| `override` | How to combine with the profile (see [Merge Strategies](../merge/)). |
+| `merge` | `deep` \| `override` | How to combine ccpod settings with the profile. `deep` (default): project adds to/appends profile values. `override`: project sections fully replace the profile's (omitted fields revert to schema defaults). See [Merge Strategies](../merge/). |
 | `claudeArgs` | string[] | Extra CLI flags passed to `claude`. Deep: appended after profile args. Override: replaces. |
 | `config.claudeMd` | `append` \| `override` | How to combine `CLAUDE.md` files. |
 | `network` | partial network block | Adds to (or replaces) the profile's network config. |
 | `ports` | object | Extra port mappings (`list`, `autoDetectMcp`). |
 | `services` | object | Extra sidecars; merged by key. |
 | `env` | string[] | Extra env-var names to forward. |
+
+> **Note:** If the profile has [`isolation: true`](../profiles/configuration/#isolation), this entire file is ignored — the profile config is used as-is regardless of what `.ccpod.yml` contains.
 
 ## Inspecting the result
 

@@ -5,6 +5,16 @@ description: How profile + project + run-level config combine.
 
 ccpod merges configuration in layers. Each asset has a documented strategy so the result is predictable.
 
+Merging happens across three independent axes — each has its own control:
+
+| Axis | Controlled by | Configurable? |
+|---|---|---|
+| ccpod settings (network, ports, services, env, claudeArgs) | `merge` in `.ccpod.yml` | yes |
+| `CLAUDE.md` content | `config.claudeMd` in `.ccpod.yml` | yes |
+| `.claude/settings.json` | — | no — always deep-merged, project wins on conflicts |
+
+They are separate flags because the assets have different merge semantics: CLAUDE.md is text (append vs. replace), settings.json is always deep-merged, and ccpod settings vary per asset type.
+
 ## Strategy switches
 
 | Setting | Where | Values | Default |
