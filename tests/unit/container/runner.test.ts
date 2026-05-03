@@ -1,7 +1,11 @@
 import { describe, expect, it, mock } from 'bun:test';
 import type { ContainerSpec } from '../../../src/container/builder.ts';
 import type { RunnerDeps } from '../../../src/container/runner.ts';
-import { runContainer } from '../../../src/container/runner.ts';
+import {
+  execContainer,
+  runContainer,
+  shellContainer,
+} from '../../../src/container/runner.ts';
 
 type ExecResult = { exitCode: number; stdout: string; stderr: string };
 
@@ -124,6 +128,81 @@ describe('runContainer', () => {
     expect(spawnArgs).toContain('my-img:v1');
   });
 
+  it('appends /bin/bash cmd when spec.cmd overridden for shell', async () => {
+    const { deps, spawnMock } = makeDeps([
+      { exitCode: 1, stderr: '', stdout: '' },
+    ]);
+
+    await runContainer(makeSpec({ cmd: ['/bin/bash'] }), deps);
+
+    const spawnArgs = (spawnMock.mock.calls[0] as [string[]])[0];
+    expect(spawnArgs[0]).toBe('run');
+    expect(spawnArgs[spawnArgs.length - 1]).toBe('/bin/bash');
+  });
+});
+
+describe('execContainer', () => {
+  it('calls docker exec with -it, container name, and cmd', async () => {
+    const { deps, spawnMock } = makeDeps();
+
+    const code = await execContainer(
+      'ccpod-default-abc123',
+      ['/bin/bash'],
+      deps,
+    );
+
+    expect(code).toBe(0);
+    const spawnArgs = (spawnMock.mock.calls[0] as [string[]])[0];
+    expect(spawnArgs).toEqual([
+      'exec',
+      '-it',
+      'ccpod-default-abc123',
+      '/bin/bash',
+    ]);
+  });
+});
+
+describe('shellContainer', () => {
+  it('execs into running container with spec.cmd', async () => {
+    const { deps, spawnMock } = makeDeps([
+      { exitCode: 0, stderr: '', stdout: 'running' },
+    ]);
+
+    await shellContainer(makeSpec({ cmd: ['/bin/bash'] }), deps);
+
+    const spawnArgs = (spawnMock.mock.calls[0] as [string[]])[0];
+    expect(spawnArgs[0]).toBe('exec');
+    expect(spawnArgs).toContain('-it');
+    expect(spawnArgs).toContain('/bin/bash');
+  });
+
+  it('removes stopped container and starts fresh with spec.cmd', async () => {
+    const { deps, spawnMock } = makeDeps([
+      { exitCode: 0, stderr: '', stdout: 'exited' },
+      { exitCode: 0, stderr: '', stdout: '' },
+    ]);
+
+    await shellContainer(makeSpec({ cmd: ['/bin/bash'] }), deps);
+
+    const spawnArgs = (spawnMock.mock.calls[0] as [string[]])[0];
+    expect(spawnArgs[0]).toBe('run');
+    expect(spawnArgs[spawnArgs.length - 1]).toBe('/bin/bash');
+  });
+
+  it('starts new container when not found', async () => {
+    const { deps, spawnMock } = makeDeps([
+      { exitCode: 1, stderr: 'No such container', stdout: '' },
+    ]);
+
+    await shellContainer(makeSpec({ cmd: ['/bin/bash'] }), deps);
+
+    const spawnArgs = (spawnMock.mock.calls[0] as [string[]])[0];
+    expect(spawnArgs[0]).toBe('run');
+    expect(spawnArgs[spawnArgs.length - 1]).toBe('/bin/bash');
+  });
+});
+
+describe('runContainer (continued)', () => {
   it('appends cmd to run args when spec.cmd is set', async () => {
     const { deps, spawnMock } = makeDeps([
       { exitCode: 1, stderr: '', stdout: '' },

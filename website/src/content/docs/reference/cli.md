@@ -1,6 +1,6 @@
 ---
 title: ccpod CLI Reference
-description: Complete reference for every ccpod command and flag — run, init, update, profile, plugins, image, config, ps, and down.
+description: Complete reference for every ccpod command and flag — run, shell, init, update, profile, plugins, image, config, ps, and down.
 ---
 
 `ccpod` is a single binary. All commands accept `--help`.
@@ -23,6 +23,24 @@ ccpod run -- --dangerously-skip-permissions   # pass flags directly to claude
 `--file` and an inline prompt are mutually exclusive. `--file` paths are normalized; absolute paths and `..` traversals are rejected.
 
 Everything after `--` is forwarded verbatim to the `claude` command inside the container and appended after any `claudeArgs` declared in the profile or project config.
+
+## `ccpod shell`
+
+Open an interactive shell in the container without starting Claude. Useful for debugging mounts, testing MCP servers, or inspecting the merged config.
+
+```sh
+ccpod shell                    # open /bin/bash in a new container
+ccpod shell --profile team     # use a specific profile
+ccpod shell --env KEY=VALUE    # set/override an env var
+ccpod shell --no-state         # force ephemeral state
+ccpod shell --rebuild          # force image rebuild or repull
+```
+
+If a container for this project/profile is already running (e.g. Claude is active), `ccpod shell` exec's into it with `docker exec -it` — giving you a second shell alongside the running session. Otherwise it starts a fresh container with `/bin/bash` as the entrypoint.
+
+:::note
+The target image must have `/bin/bash`. Alpine-based images typically only have `/bin/sh` and will fail. The official ccpod image always includes bash.
+:::
 
 ## `ccpod init`
 

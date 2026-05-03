@@ -50,7 +50,38 @@ export async function stopContainer(
   await deps.dockerExec(['rm', name]);
 }
 
-async function containerState(
+export async function execContainer(
+  name: string,
+  cmd: string[],
+  deps: RunnerDeps = defaultDeps(),
+): Promise<number> {
+  return deps.dockerSpawn(['exec', '-it', name, ...cmd]);
+}
+
+export async function shellContainer(
+  spec: ContainerSpec,
+  deps: RunnerDeps = defaultDeps(),
+): Promise<number> {
+  const state = await containerState(spec.name, deps.dockerExec);
+
+  if (state === 'running') {
+    const cmd = spec.cmd ?? ['/bin/bash'];
+    return deps.dockerSpawn(['exec', '-it', spec.name, ...cmd]);
+  }
+
+  if (state === 'stopped') {
+    const { exitCode, stderr } = await deps.dockerExec(['rm', spec.name]);
+    if (exitCode !== 0) {
+      throw new Error(
+        `Failed to remove stopped container '${spec.name}': ${stderr}`,
+      );
+    }
+  }
+
+  return deps.dockerSpawn(buildRunArgs(spec));
+}
+
+export async function containerState(
   name: string,
   dockerExecFn: DockerExecFn,
 ): Promise<'running' | 'stopped' | 'not_found'> {

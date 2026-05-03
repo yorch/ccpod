@@ -39,6 +39,7 @@ const main = defineCommand({
     profile: () => import('./commands/profile/index.ts').then((m) => m.default),
     ps: () => import('./commands/ps.ts').then((m) => m.default),
     run: () => import('./commands/run.ts').then((m) => m.default),
+    shell: () => import('./commands/shell.ts').then((m) => m.default),
     state: () => import('./commands/state/index.ts').then((m) => m.default),
     update: () => import('./commands/update.ts').then((m) => m.default),
   },
