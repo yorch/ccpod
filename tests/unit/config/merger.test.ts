@@ -9,6 +9,7 @@ function makeProfile(overrides: Partial<ProfileConfig> = {}): ProfileConfig {
     config: { path: '/tmp/cfg', source: 'local', sync: 'daily' },
     env: [],
     image: { use: 'ghcr.io/ccpod/base:latest' },
+    isolation: false,
     name: 'base',
     network: { allow: [], policy: 'full' },
     plugins: [],
@@ -133,6 +134,40 @@ describe('mergeConfigs', () => {
     const profile = makeProfile({ claudeArgs: ['--verbose'] });
     const result = mergeConfigs(profile, null);
     expect(result.claudeArgs).toEqual(['--verbose']);
+  });
+
+  it('isolated profile ignores project network', () => {
+    const profile = makeProfile({
+      isolation: true,
+      network: { allow: ['github.com'], policy: 'restricted' },
+    });
+    const result = mergeConfigs(profile, {
+      network: { allow: ['evil.com'], policy: 'full' },
+    });
+    expect(result.network.policy).toBe('restricted');
+    expect(result.network.allow).toEqual(['github.com']);
+    expect(result.network.allow).not.toContain('evil.com');
+  });
+
+  it('isolated profile ignores project claudeArgs', () => {
+    const profile = makeProfile({
+      claudeArgs: ['--verbose'],
+      isolation: true,
+    });
+    const result = mergeConfigs(profile, {
+      claudeArgs: ['--injected-flag'],
+    });
+    expect(result.claudeArgs).toEqual(['--verbose']);
+  });
+
+  it('isolated profile: CLI state override still honoured', () => {
+    const result = mergeConfigs(
+      makeProfile({ isolation: true, state: 'persistent' }),
+      { merge: 'override', services: { db: { image: 'postgres' } } },
+      { state: 'ephemeral' },
+    );
+    expect(result.state).toBe('ephemeral');
+    expect(Object.keys(result.services)).toHaveLength(0);
   });
 });
 

@@ -39,6 +39,7 @@ export const profileConfigSchema = z.object({
       use: z.string().default(OFFICIAL_IMAGE),
     })
     .default({ use: OFFICIAL_IMAGE }),
+  isolation: z.boolean().default(false),
   name: z
     .string()
     .regex(

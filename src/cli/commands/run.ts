@@ -119,8 +119,9 @@ export default defineCommand({
         state: stateOverride,
       });
 
-      // 4. MCP port auto-detection
-      const mcpJson = partial.autoDetectMcp ? parseMcpJson(cwd) : null;
+      // 4. MCP port auto-detection (skipped under isolation — .mcp.json is project config)
+      const mcpJson =
+        partial.autoDetectMcp && !profile.isolation ? parseMcpJson(cwd) : null;
       const mcpPorts = mcpJson
         ? extractHttpMcpPorts(mcpJson).map((port) => ({
             container: port,
@@ -145,7 +146,11 @@ export default defineCommand({
       }
 
       const env = {
-        ...resolveEnvForwarding(profile.env, projectConfig?.env ?? [], envArgs),
+        ...resolveEnvForwarding(
+          profile.env,
+          profile.isolation ? [] : (projectConfig?.env ?? []),
+          envArgs,
+        ),
         ...authEnv,
       };
 
@@ -156,8 +161,12 @@ export default defineCommand({
           : join(profileDir, 'config');
 
       const profileClaudeMd = readIfExists(join(configSourceDir, 'CLAUDE.md'));
-      const projectClaudeMd = readIfExists(join(cwd, 'CLAUDE.md'));
-      const claudeMdMode = projectConfig?.config?.claudeMd ?? 'append';
+      const projectClaudeMd = profile.isolation
+        ? null
+        : readIfExists(join(cwd, 'CLAUDE.md'));
+      const claudeMdMode = profile.isolation
+        ? 'append'
+        : (projectConfig?.config?.claudeMd ?? 'append');
       const mergedClaudeMd =
         profileClaudeMd || projectClaudeMd
           ? mergeClaudes(
@@ -175,8 +184,10 @@ export default defineCommand({
       // on conflicts — same trust level as claudeArgs passthrough. Only run ccpod
       // against repos you trust; do not use with third-party repos in CI without
       // reviewing their .claude/settings.json.
-      const projectSettings =
-        readJsonIfExists(join(projectClaudeDir, 'settings.json')) ?? {};
+      // Isolated profiles skip this entirely — profile config is authoritative.
+      const projectSettings = profile.isolation
+        ? {}
+        : (readJsonIfExists(join(projectClaudeDir, 'settings.json')) ?? {});
       const mergedSettings = deepmerge(profileSettings, projectSettings, {
         arrayMerge: (dest: unknown[], src: unknown[]) => {
           const combined = [...dest, ...src];
@@ -189,7 +200,7 @@ export default defineCommand({
         configSourceDir,
         mergedClaudeMd,
         mergedSettings,
-        projectClaudeDir,
+        profile.isolation ? undefined : projectClaudeDir,
       );
 
       // 7. Resolve image — build locally if use === "build", else pull

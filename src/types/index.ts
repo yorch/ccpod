@@ -30,6 +30,7 @@ export interface ProfileConfig {
     use: string;
     dockerfile?: string;
   };
+  isolation: boolean;
   name: string;
   network: {
     policy: NetworkPolicy;

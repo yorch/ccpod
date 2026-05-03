@@ -144,6 +144,23 @@ claudeArgs:
   - "--dangerously-skip-permissions"
 ```
 
+### `isolation`
+
+Default `false`. When `true`, the profile ignores **all** project-level config for this run:
+
+- `.ccpod.yml` settings (network, claudeArgs, services, env, ports, merge strategy)
+- Project `CLAUDE.md`
+- Project `.claude/settings.json` and other `.claude/` assets
+- Project `.mcp.json` (MCP port auto-detection)
+
+The profile config is used as-is. Useful for security-sensitive profiles where you want a guaranteed, unmodifiable environment regardless of the repo being run.
+
+```yaml
+isolation: true
+```
+
+> **Note:** `isolation` does not prevent profile selection — a project's `.ccpod.yml` can still specify `profile: my-isolated-profile` to opt into it. CLI flags (`--no-state`, `--env`, `--rebuild`) continue to work.
+
 ### `services`
 
 Sidecar containers (Postgres, Redis, queues, anything with a Docker image). Reachable from the Claude container by service name on a shared network. See [Sidecar Services](../../features/sidecars/).

@@ -10,6 +10,24 @@ export function mergeConfigs(
   project: ProjectConfig | null,
   overrides: { state?: 'ephemeral' | 'persistent' } = {},
 ): Omit<ResolvedConfig, 'mergedConfigDir'> {
+  if (profile.isolation) {
+    return {
+      auth: profile.auth,
+      autoDetectMcp: profile.ports.autoDetectMcp,
+      claudeArgs: profile.claudeArgs,
+      dockerfile: profile.image.dockerfile,
+      env: {},
+      image: profile.image.use,
+      network: profile.network,
+      plugins: profile.plugins,
+      ports: parsePorts(profile.ports.list ?? []),
+      profileName: profile.name,
+      services: profile.services,
+      ssh: profile.ssh,
+      state: overrides.state ?? profile.state,
+    };
+  }
+
   const strategy = project?.merge ?? 'deep';
 
   // override: project replaces the section using schema defaults for omitted keys,
