@@ -87,6 +87,15 @@ describe('deleteProfile', () => {
     deleteProfile('todelete');
     expect(existsSync(join(testBase, 'profiles', 'todelete'))).toBe(false);
   });
+
+  it('removes credentials and state dirs when they exist', () => {
+    makeProfile('todelete');
+    mkdirSync(join(testBase, 'credentials', 'todelete'), { recursive: true });
+    mkdirSync(join(testBase, 'state', 'todelete'), { recursive: true });
+    deleteProfile('todelete');
+    expect(existsSync(join(testBase, 'credentials', 'todelete'))).toBe(false);
+    expect(existsSync(join(testBase, 'state', 'todelete'))).toBe(false);
+  });
 });
 
 describe('getProfileDir', () => {

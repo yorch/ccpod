@@ -65,6 +65,10 @@ export function deleteProfile(name: string): void {
   const dir = join(profilesDir(), name);
   if (!existsSync(dir)) throw new Error(`Profile not found: ${name}`);
   rmSync(dir, { force: true, recursive: true });
+  const credDir = join(credentialsBase(), name);
+  if (existsSync(credDir)) rmSync(credDir, { force: true, recursive: true });
+  const stateDir = join(baseDir(), 'state', name);
+  if (existsSync(stateDir)) rmSync(stateDir, { force: true, recursive: true });
 }
 
 export function updateProfileImage(profileName: string, tag: string): void {
