@@ -7,39 +7,30 @@ describe('expandPermissionsPreset', () => {
     expect(expandPermissionsPreset(undefined)).toEqual({});
   });
 
-  it('conservative allows only read-only tools', () => {
-    const result = expandPermissionsPreset('conservative') as {
-      permissions: { allow: string[] };
-    };
-    expect(result.permissions.allow).toEqual(['Read(*)', 'Glob(*)', 'Grep(*)']);
-    expect(result.permissions.allow).not.toContain('Bash(*)');
-    expect(result.permissions.allow).not.toContain('Write(*)');
+  it('conservative allows Edit and Write but not Bash or network', () => {
+    const result = expandPermissionsPreset('conservative');
+    expect(result.permissions?.allow).toEqual(['Edit', 'Write']);
+    expect(result.permissions?.allow).not.toContain('Bash');
+    expect(result.permissions?.allow).not.toContain('WebSearch');
+    expect(result.permissions?.defaultMode).toBeUndefined();
   });
 
-  it('moderate allows file ops and bash but not network', () => {
-    const result = expandPermissionsPreset('moderate') as {
-      permissions: { allow: string[] };
-    };
-    expect(result.permissions.allow).toContain('Bash(*)');
-    expect(result.permissions.allow).toContain('Write(*)');
-    expect(result.permissions.allow).not.toContain('WebSearch(*)');
-    expect(result.permissions.allow).not.toContain('WebFetch(*)');
+  it('moderate allows Bash, Edit, Write but not network', () => {
+    const result = expandPermissionsPreset('moderate');
+    expect(result.permissions?.allow).toEqual(['Bash', 'Edit', 'Write']);
+    expect(result.permissions?.allow).not.toContain('WebSearch');
+    expect(result.permissions?.defaultMode).toBeUndefined();
   });
 
-  it('permissive allows all tools including network', () => {
-    const result = expandPermissionsPreset('permissive') as {
-      permissions: { allow: string[] };
-    };
-    expect(result.permissions.allow).toContain('Bash(*)');
-    expect(result.permissions.allow).toContain('WebSearch(*)');
-    expect(result.permissions.allow).toContain('WebFetch(*)');
+  it('permissive sets defaultMode bypassPermissions instead of listing tools', () => {
+    const result = expandPermissionsPreset('permissive');
+    expect(result.permissions?.defaultMode).toBe('bypassPermissions');
+    expect(result.permissions?.allow).toBeUndefined();
   });
 
-  it('profile settings union with preset (arrays deduplicated)', () => {
+  it('profile settings union with preset allow list (arrays deduplicated)', () => {
     const preset = expandPermissionsPreset('conservative');
-    const profileSettings = {
-      permissions: { allow: ['Bash(*)', 'Write(*)', 'Read(*)'] },
-    };
+    const profileSettings = { permissions: { allow: ['Bash', 'Edit'] } };
     const merged = deepmerge(preset, profileSettings, {
       arrayMerge: (dest: unknown[], src: unknown[]) => {
         const combined = [...dest, ...src];
@@ -48,14 +39,11 @@ describe('expandPermissionsPreset', () => {
           : combined;
       },
     }) as { permissions: { allow: string[] } };
-    // Arrays union — preset entries survive, profile entries added, duplicates removed
-    expect(merged.permissions.allow).toContain('Bash(*)');
-    expect(merged.permissions.allow).toContain('Write(*)');
-    expect(merged.permissions.allow).toContain('Read(*)');
-    // No duplicate Read(*) from both preset and profileSettings
-    expect(merged.permissions.allow.filter((e) => e === 'Read(*)').length).toBe(
-      1,
-    );
+    expect(merged.permissions.allow).toContain('Bash');
+    expect(merged.permissions.allow).toContain('Edit');
+    expect(merged.permissions.allow).toContain('Write');
+    // No duplicate Edit
+    expect(merged.permissions.allow.filter((e) => e === 'Edit').length).toBe(1);
   });
 
   it('profile empty settings.json does not clobber preset', () => {
@@ -63,6 +51,6 @@ describe('expandPermissionsPreset', () => {
     const merged = deepmerge(preset, {}) as {
       permissions: { allow: string[] };
     };
-    expect(merged.permissions.allow).toContain('Bash(*)');
+    expect(merged.permissions.allow).toContain('Bash');
   });
 });

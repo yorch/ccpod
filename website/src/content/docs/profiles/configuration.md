@@ -165,17 +165,19 @@ isolation: true
 
 Default: none (no preset injected). Sets a Claude Code `permissions.allow` preset as the lowest-priority layer — your profile and project `settings.json` always override it.
 
-| Preset | Allows without prompting |
-|--------|--------------------------|
-| `conservative` | `Read`, `Glob`, `Grep` — writes and bash still prompt |
-| `moderate` | All file ops + `Bash` — no prompts for typical dev work |
-| `permissive` | All tools including `WebSearch` and `WebFetch` — Docker is the trust boundary |
+| Preset | Effect |
+|--------|--------|
+| `conservative` | Auto-allow `Edit` and `Write` — file edits skip prompts, `Bash` still prompts |
+| `moderate` | Auto-allow `Bash`, `Edit`, `Write` — no prompts for typical dev work |
+| `permissive` | Sets `defaultMode: bypassPermissions` — skips all prompts (Docker is the trust boundary) |
 
 ```yaml
 permissions: moderate
 ```
 
-The preset expands into `permissions.allow` entries in the merged `settings.json` written to the container. If your profile or project `settings.json` already defines `permissions.allow`, those entries are merged with the preset (with explicit entries winning on conflicts).
+`Read`, `Glob`, and `Grep` require no permission in Claude Code and are always free — no need to list them. `permissive` uses Claude Code's `bypassPermissions` mode rather than listing individual tools, so it covers all current and future tools automatically.
+
+The preset is injected as the lowest-priority layer. If your profile or project `settings.json` already sets `permissions.allow`, those entries are unioned with the preset (deduplicated). Explicit entries always survive.
 
 :::note
 Without a preset, Claude Code uses its own defaults — which means permission prompts for most tool calls. Set `moderate` to eliminate prompt fatigue during typical development sessions inside a container.
