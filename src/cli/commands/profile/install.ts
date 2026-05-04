@@ -1,4 +1,4 @@
-import { mkdirSync, writeFileSync } from 'node:fs';
+import { chmodSync, mkdirSync, rmSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { input, select } from '@inquirer/prompts';
 import chalk from 'chalk';
@@ -66,6 +66,7 @@ export default defineCommand({
     }
 
     let profileName = result.data.name;
+    let overwriting = false;
 
     if (profileExists(profileName)) {
       const action = (await select({
@@ -80,6 +81,10 @@ export default defineCommand({
       if (action === 'cancel') {
         console.log('Aborted.');
         return;
+      }
+
+      if (action === 'overwrite') {
+        overwriting = true;
       }
 
       if (action === 'rename') {
@@ -109,10 +114,29 @@ export default defineCommand({
     ensureCcpodDirs();
     const profileDir = getProfileDir(profileName);
     mkdirSync(profileDir, { mode: 0o700, recursive: true });
-    writeFileSync(join(profileDir, 'profile.yml'), finalYaml, {
-      encoding: 'utf8',
-      mode: 0o600,
-    });
+
+    if (overwriting) {
+      // Clear stale config/ so git-sync doesn't keep pulling from the old remote
+      rmSync(join(profileDir, 'config'), { force: true, recursive: true });
+    }
+
+    const profileYmlPath = join(profileDir, 'profile.yml');
+    writeFileSync(profileYmlPath, finalYaml, { encoding: 'utf8', mode: 0o600 });
+    // mode option only applies on file creation; chmod explicitly to handle overwrites
+    chmodSync(profileYmlPath, 0o600);
+
+    if (result.data.config?.source === 'local' && source.type === 'git') {
+      console.warn(
+        chalk.yellow(
+          '  Warning: this profile uses a local config directory which was not copied from the git repo.',
+        ),
+      );
+      console.warn(
+        chalk.yellow(
+          `  Manually populate ${join(profileDir, 'config')} or change the profile's config.source to "git".`,
+        ),
+      );
+    }
 
     console.log(chalk.green(`✓ Profile ${chalk.cyan(profileName)} installed.`));
     console.log(chalk.dim(`  Run: ccpod run ${profileName}`));
