@@ -83,7 +83,7 @@ Installs a profile from any source — auto-detected:
 
 | Input | Detected as |
 |-------|-------------|
-| `https://github.com/...` or `*.git` URL | Git repo (clones, reads `profile.yml` at root) |
+| `https://github.com/...`, `https://gitlab.com/...`, `https://bitbucket.org/...`, `http(s)://...` ending in `*.git`, or `git@...` SSH URL | Git repo (clones, reads `profile.yml` at root) |
 | `https://...` | Raw URL fetch |
 | `/path/...`, `./path/...`, `~/...` | Local file |
 | Anything else | Base64-encoded profile string |

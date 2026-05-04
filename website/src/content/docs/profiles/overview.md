@@ -34,7 +34,7 @@ ccpod profile create work
 ccpod profile update team        # force re-pull a git config
 ccpod profile delete experiment
 ccpod profile export team        # export to base64 for sharing
-ccpod profile install <string>   # install from base64, URL, or git repo
+ccpod profile install <source>   # install from base64, URL, or git repo
 ```
 
 ## Storage layout
