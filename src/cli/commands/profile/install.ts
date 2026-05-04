@@ -106,7 +106,10 @@ export default defineCommand({
     ensureCcpodDirs();
     const profileDir = getProfileDir(profileName);
     mkdirSync(profileDir, { recursive: true });
-    writeFileSync(join(profileDir, 'profile.yml'), finalYaml, { encoding: 'utf8', mode: 0o600 });
+    writeFileSync(join(profileDir, 'profile.yml'), finalYaml, {
+      encoding: 'utf8',
+      mode: 0o600,
+    });
 
     console.log(chalk.green(`✓ Profile ${chalk.cyan(profileName)} installed.`));
     console.log(chalk.dim(`  Run: ccpod run ${profileName}`));
