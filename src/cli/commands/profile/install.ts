@@ -1,14 +1,11 @@
+import { mkdirSync, writeFileSync } from 'node:fs';
+import { join } from 'node:path';
 import { input, select } from '@inquirer/prompts';
 import chalk from 'chalk';
 import { defineCommand } from 'citty';
-import { mkdirSync, writeFileSync } from 'node:fs';
-import { join } from 'node:path';
-import { parse as parseYaml, parseDocument } from 'yaml';
+import { parseDocument, parse as parseYaml } from 'yaml';
 import { profileConfigSchema } from '../../../config/schema.ts';
-import {
-  detectSource,
-  fetchProfileYaml,
-} from '../../../profile/installer.ts';
+import { detectSource, fetchProfileYaml } from '../../../profile/installer.ts';
 import {
   ensureCcpodDirs,
   getProfileDir,
@@ -25,7 +22,10 @@ export default defineCommand({
       type: 'positional',
     },
   },
-  meta: { description: 'Install a profile from a URL, git repo, file, or base64 string' },
+  meta: {
+    description:
+      'Install a profile from a URL, git repo, file, or base64 string',
+  },
   async run({ args }) {
     if (!args.source) {
       console.error('Source required.');
@@ -40,7 +40,9 @@ export default defineCommand({
       yaml = await fetchProfileYaml(source);
     } catch (err) {
       console.error(
-        chalk.red(`Failed to fetch profile: ${err instanceof Error ? err.message : err}`),
+        chalk.red(
+          `Failed to fetch profile: ${err instanceof Error ? err.message : err}`,
+        ),
       );
       process.exit(1);
     }
@@ -104,7 +106,7 @@ export default defineCommand({
     ensureCcpodDirs();
     const profileDir = getProfileDir(profileName);
     mkdirSync(profileDir, { recursive: true });
-    writeFileSync(join(profileDir, 'profile.yml'), finalYaml, 'utf8');
+    writeFileSync(join(profileDir, 'profile.yml'), finalYaml, { encoding: 'utf8', mode: 0o600 });
 
     console.log(chalk.green(`✓ Profile ${chalk.cyan(profileName)} installed.`));
     console.log(chalk.dim(`  Run: ccpod run ${profileName}`));
