@@ -47,4 +47,3 @@ website/public/install.sh
 package-lock.json
 yarn.lock
 pnpm-lock.yaml
-docs/superpowers/
