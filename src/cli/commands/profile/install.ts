@@ -58,7 +58,10 @@ export default defineCommand({
     const result = profileConfigSchema.safeParse(parsed);
     if (!result.success) {
       console.error(chalk.red('Profile validation failed:'));
-      console.error(result.error.message);
+      for (const issue of result.error.issues) {
+        const path = issue.path.length > 0 ? `${issue.path.join('.')}: ` : '';
+        console.error(`  ${path}${issue.message}`);
+      }
       process.exit(1);
     }
 
@@ -105,7 +108,7 @@ export default defineCommand({
 
     ensureCcpodDirs();
     const profileDir = getProfileDir(profileName);
-    mkdirSync(profileDir, { recursive: true });
+    mkdirSync(profileDir, { mode: 0o700, recursive: true });
     writeFileSync(join(profileDir, 'profile.yml'), finalYaml, {
       encoding: 'utf8',
       mode: 0o600,
