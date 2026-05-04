@@ -34,13 +34,18 @@ export function detectSource(input: string): InstallSource {
   ) {
     return { path: input.replace(/^~(?=\/|$)/, homedir()), type: 'file' };
   }
+  // Detect SSH and git-protocol URLs before treating as base64
+  if (/^(git@|git:\/\/|ssh:\/\/)/.test(input)) {
+    return { type: 'git', url: input };
+  }
   return { data: input, type: 'base64' };
 }
 
 export async function fetchProfileYaml(source: InstallSource): Promise<string> {
   switch (source.type) {
     case 'git': {
-      const tmpDir = mkdtempSync(join(tmpdir(), 'ccpod-install-'));
+      const tmpBase = mkdtempSync(join(tmpdir(), 'ccpod-install-'));
+      const tmpDir = join(tmpBase, 'repo');
       try {
         await simpleGit().clone(source.url, tmpDir, ['--depth', '1']);
         const profilePath = join(tmpDir, 'profile.yml');
@@ -49,7 +54,7 @@ export async function fetchProfileYaml(source: InstallSource): Promise<string> {
         }
         return readFileSync(profilePath, 'utf8');
       } finally {
-        rmSync(tmpDir, { force: true, recursive: true });
+        rmSync(tmpBase, { force: true, recursive: true });
       }
     }
     case 'url': {

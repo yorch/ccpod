@@ -85,6 +85,16 @@ describe('detectSource', () => {
     const result = detectSource('https://notgithub.com/user/repo');
     expect(result.type).toBe('url');
   });
+
+  it('detects git@ SSH URL as git', () => {
+    const src = detectSource('git@github.com:user/repo.git');
+    expect(src).toEqual({ type: 'git', url: 'git@github.com:user/repo.git' });
+  });
+
+  it('detects git:// URL as git', () => {
+    const src = detectSource('git://github.com/user/repo.git');
+    expect(src).toEqual({ type: 'git', url: 'git://github.com/user/repo.git' });
+  });
 });
 
 describe('fetchProfileYaml - file', () => {
