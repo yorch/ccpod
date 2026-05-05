@@ -112,7 +112,7 @@ plugins:
 
 | Field | Default | Notes |
 |---|---|---|
-| `agentForward` | `true` | Forwards `SSH_AUTH_SOCK` into the container. Rejected if the value contains `:`. |
+| `agentForward` | `true` | Forwards `SSH_AUTH_SOCK` into the container. Rejected if the value contains `:`. Not supported with Podman (skipped with a warning). |
 | `mountSshDir` | `false` | Mounts `~/.ssh` read-only. |
 
 ### `network`

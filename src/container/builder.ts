@@ -1,6 +1,7 @@
 import { createHash } from 'node:crypto';
 import { homedir } from 'node:os';
 import { getCredentialsDir, getStateDir } from '../profile/manager.ts';
+import { detectRuntime } from '../runtime/detector.ts';
 import type { ResolvedConfig } from '../types/index.ts';
 import { VERSION } from '../version.ts';
 
@@ -76,7 +77,12 @@ export function buildContainerSpec(
 
   if (config.ssh.agentForward && process.env.SSH_AUTH_SOCK) {
     const sshSock = process.env.SSH_AUTH_SOCK;
-    if (!sshSock.includes(':')) {
+    const runtime = detectRuntime();
+    if (runtime.name === 'podman') {
+      console.warn(
+        'Warning: ssh.agentForward is not supported with Podman (host Unix sockets cannot be bind-mounted into the Podman VM). Skipping.',
+      );
+    } else if (!sshSock.includes(':')) {
       env.push('SSH_AUTH_SOCK=/run/host-services/ssh-auth.sock');
       binds.push(`${sshSock}:/run/host-services/ssh-auth.sock:ro`);
     }

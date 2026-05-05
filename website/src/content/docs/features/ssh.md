@@ -21,6 +21,10 @@ Requires `ssh-agent` to be running on the host with your keys added (`ssh-add ~/
 
 If `SSH_AUTH_SOCK` contains `:`, ccpod **rejects** it before starting the container. The colon would corrupt the Docker bind-mount spec, so we fail fast rather than mount the wrong path.
 
+### Podman limitation
+
+Agent forwarding is **not supported with Podman**. Podman on macOS runs inside a Linux VM, so the host's Unix socket is inaccessible from within the VM. ccpod skips the bind and prints a warning. Use `mountSshDir: true` instead.
+
 ## Mount `~/.ssh` read-only
 
 ```yaml
