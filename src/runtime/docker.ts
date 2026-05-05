@@ -1,16 +1,20 @@
 import { detectRuntime } from './detector.ts';
 
-function dockerEnv(): NodeJS.ProcessEnv {
+function runtimeContext(): { binary: string; env: NodeJS.ProcessEnv } {
   const runtime = detectRuntime();
-  return { ...process.env, DOCKER_HOST: `unix://${runtime.socketPath}` };
+  return {
+    binary: runtime.name === 'podman' ? 'podman' : 'docker',
+    env: { ...process.env, DOCKER_HOST: `unix://${runtime.socketPath}` },
+  };
 }
 
 /** Run a docker command, capture stdout/stderr. Never throws on non-zero exit. */
 export async function dockerExec(
   args: string[],
 ): Promise<{ stdout: string; stderr: string; exitCode: number }> {
-  const proc = Bun.spawn(['docker', ...args], {
-    env: dockerEnv(),
+  const { binary, env } = runtimeContext();
+  const proc = Bun.spawn([binary, ...args], {
+    env,
     stderr: 'pipe',
     stdout: 'pipe',
   });
@@ -24,8 +28,9 @@ export async function dockerExec(
 
 /** Run a docker command with inherited stdio. Returns container exit code. */
 export async function dockerSpawn(args: string[]): Promise<number> {
-  const proc = Bun.spawn(['docker', ...args], {
-    env: dockerEnv(),
+  const { binary, env } = runtimeContext();
+  const proc = Bun.spawn([binary, ...args], {
+    env,
     stderr: 'inherit',
     stdin: 'inherit',
     stdout: 'inherit',

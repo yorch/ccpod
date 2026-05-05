@@ -352,6 +352,8 @@ const RUNTIME_CANDIDATES = [
 
 Override detection entirely by setting `DOCKER_SOCKET_PATH` in your environment.
 
+Once a runtime is detected, `src/runtime/docker.ts` selects the CLI binary: `podman` when the runtime name is `podman`, `docker` for everything else. No `podman-docker` shim required.
+
 ## Base image tags
 
 The `ghcr.io/yorch/ccpod` image is published by `.github/workflows/docker.yml`:
