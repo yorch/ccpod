@@ -59,6 +59,8 @@ bun run preview          # preview built site
 | `src/container/sidecars.ts` | Shared network creation and sidecar container lifecycle |
 | `src/update/checker.ts` | Checks GitHub releases for newer version |
 | `src/update/updater.ts` | Downloads and replaces the ccpod binary in-place |
+| `src/profile/installer.ts` | `detectSource` + `fetchProfileYaml` — source detection and YAML fetching for profile install |
+| `src/profile/exporter.ts` | `exportProfile` — reads profile.yml and returns base64-encoded string for sharing |
 
 ### Storage layout
 

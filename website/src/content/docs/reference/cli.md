@@ -73,6 +73,35 @@ ccpod profile create <name>         # interactive create
 ccpod profile list                  # show all profiles
 ccpod profile update <name>         # force-pull git config (resets sync lock)
 ccpod profile delete <name>         # delete profile + its credential dir
+ccpod profile install <source>      # install a profile from git, URL, file, or base64
+ccpod profile export <name>         # print base64-encoded profile for sharing
+```
+
+### `ccpod profile install <source>`
+
+Installs a profile from any source — auto-detected:
+
+| Input | Detected as |
+|-------|-------------|
+| `https://github.com/...`, `https://gitlab.com/...`, `https://bitbucket.org/...`, any `http(s)://...` ending in `*.git`, `git@...`, `git://...`, or `ssh://...` | Git repo (clones, reads `profile.yml` at root) |
+| `https://...` (other) | Raw URL fetch |
+| `/path/...`, `./path/...`, `~/...` | Local file |
+| Anything else | Base64-encoded profile string |
+
+If a profile with the same name already exists, you're prompted to overwrite, rename, or cancel.
+
+### `ccpod profile export <name>`
+
+Prints a base64-encoded string of the profile to stdout. Pipe it anywhere:
+
+```bash
+ccpod profile export myprofile | pbcopy   # copy to clipboard
+ccpod profile export myprofile > shared.txt
+```
+
+To install from the string on another machine:
+```bash
+ccpod profile install <paste-string-here>
 ```
 
 ## Plugin commands
