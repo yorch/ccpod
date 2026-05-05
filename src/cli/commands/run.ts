@@ -33,6 +33,10 @@ export default defineCommand({
       description: 'Force image rebuild/repull',
       type: 'boolean',
     },
+    resume: {
+      description: 'Resume a previous Claude session by ID',
+      type: 'string',
+    },
   },
   meta: {
     description: 'Run Claude Code in a container (interactive or headless)',
@@ -75,6 +79,7 @@ export default defineCommand({
 
       const envArgs = ([] as string[]).concat(args.env ?? []);
       const claudeArgs = [
+        ...(args.resume ? ['--resume', args.resume] : []),
         ...(fileArg ? ['--file', `/workspace/${fileArg}`] : []),
         ...passthroughArgs,
         ...(promptArg ? [promptArg] : []),
@@ -96,6 +101,14 @@ export default defineCommand({
       const spec = buildContainerSpec(config, cwd, tty, networkName);
       console.log(chalk.dim('Starting container...'));
       const exitCode = await runContainer(spec);
+      if (tty && !args.resume) {
+        const profileFlag = args.profile ? ` --profile ${args.profile}` : '';
+        console.log(
+          chalk.dim(
+            `\nTo resume a session: ccpod run${profileFlag} --resume <session-id>`,
+          ),
+        );
+      }
       process.exit(exitCode);
     } catch (err) {
       if (err instanceof ZodError) {

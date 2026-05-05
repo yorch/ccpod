@@ -17,12 +17,23 @@ ccpod run --profile team               # use a specific profile
 ccpod run --env KEY=VALUE              # set/override an env var (repeatable)
 ccpod run --rebuild                    # force image rebuild or repull
 ccpod run --no-state                   # force ephemeral state for this run
+ccpod run --resume <session-id>        # resume a previous Claude session
 ccpod run -- --dangerously-skip-permissions   # pass flags directly to claude
 ```
 
 `--file` and an inline prompt are mutually exclusive. `--file` paths are normalized; absolute paths and `..` traversals are rejected.
 
 Everything after `--` is forwarded verbatim to the `claude` command inside the container and appended after any `claudeArgs` declared in the profile or project config.
+
+### Resuming sessions
+
+When an interactive session ends, ccpod prints:
+
+```
+To resume a session: ccpod run --resume <session-id>
+```
+
+Copy the session ID from Claude's exit output and pass it to `--resume`. This is equivalent to running `claude --resume <id>` inside the container directly. Note: session files are only preserved when the profile uses `state: persistent` — resuming after an ephemeral run will not find the prior session.
 
 ## `ccpod shell`
 
