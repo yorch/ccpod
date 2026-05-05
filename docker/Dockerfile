@@ -1,7 +1,7 @@
 FROM node:24-slim
 
 # Install system deps + tools Claude Code actively uses:
-#   ripgrep  — Grep tool falls back to system rg on npm builds
+#   ripgrep  — Grep tool falls back to system rg
 #   gh       — GitHub operations (Claude Code uses gh CLI directly)
 #   jq       — JSON processing
 #   fd-find  — fast find alternative
@@ -29,9 +29,14 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
   && apt-get update && apt-get install -y --no-install-recommends gh \
   && apt-get autoremove -y && apt-get clean -y \
   && rm -rf /var/lib/apt/lists/* \
-  && rm -rf /tmp/* \
-  && npm install -g --no-fund --no-audit @anthropic-ai/claude-code \
-  && npm cache clean --force
+  && rm -rf /tmp/*
+
+# Install claude as the node user so it lands in /home/node/.local/bin —
+# user-writable, allowing auto-updates without root.
+USER node
+RUN curl -fsSL https://claude.ai/install.sh | bash
+ENV PATH="/home/node/.local/bin:$PATH"
+USER root
 
 WORKDIR /workspace
 
