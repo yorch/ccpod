@@ -43,7 +43,7 @@ RUN curl -fsSL https://claude.ai/install.sh | bash
 ENV PATH="/home/node/.local/bin:${PATH}"
 
 # Install bun
-RUN curl -fsSL https://bun.sh | bash
+RUN curl -fsSL https://bun.com/install | bash
 ENV PATH="/home/node/.bun/bin:${PATH}"
 
 USER root
