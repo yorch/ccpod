@@ -200,6 +200,26 @@ describe('mergeConfigs', () => {
     expect(result.init).toEqual([]);
   });
 
+  it('dockerfile set without explicit use resolves image to "build"', () => {
+    const profile = makeProfile({
+      image: {
+        dockerfile: '/path/to/Dockerfile',
+        use: 'ghcr.io/ccpod/base:latest',
+      },
+    });
+    const result = mergeConfigs(profile, null);
+    expect(result.image).toBe('build');
+    expect(result.dockerfile).toBe('/path/to/Dockerfile');
+  });
+
+  it('no dockerfile uses image.use directly', () => {
+    const profile = makeProfile({
+      image: { use: 'ghcr.io/ccpod/base:latest' },
+    });
+    const result = mergeConfigs(profile, null);
+    expect(result.image).toBe('ghcr.io/ccpod/base:latest');
+  });
+
   it('isolated profile: CLI state override still honoured', () => {
     const result = mergeConfigs(
       makeProfile({ isolation: true, state: 'persistent' }),
