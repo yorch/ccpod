@@ -148,6 +148,7 @@ export async function setupContainer(
     mergedClaudeMd,
     mergedSettings,
     profile.isolation ? undefined : projectClaudeDir,
+    partial.init,
   );
 
   console.log(chalk.dim('Checking image...'));

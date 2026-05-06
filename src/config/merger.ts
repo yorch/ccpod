@@ -18,6 +18,7 @@ export function mergeConfigs(
       dockerfile: profile.image.dockerfile,
       env: {},
       image: profile.image.use,
+      init: profile.init,
       network: profile.network,
       plugins: profile.plugins,
       ports: parsePorts(profile.ports.list ?? []),
@@ -56,6 +57,11 @@ export function mergeConfigs(
       ? (project?.claudeArgs ?? [])
       : [...profile.claudeArgs, ...(project?.claudeArgs ?? [])];
 
+  const init =
+    strategy === 'override'
+      ? (project?.init ?? [])
+      : [...profile.init, ...(project?.init ?? [])];
+
   return {
     auth: profile.auth,
     autoDetectMcp: ports.autoDetectMcp,
@@ -63,6 +69,7 @@ export function mergeConfigs(
     dockerfile: profile.image.dockerfile,
     env: {},
     image: profile.image.use,
+    init,
     network,
     plugins: profile.plugins,
     ports: parsePorts(ports.list),

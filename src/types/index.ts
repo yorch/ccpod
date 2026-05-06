@@ -31,6 +31,7 @@ export interface ProfileConfig {
     use: string;
     dockerfile?: string;
   };
+  init: string[];
   isolation: boolean;
   name: string;
   network: {
@@ -54,6 +55,7 @@ export interface ProjectConfig {
     claudeMd?: ClaudeMdMerge;
   };
   env?: string[];
+  init?: string[];
   merge?: MergeStrategy;
   network?: Partial<ProfileConfig['network']>;
   ports?: Partial<PortsConfig>;
@@ -80,6 +82,7 @@ export interface ResolvedConfig {
   dockerfile?: string;
   env: Record<string, string>;
   image: string;
+  init: string[];
   mergedConfigDir: string;
   network: ProfileConfig['network'];
   plugins: string[];

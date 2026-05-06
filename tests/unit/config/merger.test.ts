@@ -9,6 +9,7 @@ function makeProfile(overrides: Partial<ProfileConfig> = {}): ProfileConfig {
     config: { path: '/tmp/cfg', source: 'local', sync: 'daily' },
     env: [],
     image: { use: 'ghcr.io/ccpod/base:latest' },
+    init: [],
     isolation: false,
     name: 'base',
     network: { allow: [], policy: 'full' },
@@ -158,6 +159,45 @@ describe('mergeConfigs', () => {
       claudeArgs: ['--injected-flag'],
     });
     expect(result.claudeArgs).toEqual(['--verbose']);
+  });
+
+  it('deep merge: init concatenates profile then project', () => {
+    const profile = makeProfile({ init: ['apt-get install -y jq'] });
+    const result = mergeConfigs(profile, { init: ['npm install'] });
+    expect(result.init).toEqual(['apt-get install -y jq', 'npm install']);
+  });
+
+  it('override strategy: project init replaces profile init', () => {
+    const profile = makeProfile({ init: ['apt-get install -y jq'] });
+    const result = mergeConfigs(profile, {
+      init: ['npm install'],
+      merge: 'override',
+    });
+    expect(result.init).toEqual(['npm install']);
+  });
+
+  it('override strategy with no project init produces empty array', () => {
+    const profile = makeProfile({ init: ['apt-get install -y jq'] });
+    const result = mergeConfigs(profile, { merge: 'override' });
+    expect(result.init).toEqual([]);
+  });
+
+  it('null project: init comes from profile', () => {
+    const profile = makeProfile({ init: ['echo hello'] });
+    const result = mergeConfigs(profile, null);
+    expect(result.init).toEqual(['echo hello']);
+  });
+
+  it('isolated profile ignores project init', () => {
+    const profile = makeProfile({ init: ['echo safe'], isolation: true });
+    const result = mergeConfigs(profile, { init: ['echo injected'] });
+    expect(result.init).toEqual(['echo safe']);
+    expect(result.init).not.toContain('echo injected');
+  });
+
+  it('no init in profile or project produces empty array', () => {
+    const result = mergeConfigs(makeProfile(), null);
+    expect(result.init).toEqual([]);
   });
 
   it('isolated profile: CLI state override still honoured', () => {

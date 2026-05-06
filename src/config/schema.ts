@@ -39,6 +39,13 @@ export const profileConfigSchema = z.object({
       use: z.string().default(OFFICIAL_IMAGE),
     })
     .default({ use: OFFICIAL_IMAGE }),
+  init: z
+    .array(
+      z.string().refine((s) => !s.includes('\n'), {
+        message: 'init commands must be single-line strings',
+      }),
+    )
+    .default([]),
   isolation: z.boolean().default(false),
   name: z
     .string()
@@ -73,6 +80,13 @@ export const projectConfigSchema = z.object({
     })
     .optional(),
   env: z.array(z.string()).optional(),
+  init: z
+    .array(
+      z.string().refine((s) => !s.includes('\n'), {
+        message: 'init commands must be single-line strings',
+      }),
+    )
+    .optional(),
   merge: z.enum(['deep', 'override']).default('deep'),
   network: z
     .object({

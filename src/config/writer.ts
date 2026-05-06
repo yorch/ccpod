@@ -74,9 +74,11 @@ export function writeMergedConfig(
   mergedClaudeMd: string,
   mergedSettings: object,
   projectClaudeDir?: string,
+  initCommands: string[] = [],
 ): string {
   const content = JSON.stringify({
     claudeMd: mergedClaudeMd,
+    initCommands,
     profileDirHash: hashProfileDir(profileConfigDir),
     projectDirHash: projectClaudeDir ? hashProfileDir(projectClaudeDir) : '',
     settings: mergedSettings,
@@ -105,6 +107,14 @@ export function writeMergedConfig(
       JSON.stringify(mergedSettings, null, 2),
       { encoding: 'utf8', mode: 0o600 },
     );
+
+    if (initCommands.length > 0) {
+      const script = `#!/bin/sh\nset -e\n${initCommands.join('\n')}\n`;
+      writeFileSync(join(tmpOut, 'post-init.sh'), script, {
+        encoding: 'utf8',
+        mode: 0o600,
+      });
+    }
 
     renameSync(tmpOut, outDir);
   } catch (err) {

@@ -33,8 +33,15 @@ function run(
   claudeMd: string,
   settings: object,
   projectDir?: string,
+  initCommands?: string[],
 ): string {
-  const out = writeMergedConfig(profileDir, claudeMd, settings, projectDir);
+  const out = writeMergedConfig(
+    profileDir,
+    claudeMd,
+    settings,
+    projectDir,
+    initCommands,
+  );
   cleanup.push(out);
   return out;
 }
@@ -183,6 +190,47 @@ describe('writeMergedConfig', () => {
       '/nonexistent/project/.claude',
     );
     expect(readFileSync(join(out, 'CLAUDE.md'), 'utf8')).toBe('no-project');
+  });
+
+  it('writes post-init.sh when init commands provided', () => {
+    const out = run(makeTempDir(), '', {}, undefined, [
+      'echo hello',
+      'npm install',
+    ]);
+    const script = readFileSync(join(out, 'post-init.sh'), 'utf8');
+    expect(script).toContain('#!/bin/sh');
+    expect(script).toContain('set -e');
+    expect(script).toContain('echo hello');
+    expect(script).toContain('npm install');
+  });
+
+  it('post-init.sh has restricted permissions', () => {
+    const out = run(makeTempDir(), '', {}, undefined, ['echo hi']);
+    const mode = statSync(join(out, 'post-init.sh')).mode & 0o777;
+    expect(mode).toBe(0o600);
+  });
+
+  it('does not write post-init.sh when init is empty', () => {
+    const out = run(makeTempDir(), '', {});
+    expect(existsSync(join(out, 'post-init.sh'))).toBe(false);
+  });
+
+  it('cache invalidates when init commands change', () => {
+    const profileDir = makeTempDir();
+    const a = run(profileDir, 'x', {}, undefined, ['echo v1']);
+    const b = run(profileDir, 'x', {}, undefined, ['echo v2']);
+    expect(a).not.toBe(b);
+    const scriptA = readFileSync(join(a, 'post-init.sh'), 'utf8');
+    const scriptB = readFileSync(join(b, 'post-init.sh'), 'utf8');
+    expect(scriptA).toContain('echo v1');
+    expect(scriptB).toContain('echo v2');
+  });
+
+  it('cache hit when init commands are identical', () => {
+    const profileDir = makeTempDir();
+    const a = run(profileDir, 'x', {}, undefined, ['echo same']);
+    const b = run(profileDir, 'x', {}, undefined, ['echo same']);
+    expect(a).toBe(b);
   });
 
   it('skips nested symlinks inside subdirectories', () => {

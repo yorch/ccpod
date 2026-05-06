@@ -144,6 +144,18 @@ claudeArgs:
   - "--dangerously-skip-permissions"
 ```
 
+### `init`
+
+A list of shell commands run inside the container as the `node` user in `/workspace` after config is seeded and before Claude starts. Commands execute with `set -e` (exit on error).
+
+```yaml
+init:
+  - npm install
+  - git config --global user.email "dev@example.com"
+```
+
+Merge behaviour: in `deep` mode (default) profile commands run first, project commands appended. In `override` mode, project commands replace profile commands entirely. When `isolation: true`, project `init` is ignored.
+
 ### `isolation`
 
 Default `false`. When `true`, the profile ignores **all** project-level config for this run:

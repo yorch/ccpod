@@ -38,7 +38,13 @@ done
 # Fix ownership so the node user can read/write everything
 chown -R node:node "${CLAUDE_DIR}" "${NODE_HOME}" /ccpod/plugins /ccpod/state /ccpod/credentials 2>/dev/null || true
 
-# 5. Delta-install missing plugins (comma-separated list from env)
+# 5. Run user-defined init commands (as node user, in /workspace)
+if [ -f /ccpod/config/post-init.sh ]; then
+  echo "ccpod: running init commands..."
+  HOME="${NODE_HOME}" gosu node sh -c 'cd /workspace && sh /ccpod/config/post-init.sh'
+fi
+
+# 6. Delta-install missing plugins (comma-separated list from env)
 if [ -n "${CCPOD_PLUGINS_TO_INSTALL}" ]; then
   for plugin in $(printf '%s' "${CCPOD_PLUGINS_TO_INSTALL}" | tr ',' '\n'); do
     if [ -n "${plugin}" ] && [ ! -d "${CLAUDE_DIR}/plugins/${plugin}" ]; then
@@ -48,7 +54,7 @@ if [ -n "${CCPOD_PLUGINS_TO_INSTALL}" ]; then
   done
 fi
 
-# 6. Network restriction — apply iptables rules before launching claude (requires root)
+# 7. Network restriction — apply iptables rules before launching claude (requires root)
 if [ "${CCPOD_NETWORK_POLICY}" = "restricted" ]; then
   # Allow loopback and established connections
   iptables -A OUTPUT -o lo -j ACCEPT 2>/dev/null || true

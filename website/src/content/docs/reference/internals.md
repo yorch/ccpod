@@ -46,6 +46,7 @@ export interface ProfileConfig {
     use: string;
     dockerfile?: string;
   };
+  init: string[];
   auth: {
     type: AuthType;
     keyEnv?: string;
@@ -72,6 +73,7 @@ export interface ProjectConfig {
   profile?: string;
   merge?: MergeStrategy;
   claudeArgs?: string[];
+  init?: string[];
   config?: {
     claudeMd?: ClaudeMdMerge;
   };
@@ -105,6 +107,7 @@ export interface ResolvedConfig {
   ports: PortMapping[];
   services: Record<string, ServiceConfig>;
   env: Record<string, string>;
+  init: string[];
   mergedConfigDir: string;
   claudeArgs: string[];
 }

@@ -55,6 +55,7 @@ services:
 | `profile` | string | Which profile to use. Falls back to `default`. |
 | `merge` | `deep` \| `override` | How to combine ccpod settings with the profile. `deep` (default): project adds to/appends profile values. `override`: project sections fully replace the profile's (omitted fields revert to schema defaults). See [Merge Strategies](../merge/). |
 | `claudeArgs` | string[] | Extra CLI flags passed to `claude`. Deep: appended after profile args. Override: replaces. |
+| `init` | string[] | Shell commands run in `/workspace` as `node` before Claude starts. Deep: appended after profile commands. Override: replaces. Ignored when profile has `isolation: true`. |
 | `config.claudeMd` | `append` \| `override` | How to combine `CLAUDE.md` files. |
 | `network` | partial network block | Adds to (or replaces) the profile's network config. |
 | `ports` | object | Extra port mappings (`list`, `autoDetectMcp`). |
