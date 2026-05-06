@@ -8,19 +8,20 @@ FROM node:24-slim
 #   fzf      — fuzzy search (in Anthropic's official devcontainer)
 #   procps   — ps/process inspection
 RUN apt-get update && apt-get install -y --no-install-recommends \
-    git \
-    gosu \
-    iptables \
-    openssh-client \
-    curl \
-    wget \
     ca-certificates \
-    gnupg \
-    ripgrep \
-    jq \
+    curl \
     fd-find \
     fzf \
+    git \
+    gnupg \
+    gosu \
+    iptables \
+    jq \
+    openssh-client \
     procps \
+    ripgrep \
+    unzip \
+    wget \
   && mkdir -p /etc/apt/keyrings \
   && curl -fsSL https://cli.github.com/packages/githubcli-archive-keyring.gpg \
        | gpg --dearmor -o /etc/apt/keyrings/githubcli-archive-keyring.gpg \
@@ -31,11 +32,20 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
   && rm -rf /var/lib/apt/lists/* \
   && rm -rf /tmp/*
 
+# Install uv
+COPY --from=ghcr.io/astral-sh/uv:latest /uv /uvx /bin/
+
+USER node
+
 # Install claude as the node user so it lands in /home/node/.local/bin —
 # user-writable, allowing auto-updates without root.
-USER node
 RUN curl -fsSL https://claude.ai/install.sh | bash
-ENV PATH="/home/node/.local/bin:$PATH"
+ENV PATH="/home/node/.local/bin:${PATH}"
+
+# Install bun
+RUN curl -fsSL https://bun.sh | bash
+ENV PATH="/home/node/.bun/bin:${PATH}"
+
 USER root
 
 WORKDIR /workspace
