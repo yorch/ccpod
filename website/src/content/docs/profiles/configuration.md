@@ -22,7 +22,7 @@ config:
 image:
   use: ghcr.io/yorch/ccpod:latest
   # use: build
-  # dockerfile: ./Dockerfile
+  # dockerfile: "{{profile_dir}}/Dockerfile"
 
 auth:
   type: api-key                 # "api-key" | "oauth"
@@ -80,7 +80,7 @@ services:
 | Field | Type | Notes |
 |---|---|---|
 | `use` | string | Image reference (e.g. `ghcr.io/yorch/ccpod:latest`) or the literal `build`. |
-| `dockerfile` | string | Required when `use: build`. Path relative to `$PWD`. |
+| `dockerfile` | string | Required when `use: build`. Absolute path, path relative to `$PWD`, or `{{profile_dir}}/Dockerfile` to reference a Dockerfile inside the profile directory. |
 
 When `use: build`, `ccpod run` tags the local image as `ccpod-local-<profile>-<hash>:latest` (hash derived from the dockerfile path). `ccpod image build` uses `ccpod-local-<profile>:latest` by default (override with `--tag`). Force a rebuild with `ccpod run --rebuild` or `ccpod image build --apply`.
 

@@ -8,7 +8,11 @@ import {
   loadProjectConfig,
 } from '../../../config/loader.ts';
 import { mergeClaudes, mergeConfigs } from '../../../config/merger.ts';
-import { getProfileDir, profileExists } from '../../../profile/manager.ts';
+import {
+  expandProfilePath,
+  getProfileDir,
+  profileExists,
+} from '../../../profile/manager.ts';
 
 export default defineCommand({
   args: {
@@ -56,7 +60,7 @@ export default defineCommand({
       env: envDisplay,
       image:
         merged.image === 'build'
-          ? `build (${merged.dockerfile ?? 'Dockerfile'})`
+          ? `build (${expandProfilePath(merged.dockerfile ?? 'Dockerfile', profileName)})`
           : merged.image,
       network: merged.network,
       ports: merged.ports,

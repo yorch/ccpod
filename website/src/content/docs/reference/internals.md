@@ -258,7 +258,8 @@ ccpod run [-- claude-args]
 │     → ResolvedConfig
 │
 ├─ 4. Ensure image
-│     if dockerfile: tag = ccpod-local-<profile>-<sha256(dockerfile)>
+│     if dockerfile: {{profile_dir}} placeholder expanded to ~/.ccpod/profiles/<profile>/
+│                   tag = ccpod-local-<profile>-<sha256(dockerfile)>
 │                   context = dirname(dockerfile) if absolute, else $PWD
 │                   build if tag absent (or --rebuild)
 │     else: check locally; pull if absent

@@ -8,6 +8,7 @@ import {
 } from '../../../config/loader.ts';
 import { buildImage } from '../../../image/manager.ts';
 import {
+  expandProfilePath,
   getProfileDir,
   profileExists,
   updateProfileImage,
@@ -41,7 +42,10 @@ export default defineCommand({
     }
 
     const profile = loadProfileConfig(getProfileDir(profileName));
-    const dockerfile = args.dockerfile ?? profile.image.dockerfile;
+    const rawDockerfile = args.dockerfile ?? profile.image.dockerfile;
+    const dockerfile = rawDockerfile
+      ? expandProfilePath(rawDockerfile, profileName)
+      : rawDockerfile;
 
     if (!dockerfile) {
       console.error(

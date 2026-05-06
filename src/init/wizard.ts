@@ -360,9 +360,8 @@ export async function runWizard(profileName = 'default'): Promise<void> {
     });
     imageConfig = { use: imageRef.trim() };
   } else if (imageChoice === 'build') {
-    const profileDir = getProfileDir(profileName);
     imageConfig = {
-      dockerfile: join(profileDir, 'Dockerfile'),
+      dockerfile: '{{profile_dir}}/Dockerfile',
       use: 'build',
     };
   } else {

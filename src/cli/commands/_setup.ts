@@ -14,7 +14,11 @@ import { ensureImage, ensureLocalImage } from '../../image/manager.ts';
 import { runWizard } from '../../init/wizard.ts';
 import { extractHttpMcpPorts, parseMcpJson } from '../../mcp/parser.ts';
 import { syncGitConfig } from '../../profile/git-sync.ts';
-import { getProfileDir, profileExists } from '../../profile/manager.ts';
+import {
+  expandProfilePath,
+  getProfileDir,
+  profileExists,
+} from '../../profile/manager.ts';
 import type { ResolvedConfig } from '../../types/index.ts';
 
 export interface ContainerSetupArgs {
@@ -154,7 +158,8 @@ export async function setupContainer(
   console.log(chalk.dim('Checking image...'));
   let image = partial.image;
   if (image === 'build') {
-    const dockerfile = partial.dockerfile ?? 'Dockerfile';
+    const rawDockerfile = partial.dockerfile ?? 'Dockerfile';
+    const dockerfile = expandProfilePath(rawDockerfile, profileName);
     const dockerfileAbs = isAbsolute(dockerfile)
       ? dockerfile
       : join(cwd, dockerfile);

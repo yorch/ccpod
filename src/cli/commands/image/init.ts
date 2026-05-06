@@ -90,7 +90,7 @@ export default defineCommand({
       }
     }
 
-    updateProfileDockerfile(profileName, destPath);
+    updateProfileDockerfile(profileName, '{{profile_dir}}/Dockerfile');
 
     console.log(chalk.green(`✓ Dockerfile saved to ${destPath}`));
     if (!args.from) {

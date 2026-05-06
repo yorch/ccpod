@@ -41,6 +41,10 @@ export function getProfileDir(name: string): string {
   return join(profilesDir(), name);
 }
 
+export function expandProfilePath(path: string, profileName: string): string {
+  return path.replaceAll('{{profile_dir}}', getProfileDir(profileName));
+}
+
 export function getCredentialsDir(profileName: string): string {
   const dir = join(credentialsBase(), profileName);
   mkdirSync(dir, { mode: 0o700, recursive: true });
