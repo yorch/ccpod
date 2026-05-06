@@ -82,7 +82,7 @@ services:
 | `use` | string | Image reference (e.g. `ghcr.io/yorch/ccpod:latest`) or the literal `build`. |
 | `dockerfile` | string | Required when `use: build`. Absolute path, path relative to `$PWD`, or `{{profile_dir}}/Dockerfile` to reference a Dockerfile inside the profile directory. |
 
-When `use: build`, `ccpod run` tags the local image as `ccpod-local-<profile>-<hash>:latest` (hash derived from the dockerfile path). `ccpod image build` uses `ccpod-local-<profile>:latest` by default (override with `--tag`). Force a rebuild with `ccpod run --rebuild` or `ccpod image build --apply`.
+When `use: build`, both `ccpod run` and `ccpod image build` use the same tag `ccpod-local-<profile>-<hash>:latest` (hash derived from Dockerfile contents). Running `ccpod image build` pre-builds the image so `ccpod run` reuses it without rebuilding. Override the tag with `--tag`. Force a rebuild with `ccpod run --rebuild`.
 
 ### `auth` *(required)*
 

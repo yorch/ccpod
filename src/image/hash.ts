@@ -7,3 +7,11 @@ export function computeDockerfileHash(dockerfile: string, cwd: string): string {
   const data = existsSync(abs) ? readFileSync(abs) : Buffer.from(abs);
   return createHash('sha256').update(data).digest('hex').slice(0, 16);
 }
+
+export function computeLocalImageTag(
+  profileName: string,
+  dockerfile: string,
+  cwd: string,
+): string {
+  return `ccpod-local-${profileName}-${computeDockerfileHash(dockerfile, cwd)}:latest`;
+}

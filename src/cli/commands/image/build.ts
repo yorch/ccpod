@@ -6,6 +6,7 @@ import {
   loadProfileConfig,
   loadProjectConfig,
 } from '../../../config/loader.ts';
+import { computeLocalImageTag } from '../../../image/hash.ts';
 import { buildImage } from '../../../image/manager.ts';
 import {
   expandProfilePath,
@@ -59,10 +60,11 @@ export default defineCommand({
       process.exit(1);
     }
 
-    const tag = args.tag ?? `ccpod-local-${profileName}:latest`;
     const contextDir = isAbsolute(dockerfile)
       ? dirname(dockerfile)
       : process.cwd();
+    const tag =
+      args.tag ?? computeLocalImageTag(profileName, dockerfile, contextDir);
 
     const resolvedDockerfile = isAbsolute(dockerfile)
       ? dockerfile

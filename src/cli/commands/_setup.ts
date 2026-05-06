@@ -9,7 +9,7 @@ import { expandPermissionsPreset } from '../../config/permissions.ts';
 import { writeMergedConfig } from '../../config/writer.ts';
 import { computeProjectHash } from '../../container/builder.ts';
 import { sidecarNetworkName, startSidecars } from '../../container/sidecars.ts';
-import { computeDockerfileHash } from '../../image/hash.ts';
+import { computeLocalImageTag } from '../../image/hash.ts';
 import { ensureImage, ensureLocalImage } from '../../image/manager.ts';
 import { runWizard } from '../../init/wizard.ts';
 import { extractHttpMcpPorts, parseMcpJson } from '../../mcp/parser.ts';
@@ -163,8 +163,7 @@ export async function setupContainer(
     const dockerfileAbs = isAbsolute(dockerfile)
       ? dockerfile
       : join(cwd, dockerfile);
-    const dockerfileHash = computeDockerfileHash(dockerfile, cwd);
-    const tag = `ccpod-local-${profileName}-${dockerfileHash}:latest`;
+    const tag = computeLocalImageTag(profileName, dockerfile, cwd);
     const contextDir = dirname(dockerfileAbs);
     await ensureLocalImage(
       tag,
