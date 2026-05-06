@@ -41,7 +41,7 @@ chown -R node:node "${CLAUDE_DIR}" "${NODE_HOME}" /ccpod/plugins /ccpod/state /c
 # 5. Run user-defined init commands (as node user, in /workspace)
 if [ -f /ccpod/config/post-init.sh ]; then
   echo "ccpod: running init commands..."
-  HOME="${NODE_HOME}" gosu node sh -c 'cd /workspace && sh /ccpod/config/post-init.sh'
+  HOME="${NODE_HOME}" PATH="${PATH}" gosu node sh -c 'cd /workspace && sh /ccpod/config/post-init.sh'
 fi
 
 # 6. Delta-install missing plugins (comma-separated list from env)
