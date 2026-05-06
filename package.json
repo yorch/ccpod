@@ -1,6 +1,6 @@
 {
   "name": "ccpod",
-  "version": "0.2.0",
+  "version": "0.3.0",
   "description": "Run Claude Code in Docker containers with portable, composable configuration",
   "type": "module",
   "private": true,
