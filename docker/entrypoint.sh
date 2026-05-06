@@ -78,7 +78,12 @@ if [ "${CCPOD_NETWORK_POLICY}" = "restricted" ]; then
   echo "ccpod: restricted network active (allowed: ${CCPOD_ALLOWED_HOSTS:-none})"
 fi
 
-# Drop to node user for claude
+# Drop to node user. In shell mode exec directly so bash gets TTY process group
+# control (backgrounding prevents tcsetpgrp and causes immediate exit).
+if [ "${CCPOD_SHELL_MODE}" = "1" ]; then
+  exec HOME="${NODE_HOME}" gosu node "$@"
+fi
+
 HOME="${NODE_HOME}" gosu node "$@" &
 CHILD_PID=$!
 trap "kill -TERM $CHILD_PID 2>/dev/null" TERM INT HUP

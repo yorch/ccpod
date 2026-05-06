@@ -49,6 +49,7 @@ export default defineCommand({
 
       const spec = buildContainerSpec(config, cwd, true, networkName);
       spec.cmd = ['/bin/bash'];
+      spec.env.push('CCPOD_SHELL_MODE=1');
 
       console.log(chalk.dim('Starting container...'));
       const exitCode = await shellContainer(spec);
