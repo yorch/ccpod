@@ -11,6 +11,7 @@ const baseProfile: ProfileConfigInput = {
   },
   env: [],
   image: { use: 'ghcr.io/yorch/ccpod:latest' },
+  init: [],
   name: 'default',
   network: { allow: [], policy: 'full' },
   plugins: [],

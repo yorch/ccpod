@@ -534,6 +534,7 @@ async function writeProfile(
     config: opts.config,
     env: [],
     image: opts.image,
+    init: [],
     isolation: opts.isolation ?? false,
     name: profileName,
     network: opts.network,
@@ -648,6 +649,16 @@ export function buildAnnotatedProfileYaml(profile: ProfileConfigInput): string {
   if (profile.image?.dockerfile) {
     s.push(`  dockerfile: ${q(profile.image.dockerfile)}`);
   }
+  s.push('');
+
+  s.push(
+    '# Shell commands run inside the container as the node user in /workspace',
+  );
+  s.push('# after config is seeded and before Claude starts. Exit on error.');
+  s.push(
+    '# Example: ["npm install", "git config --global user.email dev@example.com"]',
+  );
+  s.push(`init: ${profile.init?.length ? JSON.stringify(profile.init) : '[]'}`);
   s.push('');
 
   s.push('# Network policy applied to the container.');
