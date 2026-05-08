@@ -1,4 +1,5 @@
-import { afterEach, describe, expect, it } from 'bun:test';
+// biome-ignore-all lint/suspicious/noTemplateCurlyInString: ${VAR} literals are the system under test
+import { afterEach, describe, expect, it, spyOn } from 'bun:test';
 import { mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
@@ -126,5 +127,122 @@ describe('resolveEnvForwarding', () => {
     process.env.HOST_VAR = 'from-host';
     const result = resolveEnvForwarding(['HOST_VAR', 'A=1'], ['B=2'], ['C=3']);
     expect(result).toEqual({ A: '1', B: '2', C: '3', HOST_VAR: 'from-host' });
+  });
+
+  describe('host variable interpolation', () => {
+    it('expands ${VAR} from host env in value', () => {
+      saveEnv('GH_TOKEN');
+      process.env.GH_TOKEN = 'ghp_abc';
+      expect(resolveEnvForwarding(['MY_TOKEN=${GH_TOKEN}'], [], [])).toEqual({
+        MY_TOKEN: 'ghp_abc',
+      });
+    });
+
+    it('expands ${VAR:-default} when unset', () => {
+      saveEnv('NOT_SET');
+      delete process.env.NOT_SET;
+      expect(resolveEnvForwarding(['MY=${NOT_SET:-fallback}'], [], [])).toEqual(
+        { MY: 'fallback' },
+      );
+    });
+
+    it('prefers host value over default when set', () => {
+      saveEnv('PRESENT');
+      process.env.PRESENT = 'real';
+      expect(resolveEnvForwarding(['MY=${PRESENT:-fallback}'], [], [])).toEqual(
+        { MY: 'real' },
+      );
+    });
+
+    it('substitutes empty for unset var without default', () => {
+      saveEnv('NOPE');
+      delete process.env.NOPE;
+      expect(resolveEnvForwarding(['MY=${NOPE}'], [], [])).toEqual({
+        MY: '',
+      });
+    });
+
+    it('handles mixed literal text and interpolation', () => {
+      saveEnv('USER_NAME');
+      process.env.USER_NAME = 'alice';
+      expect(
+        resolveEnvForwarding(['GREETING=hello ${USER_NAME}!'], [], []),
+      ).toEqual({ GREETING: 'hello alice!' });
+    });
+
+    it('expands multiple vars in one value', () => {
+      saveEnv('A', 'B');
+      process.env.A = 'x';
+      process.env.B = 'y';
+      expect(resolveEnvForwarding(['COMBO=${A}-${B}'], [], [])).toEqual({
+        COMBO: 'x-y',
+      });
+    });
+
+    it('empty default works', () => {
+      saveEnv('EMPTY_DEFAULT');
+      delete process.env.EMPTY_DEFAULT;
+      expect(resolveEnvForwarding(['MY=${EMPTY_DEFAULT:-}'], [], [])).toEqual({
+        MY: '',
+      });
+    });
+
+    it('does NOT interpolate bare key form (treated as host var name)', () => {
+      saveEnv('LITERAL');
+      delete process.env.LITERAL;
+      // Bare "${LITERAL}" is not a valid env var name, so process.env lookup
+      // fails and the entry is skipped (existing behavior).
+      expect(resolveEnvForwarding(['${LITERAL}'], [], [])).toEqual({});
+    });
+
+    it('leaves unmatched dollar text alone', () => {
+      expect(resolveEnvForwarding(['PRICE=$100 plain'], [], [])).toEqual({
+        PRICE: '$100 plain',
+      });
+    });
+
+    it('interpolation works in CLI overrides', () => {
+      saveEnv('TOK');
+      process.env.TOK = 'cli-tok';
+      expect(resolveEnvForwarding([], [], ['MY=${TOK}'])).toEqual({
+        MY: 'cli-tok',
+      });
+    });
+
+    it('treats host var set to empty string as set (POSIX :- semantics)', () => {
+      saveEnv('EMPTY_SET');
+      process.env.EMPTY_SET = '';
+      expect(
+        resolveEnvForwarding(['MY=${EMPTY_SET:-fallback}'], [], []),
+      ).toEqual({ MY: '' });
+    });
+
+    it('warns at most once per missing var across a single call', () => {
+      saveEnv('NOPE_DEDUP');
+      delete process.env.NOPE_DEDUP;
+      const warn = spyOn(console, 'warn').mockImplementation(() => {});
+      try {
+        resolveEnvForwarding(
+          ['A=${NOPE_DEDUP}', 'B=${NOPE_DEDUP}'],
+          ['C=${NOPE_DEDUP}'],
+          ['D=${NOPE_DEDUP}'],
+        );
+        expect(warn).toHaveBeenCalledTimes(1);
+      } finally {
+        warn.mockRestore();
+      }
+    });
+
+    it('does not warn when default is supplied for unset var', () => {
+      saveEnv('UNSET_WITH_DEFAULT');
+      delete process.env.UNSET_WITH_DEFAULT;
+      const warn = spyOn(console, 'warn').mockImplementation(() => {});
+      try {
+        resolveEnvForwarding(['A=${UNSET_WITH_DEFAULT:-x}'], [], []);
+        expect(warn).not.toHaveBeenCalled();
+      } finally {
+        warn.mockRestore();
+      }
+    });
   });
 });

@@ -39,7 +39,7 @@ bun run preview          # preview built site
 1. **Load** — `src/config/loader.ts` reads `~/.ccpod/profiles/<name>/profile.yml` (profile) and walks up from `cwd` to find `.ccpod.yml` (project). Both validated via Zod schemas in `src/config/schema.ts`.
 2. **Sync** — `src/profile/git-sync.ts` pulls the profile's config repo if `source: git`.
 3. **Merge** — `src/config/merger.ts` combines profile + project using `merge: deep|override` strategy. CLAUDE.md files are merged separately via `mergeClaudes()` (append or override).
-4. **Auth** — `src/auth/resolver.ts` resolves API key or OAuth credentials into env vars.
+4. **Auth** — `src/auth/resolver.ts` resolves API key or OAuth credentials into env vars. Same module's `resolveEnvForwarding` collapses profile/project/CLI `env` lists, supporting bare `KEY` (forward host var), `KEY=value` (literal), and `KEY=${HOST_VAR}` / `KEY=${HOST_VAR:-default}` (interpolation, scoped to env values only).
 5. **Config write** — `src/config/writer.ts` writes merged config to a temp dir mounted as `/ccpod/config` in the container.
 6. **Container spec** — `src/container/builder.ts` builds the `ContainerSpec` (binds, env, ports, labels, tmpfs). Exports `computeProjectHash(dir)`.
 7. **Sidecars** — `src/container/sidecars.ts` creates shared Docker network `ccpod-net-<hash>` and starts declared `services:` containers before the main container.
