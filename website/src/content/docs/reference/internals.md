@@ -235,6 +235,18 @@ write_merged_config(result) → /tmp/ccpod-<sha256(content)>/
   // deterministic path: same content = same dir = skip re-write
 ```
 
+### Env forwarding (`resolveEnvForwarding`)
+
+`src/auth/resolver.ts:resolveEnvForwarding` collapses `profile.env`, `projectConfig.env`, and CLI `--env` overrides into a single `Record<string, string>`. Each entry has one of three forms:
+
+- `KEY` — forward `process.env.KEY` (entry skipped if unset on host)
+- `KEY=value` — literal value
+- `KEY=...${VAR}...` / `KEY=...${VAR:-default}...` — interpolate host vars into the value
+
+Interpolation is governed by `INTERPOLATION_RE = /\$\{([A-Za-z_][A-Za-z0-9_]*)(?::-([^}]*))?\}/g`. Missing host vars without `:-default` resolve to empty string and warn once per unique name. Interpolation runs on `env` values only — other config string fields are taken verbatim by design (limits attack surface from project-controlled `.ccpod.yml`). Future broadening would require revisiting that trust boundary.
+
+Source precedence: profile → project → CLI override (later wins).
+
 ## Startup sequence
 
 ```

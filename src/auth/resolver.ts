@@ -29,28 +29,56 @@ export function resolveAuth(
   return {};
 }
 
+export function interpolateHostEnv(
+  value: string,
+  context: { source: string },
+  warned: Set<string>,
+): string {
+  // Local regex avoids shared `lastIndex` state. Names follow POSIX shell
+  // identifier rules. Defaults are literal — no nested expansion.
+  const re = /\$\{([A-Za-z_][A-Za-z0-9_]*)(?::-([^}]*))?\}/g;
+  return value.replace(re, (_match, name: string, def?: string) => {
+    const hostValue = process.env[name];
+    if (hostValue !== undefined) {
+      return hostValue;
+    }
+    if (def !== undefined) {
+      return def;
+    }
+    if (!warned.has(name)) {
+      warned.add(name);
+      console.warn(
+        `Warning: ${context.source} references unset host variable \${${name}}; substituting empty string. Use \${${name}:-default} to silence.`,
+      );
+    }
+    return '';
+  });
+}
+
 export function resolveEnvForwarding(
   profileKeys: string[],
   projectKeys: string[],
   cliOverrides: string[],
 ): Record<string, string> {
   const resolved: Record<string, string> = {};
+  const warned = new Set<string>();
 
-  for (const key of [...profileKeys, ...projectKeys]) {
-    const eqIdx = key.indexOf('=');
-    if (eqIdx !== -1) {
-      resolved[key.slice(0, eqIdx)] = key.slice(eqIdx + 1);
-    } else if (process.env[key] !== undefined) {
-      resolved[key] = process.env[key] ?? '';
+  const apply = (entries: string[], source: string) => {
+    for (const entry of entries) {
+      const eqIdx = entry.indexOf('=');
+      if (eqIdx !== -1) {
+        const name = entry.slice(0, eqIdx);
+        const rawValue = entry.slice(eqIdx + 1);
+        resolved[name] = interpolateHostEnv(rawValue, { source }, warned);
+      } else if (process.env[entry] !== undefined) {
+        resolved[entry] = process.env[entry] ?? '';
+      }
     }
-  }
+  };
 
-  for (const override of cliOverrides) {
-    const eqIdx = override.indexOf('=');
-    if (eqIdx !== -1) {
-      resolved[override.slice(0, eqIdx)] = override.slice(eqIdx + 1);
-    }
-  }
+  apply(profileKeys, 'profile env');
+  apply(projectKeys, 'project env');
+  apply(cliOverrides, 'CLI --env');
 
   return resolved;
 }

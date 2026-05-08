@@ -133,7 +133,23 @@ See [Network Policy](../../features/network/).
 
 ### `env`
 
-A list of env-var **names** on the host. ccpod forwards their values into the container. Names only — never values. To set a literal, use `ccpod run --env KEY=VALUE`.
+A list of entries describing env vars to expose in the container. Three forms are supported:
+
+| Form | Behaviour |
+|---|---|
+| `KEY` | Forward the host value of `KEY` (skipped if unset on host). |
+| `KEY=value` | Set a literal value. |
+| `KEY=${HOST_VAR}` / `KEY=${HOST_VAR:-default}` | Interpolate a host variable into the value at run time. Missing vars without a `:-default` substitute an empty string and emit a warning. |
+
+```yaml
+env:
+  - DATABASE_URL                       # forward host DATABASE_URL
+  - NODE_ENV=development               # literal
+  - GH_TOKEN=${GITHUB_TOKEN}           # interpolate
+  - REGION=${AWS_REGION:-us-east-1}    # interpolate with default
+```
+
+Interpolation syntax follows POSIX shell: `${NAME}` and `${NAME:-default}` only (no `:?`, `:+`, command substitution, or nesting). Names match `[A-Za-z_][A-Za-z0-9_]*`. The `:-default` portion is a literal string — variable references inside it (e.g. `${REGION:-us-${ZONE}}`) are not expanded. Following POSIX semantics, a host var set to the empty string is still considered "set" and wins over `:-default`; only an unset var triggers the default. Interpolation is currently scoped to **`env` values only**; other string fields (`image`, `binds`, `claudeArgs`, etc.) take their values literally. Project `.ccpod.yml` `env:` entries and `--env KEY=VALUE` CLI overrides accept the same syntax.
 
 ### `claudeArgs`
 
