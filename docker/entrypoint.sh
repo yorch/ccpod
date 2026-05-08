@@ -49,7 +49,7 @@ if [ -n "${CCPOD_PLUGINS_TO_INSTALL}" ]; then
   for plugin in $(printf '%s' "${CCPOD_PLUGINS_TO_INSTALL}" | tr ',' '\n'); do
     if [ -n "${plugin}" ] && [ ! -d "${CLAUDE_DIR}/plugins/${plugin}" ]; then
       echo "ccpod: installing plugin: ${plugin}"
-      HOME="${NODE_HOME}" gosu node claude plugin install "${plugin}" 2>/dev/null || true
+      HOME="${NODE_HOME}" PATH="${PATH}" gosu node claude plugin install "${plugin}" 2>/dev/null || true
     fi
   done
 fi
@@ -87,10 +87,10 @@ fi
 # Drop to node user. In shell mode exec directly so bash gets TTY process group
 # control (backgrounding prevents tcsetpgrp and causes immediate exit).
 if [ "${CCPOD_SHELL_MODE}" = "1" ]; then
-  exec HOME="${NODE_HOME}" gosu node "$@"
+  exec env HOME="${NODE_HOME}" PATH="${PATH}" gosu node "$@"
 fi
 
-HOME="${NODE_HOME}" gosu node "$@" &
+HOME="${NODE_HOME}" PATH="${PATH}" gosu node "$@" &
 CHILD_PID=$!
 trap "kill -TERM $CHILD_PID 2>/dev/null" TERM INT HUP
 wait $CHILD_PID || STATUS=$?
