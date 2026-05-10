@@ -38,12 +38,13 @@ bun run preview          # preview built site
 
 1. **Load** — `src/config/loader.ts` reads `~/.ccpod/profiles/<name>/profile.yml` (profile) and walks up from `cwd` to find `.ccpod.yml` (project). Both validated via Zod schemas in `src/config/schema.ts`.
 2. **Sync** — `src/profile/git-sync.ts` pulls the profile's config repo if `source: git`.
-3. **Merge** — `src/config/merger.ts` combines profile + project using `merge: deep|override` strategy. CLAUDE.md files are merged separately via `mergeClaudes()` (append or override).
-4. **Auth** — `src/auth/resolver.ts` resolves API key or OAuth credentials into env vars. Same module's `resolveEnvForwarding` collapses profile/project/CLI `env` lists, supporting bare `KEY` (forward host var), `KEY=value` (literal), and `KEY=${HOST_VAR}` / `KEY=${HOST_VAR:-default}` (interpolation, scoped to env values only).
-5. **Config write** — `src/config/writer.ts` writes merged config to a temp dir mounted as `/ccpod/config` in the container.
-6. **Container spec** — `src/container/builder.ts` builds the `ContainerSpec` (binds, env, ports, labels, tmpfs). Exports `computeProjectHash(dir)`.
-7. **Sidecars** — `src/container/sidecars.ts` creates shared Docker network `ccpod-net-<hash>` and starts declared `services:` containers before the main container.
-8. **Run** — `src/container/runner.ts` creates/reattaches/starts the container via `docker` CLI (`Bun.spawn`). TTY mode = interactive; headless mode (`--file`) streams logs.
+3. **Overlay** — `src/config/overlay.ts` reads optional `ccpod-overlay.yml` from the synced config dir and applies team-shared fields (image, plugins, services, network, permissions, etc.) onto the in-memory profile. Skipped when `config.overlay: false`.
+4. **Merge** — `src/config/merger.ts` combines profile + project using `merge: deep|override` strategy. CLAUDE.md files are merged separately via `mergeClaudes()` (append or override).
+5. **Auth** — `src/auth/resolver.ts` resolves API key or OAuth credentials into env vars. Same module's `resolveEnvForwarding` collapses profile/project/CLI `env` lists, supporting bare `KEY` (forward host var), `KEY=value` (literal), and `KEY=${HOST_VAR}` / `KEY=${HOST_VAR:-default}` (interpolation, scoped to env values only).
+6. **Config write** — `src/config/writer.ts` writes merged config to a temp dir mounted as `/ccpod/config` in the container.
+7. **Container spec** — `src/container/builder.ts` builds the `ContainerSpec` (binds, env, ports, labels, tmpfs). Exports `computeProjectHash(dir)`.
+8. **Sidecars** — `src/container/sidecars.ts` creates shared Docker network `ccpod-net-<hash>` and starts declared `services:` containers before the main container.
+9. **Run** — `src/container/runner.ts` creates/reattaches/starts the container via `docker` CLI (`Bun.spawn`). TTY mode = interactive; headless mode (`--file`) streams logs.
 
 ### Key modules
 
@@ -61,6 +62,7 @@ bun run preview          # preview built site
 | `src/update/updater.ts` | Downloads and replaces the ccpod binary in-place |
 | `src/profile/installer.ts` | `detectSource` + `fetchProfileYaml` — source detection and YAML fetching for profile install |
 | `src/profile/exporter.ts` | `exportProfile` — reads profile.yml and returns base64-encoded string for sharing |
+| `src/config/overlay.ts` | `loadOverlay` + `applyOverlay` — reads `ccpod-overlay.yml` from the synced config dir and merges team-shared fields onto the profile |
 
 ### Storage layout
 
@@ -92,6 +94,7 @@ Docker volumes:
 - **`SSH_AUTH_SOCK`** is rejected if it contains `:` (would corrupt Docker bind spec).
 - **`DOCKER_SOCKET_PATH`** env var overrides the hardcoded `/var/run/docker.sock` path (useful in tests and non-standard Docker setups).
 - **Project `.claude/settings.json`** deep-merges into profile settings (project wins on conflicts) — same trust level as `claudeArgs` passthrough. Only run ccpod against repos you control.
+- **`ccpod-overlay.yml`** in a synced config repo can change `image`, `network.policy`, `init`, `services`, and `permissions` — strictly more powerful than `settings.json`. Treat the synced config repo as fully trusted, or set `config.overlay: false` to opt out.
 
 ### Testing
 

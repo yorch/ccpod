@@ -25,6 +25,7 @@ export const profileConfigSchema = z.object({
     .default({ keyEnv: 'ANTHROPIC_API_KEY', type: 'api-key' }),
   claudeArgs: z.array(z.string()).default([]),
   config: z.object({
+    overlay: z.boolean().default(true),
     path: z.string().optional(),
     ref: z.string().optional(),
     repo: z.string().optional(),
@@ -110,5 +111,50 @@ export const projectConfigSchema = z.object({
   services: z.record(z.string(), serviceConfigSchema).optional(),
 });
 
+/**
+ * Overlay file (`ccpod-overlay.yml`) lives at the root of a synced config dir
+ * and contributes operational fields back into the local profile. Auth, name,
+ * state, and the config block stay local — everything else may be overridden.
+ */
+export const profileOverlaySchema = z.object({
+  claudeArgs: z.array(z.string()).optional(),
+  env: z.array(z.string()).optional(),
+  image: z
+    .object({
+      dockerfile: z.string().optional(),
+      use: z.string().optional(),
+    })
+    .optional(),
+  init: z
+    .array(
+      z.string().refine((s) => !s.includes('\n'), {
+        message: 'init commands must be single-line strings',
+      }),
+    )
+    .optional(),
+  network: z
+    .object({
+      allow: z.array(z.string()).optional(),
+      policy: z.enum(['full', 'restricted']).optional(),
+    })
+    .optional(),
+  permissions: z.enum(['conservative', 'moderate', 'permissive']).optional(),
+  plugins: z.array(z.string()).optional(),
+  ports: z
+    .object({
+      autoDetectMcp: z.boolean().optional(),
+      list: z.array(z.string()).optional(),
+    })
+    .optional(),
+  services: z.record(z.string(), serviceConfigSchema).optional(),
+  ssh: z
+    .object({
+      agentForward: z.boolean().optional(),
+      mountSshDir: z.boolean().optional(),
+    })
+    .optional(),
+});
+
 export type ProfileConfigInput = z.input<typeof profileConfigSchema>;
 export type ProjectConfigInput = z.input<typeof projectConfigSchema>;
+export type ProfileOverlay = z.output<typeof profileOverlaySchema>;

@@ -5,6 +5,11 @@ import deepmerge from 'deepmerge';
 import { resolveAuth, resolveEnvForwarding } from '../../auth/resolver.ts';
 import { loadProfileConfig, loadProjectConfig } from '../../config/loader.ts';
 import { mergeClaudes, mergeConfigs } from '../../config/merger.ts';
+import {
+  applyOverlay,
+  countOverlayFields,
+  loadOverlay,
+} from '../../config/overlay.ts';
 import { expandPermissionsPreset } from '../../config/permissions.ts';
 import { writeMergedConfig } from '../../config/writer.ts';
 import { computeProjectHash } from '../../container/builder.ts';
@@ -58,7 +63,7 @@ export async function setupContainer(
   }
 
   const profileDir = getProfileDir(profileName);
-  const profile = loadProfileConfig(profileDir);
+  let profile = loadProfileConfig(profileDir);
 
   if (profile.config.source === 'git' && profile.config.repo) {
     await syncGitConfig(
@@ -67,6 +72,34 @@ export async function setupContainer(
       profile.config.ref ?? 'main',
       profile.config.sync ?? 'daily',
     );
+  }
+
+  if (profile.config.overlay) {
+    const overlayDir =
+      profile.config.source === 'local'
+        ? (profile.config.path ?? profileDir)
+        : join(profileDir, 'config');
+    try {
+      const overlay = loadOverlay(overlayDir);
+      if (overlay) {
+        profile = applyOverlay(profile, overlay);
+        const n = countOverlayFields(overlay);
+        const sourceLabel =
+          profile.config.source === 'git' ? 'synced config' : 'config dir';
+        console.log(
+          chalk.dim(
+            `Applied overlay from ${sourceLabel} (${n} field${n === 1 ? '' : 's'}).`,
+          ),
+        );
+      }
+    } catch (err) {
+      console.error(
+        `${chalk.red('error:')} Invalid ccpod-overlay.yml: ${
+          err instanceof Error ? err.message : err
+        }`,
+      );
+      process.exit(1);
+    }
   }
 
   const stateOverride = args.noState ? ('ephemeral' as const) : undefined;

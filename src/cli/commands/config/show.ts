@@ -8,6 +8,7 @@ import {
   loadProjectConfig,
 } from '../../../config/loader.ts';
 import { mergeClaudes, mergeConfigs } from '../../../config/merger.ts';
+import { applyOverlay, loadOverlay } from '../../../config/overlay.ts';
 import {
   expandProfilePath,
   getProfileDir,
@@ -32,7 +33,26 @@ export default defineCommand({
       process.exit(1);
     }
 
-    const profile = loadProfileConfig(getProfileDir(profileName));
+    let profile = loadProfileConfig(getProfileDir(profileName));
+    if (profile.config.overlay) {
+      const overlayDir =
+        profile.config.source === 'local'
+          ? (profile.config.path ?? getProfileDir(profileName))
+          : join(getProfileDir(profileName), 'config');
+      try {
+        const overlay = loadOverlay(overlayDir);
+        if (overlay) {
+          profile = applyOverlay(profile, overlay);
+        }
+      } catch (err) {
+        console.error(
+          `${chalk.red('error:')} Invalid ccpod-overlay.yml: ${
+            err instanceof Error ? err.message : err
+          }`,
+        );
+        process.exit(1);
+      }
+    }
     const merged = mergeConfigs(profile, projectConfig);
 
     // Display env forwarding keys (values are resolved at run time from the host env)
