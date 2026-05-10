@@ -113,8 +113,11 @@ export const projectConfigSchema = z.object({
 
 /**
  * Overlay file (`ccpod-overlay.yml`) lives at the root of a synced config dir
- * and contributes operational fields back into the local profile. Auth, name,
- * state, and the config block stay local — everything else may be overridden.
+ * and contributes a fixed subset of operational fields back into the local
+ * profile: `claudeArgs`, `env`, `image`, `init`, `network`, `permissions`,
+ * `plugins`, `ports`, `services`, `ssh`. Everything else (including `auth`,
+ * `name`, `state`, the `config` block, `isolation`, and `description`) is
+ * never sourced from the overlay.
  */
 export const profileOverlaySchema = z.object({
   claudeArgs: z.array(z.string()).optional(),
