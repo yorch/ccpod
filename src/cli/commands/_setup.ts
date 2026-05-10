@@ -5,11 +5,7 @@ import deepmerge from 'deepmerge';
 import { resolveAuth, resolveEnvForwarding } from '../../auth/resolver.ts';
 import { loadProfileConfig, loadProjectConfig } from '../../config/loader.ts';
 import { mergeClaudes, mergeConfigs } from '../../config/merger.ts';
-import {
-  applyOverlay,
-  countOverlayFields,
-  loadOverlay,
-} from '../../config/overlay.ts';
+import { loadAndApplyOverlay } from '../../config/overlay.ts';
 import { expandPermissionsPreset } from '../../config/permissions.ts';
 import { writeMergedConfig } from '../../config/writer.ts';
 import { computeProjectHash } from '../../container/builder.ts';
@@ -21,6 +17,7 @@ import { extractHttpMcpPorts, parseMcpJson } from '../../mcp/parser.ts';
 import { syncGitConfig } from '../../profile/git-sync.ts';
 import {
   expandProfilePath,
+  getConfigSourceDir,
   getProfileDir,
   profileExists,
 } from '../../profile/manager.ts';
@@ -63,43 +60,22 @@ export async function setupContainer(
   }
 
   const profileDir = getProfileDir(profileName);
-  let profile = loadProfileConfig(profileDir);
+  const baseProfile = loadProfileConfig(profileDir);
 
-  if (profile.config.source === 'git' && profile.config.repo) {
+  if (baseProfile.config.source === 'git' && baseProfile.config.repo) {
     await syncGitConfig(
       profileDir,
-      profile.config.repo,
-      profile.config.ref ?? 'main',
-      profile.config.sync ?? 'daily',
+      baseProfile.config.repo,
+      baseProfile.config.ref ?? 'main',
+      baseProfile.config.sync ?? 'daily',
     );
   }
 
-  if (profile.config.overlay) {
-    const overlayDir =
-      profile.config.source === 'local'
-        ? (profile.config.path ?? profileDir)
-        : join(profileDir, 'config');
-    try {
-      const overlay = loadOverlay(overlayDir);
-      if (overlay) {
-        profile = applyOverlay(profile, overlay);
-        const n = countOverlayFields(overlay);
-        const sourceLabel =
-          profile.config.source === 'git' ? 'synced config' : 'config dir';
-        console.log(
-          chalk.dim(
-            `Applied overlay from ${sourceLabel} (${n} field${n === 1 ? '' : 's'}).`,
-          ),
-        );
-      }
-    } catch (err) {
-      console.error(
-        `${chalk.red('error:')} Invalid ccpod-overlay.yml: ${
-          err instanceof Error ? err.message : err
-        }`,
-      );
-      process.exit(1);
-    }
+  const profile = loadAndApplyOverlay(baseProfile, profileDir);
+  if (profile !== baseProfile) {
+    const sourceLabel =
+      profile.config.source === 'git' ? 'synced config' : 'config dir';
+    console.log(chalk.dim(`Applied overlay from ${sourceLabel}.`));
   }
 
   const stateOverride = args.noState ? ('ephemeral' as const) : undefined;
@@ -138,10 +114,7 @@ export async function setupContainer(
     ...authEnv,
   };
 
-  const configSourceDir =
-    profile.config.source === 'local'
-      ? (profile.config.path ?? profileDir)
-      : join(profileDir, 'config');
+  const configSourceDir = getConfigSourceDir(profile, profileDir);
 
   const profileClaudeMd = readIfExists(join(configSourceDir, 'CLAUDE.md'));
   const projectClaudeMd = profile.isolation

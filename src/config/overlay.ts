@@ -1,6 +1,8 @@
 import { existsSync, readFileSync } from 'node:fs';
 import { join } from 'node:path';
+import chalk from 'chalk';
 import { parse as parseYaml } from 'yaml';
+import { getConfigSourceDir } from '../profile/manager.ts';
 import type { ProfileConfig } from '../types/index.ts';
 import { type ProfileOverlay, profileOverlaySchema } from './schema.ts';
 
@@ -51,7 +53,7 @@ export function applyOverlay(
     ports: {
       autoDetectMcp:
         overlay.ports?.autoDetectMcp ?? profile.ports.autoDetectMcp,
-      list: [...(profile.ports.list ?? []), ...(overlay.ports?.list ?? [])],
+      list: [...profile.ports.list, ...(overlay.ports?.list ?? [])],
     },
     services: { ...profile.services, ...(overlay.services ?? {}) },
     ssh: overlay.ssh
@@ -63,6 +65,28 @@ export function applyOverlay(
   };
 }
 
-export function countOverlayFields(overlay: ProfileOverlay): number {
-  return Object.values(overlay).filter((v) => v !== undefined).length;
+/**
+ * Load `ccpod-overlay.yml` from the profile's config dir (if present and
+ * `config.overlay` is not disabled) and merge it into the profile. Exits the
+ * process on parse/validation errors. Returns the original profile when the
+ * overlay is disabled, missing, or empty.
+ */
+export function loadAndApplyOverlay(
+  profile: ProfileConfig,
+  profileDir: string,
+): ProfileConfig {
+  if (!profile.config.overlay) {
+    return profile;
+  }
+  try {
+    const overlay = loadOverlay(getConfigSourceDir(profile, profileDir));
+    return overlay ? applyOverlay(profile, overlay) : profile;
+  } catch (err) {
+    console.error(
+      `${chalk.red('error:')} Invalid ccpod-overlay.yml: ${
+        err instanceof Error ? err.message : err
+      }`,
+    );
+    process.exit(1);
+  }
 }

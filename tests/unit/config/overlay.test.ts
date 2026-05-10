@@ -4,7 +4,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import {
   applyOverlay,
-  countOverlayFields,
+  loadAndApplyOverlay,
   loadOverlay,
   OVERLAY_FILENAME,
 } from '../../../src/config/overlay.ts';
@@ -200,12 +200,40 @@ describe('applyOverlay', () => {
   });
 });
 
-describe('countOverlayFields', () => {
-  it('counts only defined fields', () => {
-    expect(countOverlayFields({})).toBe(0);
-    expect(countOverlayFields({ plugins: ['a'] })).toBe(1);
-    expect(
-      countOverlayFields({ network: { policy: 'full' }, plugins: [] }),
-    ).toBe(2);
+describe('loadAndApplyOverlay', () => {
+  let dir: string;
+
+  beforeEach(() => {
+    dir = mkdtempSync(join(tmpdir(), 'ccpod-overlay-apply-'));
+  });
+
+  afterEach(() => {
+    rmSync(dir, { force: true, recursive: true });
+  });
+
+  it('returns the same profile object when no overlay file exists', () => {
+    const profile = makeProfile({
+      config: { ...makeProfile().config, path: dir },
+    });
+    expect(loadAndApplyOverlay(profile, dir)).toBe(profile);
+  });
+
+  it('returns the same profile when config.overlay is false', () => {
+    writeFileSync(join(dir, OVERLAY_FILENAME), 'plugins: [foo]\n');
+    const profile = makeProfile({
+      config: { ...makeProfile().config, overlay: false, path: dir },
+    });
+    expect(loadAndApplyOverlay(profile, dir)).toBe(profile);
+  });
+
+  it('returns a new profile with overlay applied when file is present', () => {
+    writeFileSync(join(dir, OVERLAY_FILENAME), 'plugins: [foo, bar]\n');
+    const profile = makeProfile({
+      config: { ...makeProfile().config, path: dir },
+      plugins: ['baseline'],
+    });
+    const result = loadAndApplyOverlay(profile, dir);
+    expect(result).not.toBe(profile);
+    expect(result.plugins).toEqual(['baseline', 'foo', 'bar']);
   });
 });
