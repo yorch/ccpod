@@ -1,12 +1,12 @@
 export type SyncStrategy = 'always' | 'daily' | 'pin';
-export type MergeStrategy = 'deep' | 'override';
-export type StateMode = 'ephemeral' | 'persistent';
-export type NetworkPolicy = 'full' | 'restricted';
-export type AuthType = 'api-key' | 'oauth';
-export type ClaudeMdMerge = 'append' | 'override';
+type MergeStrategy = 'deep' | 'override';
+type StateMode = 'ephemeral' | 'persistent';
+type NetworkPolicy = 'full' | 'restricted';
+type AuthType = 'api-key' | 'oauth';
+type ClaudeMdMerge = 'append' | 'override';
 export type PermissionsPreset = 'conservative' | 'moderate' | 'permissive';
 
-export interface PortsConfig {
+interface PortsConfig {
   autoDetectMcp: boolean;
   list: string[];
 }
@@ -70,7 +70,7 @@ export interface ServiceConfig {
   volumes?: string[];
 }
 
-export interface PortMapping {
+interface PortMapping {
   container: number;
   host: number;
 }
@@ -96,12 +96,4 @@ export interface ResolvedConfig {
 export interface DetectedRuntime {
   name: string;
   socketPath: string;
-}
-
-export interface ContainerLabels {
-  'ccpod.profile': string;
-  'ccpod.project': string;
-  'ccpod.type': 'main' | string;
-  'ccpod.version': string;
-  'ccpod.workdir': string;
 }

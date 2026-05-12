@@ -7,7 +7,7 @@ export function sidecarNetworkName(projectHash: string): string {
   return `ccpod-net-${projectHash}`;
 }
 
-export function sidecarContainerName(
+function sidecarContainerName(
   profileName: string,
   projectHash: string,
   serviceName: string,

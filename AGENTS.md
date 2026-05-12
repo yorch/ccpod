@@ -49,7 +49,7 @@ bun run preview          # preview built site
 
 | Path | Purpose |
 |------|---------|
-| `src/types/index.ts` | Shared types: `ProfileConfig`, `ProjectConfig`, `ResolvedConfig`, `ContainerSpec` |
+| `src/types/index.ts` | Shared types: `ProfileConfig`, `ProjectConfig`, `ResolvedConfig` (`ContainerSpec` lives in `src/container/builder.ts`) |
 | `src/runtime/detector.ts` | Auto-detects OrbStack / Docker / Colima / Podman socket |
 | `src/runtime/docker.ts` | `dockerExec` (capture stdout/stderr) and `dockerSpawn` (inherit stdio) |
 | `src/profile/manager.ts` | `~/.ccpod/` directory layout, profile CRUD |

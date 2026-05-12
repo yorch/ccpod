@@ -36,20 +36,6 @@ export async function runContainer(
   return deps.dockerSpawn(buildRunArgs(spec));
 }
 
-export async function stopContainer(
-  name: string,
-  deps: RunnerDeps = defaultDeps(),
-): Promise<void> {
-  const state = await containerState(name, deps.dockerExec);
-  if (state === 'not_found') {
-    return;
-  }
-  if (state === 'running') {
-    await deps.dockerExec(['stop', '-t', '5', name]);
-  }
-  await deps.dockerExec(['rm', name]);
-}
-
 export async function execContainer(
   name: string,
   cmd: string[],

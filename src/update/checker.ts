@@ -10,7 +10,7 @@ interface UpdateCache {
   latestVersion: string;
 }
 
-export function cachePath(): string {
+function cachePath(): string {
   return join(
     process.env.CCPOD_TEST_DIR ?? join(homedir(), '.ccpod'),
     'update-check.json',
@@ -54,7 +54,7 @@ export function isNewer(latest: string, current: string): boolean {
   return (lPatch ?? 0) > (cPatch ?? 0);
 }
 
-export async function fetchLatestVersion(): Promise<string | null> {
+async function fetchLatestVersion(): Promise<string | null> {
   const controller = new AbortController();
   const timeout = setTimeout(() => controller.abort(), 1500);
   try {
