@@ -2,12 +2,15 @@ import { createHash } from 'node:crypto';
 import {
   chmodSync,
   copyFileSync,
+  createWriteStream,
   mkdtempSync,
   rmSync,
   unlinkSync,
 } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
+import { Readable } from 'node:stream';
+import { pipeline } from 'node:stream/promises';
 import { GITHUB_REPO } from '../constants.ts';
 
 const CHECKSUMS_ASSET = 'SHASUMS256.txt';
@@ -118,19 +121,37 @@ export async function downloadAndReplace(
     throw new Error(`Download failed: ${binaryRes.status}`);
   }
 
-  const bytes = new Uint8Array(await binaryRes.arrayBuffer());
-  const actualDigest = createHash('sha256').update(bytes).digest('hex');
-  if (actualDigest !== expectedDigest) {
-    throw new Error(
-      `Checksum mismatch for ${release.assetName}: expected ${expectedDigest}, got ${actualDigest}. Refusing to install.`,
-    );
+  if (!binaryRes.body) {
+    throw new Error('Download response has no body');
   }
 
   // mkdtempSync avoids the predictable-path symlink-attack vector that
   // `tmpdir()/ccpod-update-<timestamp>` would have on multi-user hosts.
   const tmpDir = mkdtempSync(join(tmpdir(), 'ccpod-update-'));
   const tmpPath = join(tmpDir, release.assetName);
-  await Bun.write(tmpPath, bytes);
+
+  // Stream the response through the hash and into the temp file at the same
+  // time, so a ~50-80 MB binary is never held in memory twice (once as an
+  // ArrayBuffer for hashing, once as a Buffer for writing).
+  const hash = createHash('sha256');
+  await pipeline(
+    Readable.fromWeb(binaryRes.body as never),
+    async function* (source) {
+      for await (const chunk of source) {
+        hash.update(chunk as Uint8Array);
+        yield chunk;
+      }
+    },
+    createWriteStream(tmpPath),
+  );
+  const actualDigest = hash.digest('hex');
+  if (actualDigest !== expectedDigest) {
+    rmSync(tmpDir, { force: true, recursive: true });
+    throw new Error(
+      `Checksum mismatch for ${release.assetName}: expected ${expectedDigest}, got ${actualDigest}. Refusing to install.`,
+    );
+  }
+
   chmodSync(tmpPath, 0o755);
 
   try {

@@ -6,6 +6,52 @@ import type {
   ServiceConfig,
 } from '../types/index.ts';
 
+// True when `ip` is any form of the IPv6 unspecified address: `::`,
+// `0:0:0:0:0:0:0:0`, or any variant where `::` expansion produces all-zero
+// groups (e.g. `0::`, `::0:0`, `0:0::0`).
+function isIpv6Wildcard(ip: string): boolean {
+  if (!ip.includes(':')) {
+    return false;
+  }
+  const halves = ip.split('::');
+  if (halves.length > 2) {
+    return false;
+  }
+  const head = halves[0] ? halves[0].split(':') : [];
+  const tail = halves.length === 2 && halves[1] ? halves[1].split(':') : [];
+  if (halves.length === 1 && head.length !== 8) {
+    return false;
+  }
+  return [...head, ...tail].every((g) => /^0+$/.test(g));
+}
+
+function isIpv6Loopback(ip: string): boolean {
+  if (ip === '::1') {
+    return true;
+  }
+  // Long forms `0:0:0:0:0:0:0:1`, `0::1`, etc.
+  if (!ip.includes(':')) {
+    return false;
+  }
+  const halves = ip.split('::');
+  if (halves.length > 2) {
+    return false;
+  }
+  const head = halves[0] ? halves[0].split(':') : [];
+  const tail = halves.length === 2 && halves[1] ? halves[1].split(':') : [];
+  if (halves.length === 1 && head.length !== 8) {
+    return false;
+  }
+  const groups = [...head, ...tail];
+  if (groups.length === 0) {
+    return false;
+  }
+  const last = groups[groups.length - 1];
+  return (
+    groups.slice(0, -1).every((g) => /^0+$/.test(g)) && /^0*1$/.test(last ?? '')
+  );
+}
+
 function sanitizeProjectServices(
   services: Record<string, ServiceConfig>,
 ): Record<string, ServiceConfig> {
@@ -21,33 +67,50 @@ function sanitizeProjectServices(
       }
       return v;
     });
-    const ports = (svc.ports ?? []).map((p) => {
-      const parts = p.split(':');
-      if (parts.length === 1) {
-        // `docker run -p <containerPort>` publishes to a random host port on
-        // 0.0.0.0, so a bare port is not container-only — reject it.
-        throw new Error(
-          `Project service '${name}' port '${p}' would publish on all interfaces; ` +
-            'use "127.0.0.1:<host>:<container>" or set profile-level ' +
-            'allowProjectHostMounts: true.',
-        );
-      }
-      if (parts.length >= 3) {
-        const ip = parts[0];
-        if (ip !== '127.0.0.1' && ip !== 'localhost') {
-          throw new Error(
-            `Project service '${name}' port '${p}' binds to ${ip || '0.0.0.0'}; ` +
-              'only 127.0.0.1 is allowed without profile-level ' +
-              'allowProjectHostMounts: true.',
-          );
-        }
-        return p;
-      }
-      return `127.0.0.1:${p}`;
-    });
+    const ports = (svc.ports ?? []).map((p) => sanitizePort(name, p));
     out[name] = { ...svc, ports, volumes };
   }
   return out;
+}
+
+function sanitizePort(serviceName: string, spec: string): string {
+  // Bracketed IPv6 host: [ip]:host:container. Match this first because its
+  // colons would otherwise fool a naive split-by-colon.
+  const bracketed = spec.match(/^\[([^\]]+)\]:(.+)$/);
+  if (bracketed) {
+    const ip = bracketed[1] ?? '';
+    if (isIpv6Loopback(ip)) {
+      return spec;
+    }
+    if (isIpv6Wildcard(ip)) {
+      throw new Error(
+        `Project service '${serviceName}' port '${spec}' binds to all IPv6 interfaces; ` +
+          'only ::1 / 127.0.0.1 is allowed without profile-level allowProjectHostMounts: true.',
+      );
+    }
+    throw new Error(
+      `Project service '${serviceName}' port '${spec}' binds to ${ip}; ` +
+        'only ::1 / 127.0.0.1 is allowed without profile-level allowProjectHostMounts: true.',
+    );
+  }
+  const parts = spec.split(':');
+  if (parts.length === 1) {
+    throw new Error(
+      `Project service '${serviceName}' port '${spec}' would publish on all interfaces; ` +
+        'use "127.0.0.1:<host>:<container>" or set profile-level allowProjectHostMounts: true.',
+    );
+  }
+  if (parts.length >= 3) {
+    const ip = parts[0];
+    if (ip !== '127.0.0.1' && ip !== 'localhost') {
+      throw new Error(
+        `Project service '${serviceName}' port '${spec}' binds to ${ip || '0.0.0.0'}; ` +
+          'only 127.0.0.1 / ::1 is allowed without profile-level allowProjectHostMounts: true.',
+      );
+    }
+    return spec;
+  }
+  return `127.0.0.1:${spec}`;
 }
 
 export function mergeConfigs(
