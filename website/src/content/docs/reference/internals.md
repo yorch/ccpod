@@ -21,15 +21,34 @@ Docker operations use the `docker` CLI via `Bun.spawn` — no Docker SDK depende
 
 ## Core types
 
-All shared types live in `src/types/index.ts`.
+Most shared types live in `src/types/index.ts`. The `ContainerSpec` type is the exception — it is declared in `src/container/builder.ts` next to its builder.
 
 ```typescript
 export type SyncStrategy = 'always' | 'daily' | 'pin';
-export type MergeStrategy = 'deep' | 'override';
-export type StateMode = 'ephemeral' | 'persistent';
-export type NetworkPolicy = 'full' | 'restricted';
-export type AuthType = 'api-key' | 'oauth';
-export type ClaudeMdMerge = 'append' | 'override';
+export type PermissionsPreset = 'conservative' | 'moderate' | 'permissive';
+
+type MergeStrategy = 'deep' | 'override';
+type StateMode = 'ephemeral' | 'persistent';
+type NetworkPolicy = 'full' | 'restricted';
+type AuthType = 'api-key' | 'oauth';
+type ClaudeMdMerge = 'append' | 'override';
+
+interface PortsConfig {
+  autoDetectMcp: boolean;
+  list: string[];
+}
+
+interface PortMapping {
+  host: number;
+  container: number;
+}
+
+export interface ServiceConfig {
+  image: string;
+  env?: Record<string, string>;
+  volumes?: string[];
+  ports?: string[];
+}
 
 export interface ProfileConfig {
   name: string;
@@ -52,19 +71,19 @@ export interface ProfileConfig {
     keyEnv?: string;
     keyFile?: string;
   };
+  permissions?: PermissionsPreset;
+  plugins: string[];
   state: StateMode;
   ssh: {
     agentForward: boolean;
     mountSshDir: boolean;
   };
+  isolation: boolean;
   network: {
     policy: NetworkPolicy;
     allow: string[];
   };
-  ports: {
-    list: string[];
-    autoDetectMcp: boolean;
-  };
+  ports: PortsConfig;
   services: Record<string, ServiceConfig>;
   env: string[];
 }
@@ -83,24 +102,13 @@ export interface ProjectConfig {
   env?: string[];
 }
 
-export interface PortMapping {
-  host: number;
-  container: number;
-}
-
-export interface ServiceConfig {
-  image: string;
-  env?: Record<string, string>;
-  volumes?: string[];
-  ports?: string[];
-}
-
 // Fully resolved config after all layers merged
 export interface ResolvedConfig {
   profileName: string;
   image: string;
   dockerfile?: string;
   auth: ProfileConfig['auth'];
+  autoDetectMcp: boolean;
   state: StateMode;
   ssh: ProfileConfig['ssh'];
   network: ProfileConfig['network'];
@@ -108,10 +116,13 @@ export interface ResolvedConfig {
   services: Record<string, ServiceConfig>;
   env: Record<string, string>;
   init: string[];
+  plugins: string[];
   mergedConfigDir: string;
   claudeArgs: string[];
 }
 ```
+
+`ContainerSpec` is consumed by `src/container/runner.ts` and by `buildContainerSpec` callers in `src/cli/commands/`.
 
 ## ~/.claude assembly
 
@@ -124,7 +135,8 @@ Host mounts                     Inside container         ~/.claude/ result
   settings.json                                          CLAUDE.md     (copied)
   CLAUDE.md                                              skills/       (copied)
   hooks/                                                 hooks/        (copied)
-  skills/
+  skills/                                                extensions/   (copied)
+  extensions/                                            …             (copied)
 
 ~/.ccpod/creds/<p>/  ──rw──►   /ccpod/credentials/ ──►  *.json auth files
                                                           (overlays config)
@@ -136,16 +148,20 @@ ccpod-plugins-<p>   (volume) ► /ccpod/plugins/     ──►  plugins/  ← sy
 $PWD                 ──rw──►   /workspace/
 ```
 
-Full `entrypoint.sh`:
+Abridged `entrypoint.sh` (full source: [`docker/entrypoint.sh`](https://github.com/yorch/ccpod/blob/main/docker/entrypoint.sh)):
 
 ```sh
 #!/bin/sh
 set -e
 
-CLAUDE_DIR="${HOME}/.claude"
+# Entrypoint runs as root for setup (iptables, file seeding), then drops to
+# the 'node' user (uid 1000) before exec'ing claude. This satisfies Claude
+# Code's refusal to run --dangerously-skip-permissions as root.
+NODE_HOME=/home/node
+CLAUDE_DIR="${CLAUDE_CONFIG_DIR:-${NODE_HOME}/.claude}"
 mkdir -p "${CLAUDE_DIR}"
 
-# 1. Seed config (CLAUDE.md, settings.json, skills, hooks) — ro source → rw dest
+# 1. Seed config (CLAUDE.md, settings.json, skills/, hooks/, extensions/, …) — ro source → rw dest
 if [ -d /ccpod/config ]; then
   cp -r /ccpod/config/. "${CLAUDE_DIR}/"
 fi
@@ -155,7 +171,7 @@ if [ -f /ccpod/credentials/.credentials.json ]; then
   cp -f /ccpod/credentials/.credentials.json "${CLAUDE_DIR}/.credentials.json"
 fi
 if [ -f /ccpod/credentials/.claude.json ]; then
-  cp -f /ccpod/credentials/.claude.json "${HOME}/.claude.json"
+  cp -f /ccpod/credentials/.claude.json "${NODE_HOME}/.claude.json"
 fi
 
 # 3. Plugins — symlink named volume so installs persist across runs
@@ -163,23 +179,31 @@ mkdir -p /ccpod/plugins
 rm -rf "${CLAUDE_DIR}/plugins"
 ln -sf /ccpod/plugins "${CLAUDE_DIR}/plugins"
 
-# 4. State — symlink host bind mount or tmpfs
+# 4. State — symlink named volume or tmpfs mount
 mkdir -p /ccpod/state/projects /ccpod/state/todos /ccpod/state/statsig
 for dir in projects todos statsig; do
   rm -rf "${CLAUDE_DIR}/${dir}"
   ln -sf "/ccpod/state/${dir}" "${CLAUDE_DIR}/${dir}"
 done
 
-# 5. Delta-install missing plugins (comma-separated list from env)
+# Fix ownership so the node user can read/write everything
+chown -R node:node "${CLAUDE_DIR}" "${NODE_HOME}" /ccpod/plugins /ccpod/state /ccpod/credentials 2>/dev/null || true
+
+# 5. Run user-defined init commands (as node user, in /workspace)
+if [ -f /ccpod/config/post-init.sh ]; then
+  HOME="${NODE_HOME}" PATH="${PATH}" gosu node sh -c 'cd /workspace && sh /ccpod/config/post-init.sh'
+fi
+
+# 6. Delta-install missing plugins (comma-separated list from env)
 if [ -n "${CCPOD_PLUGINS_TO_INSTALL}" ]; then
   for plugin in $(printf '%s' "${CCPOD_PLUGINS_TO_INSTALL}" | tr ',' '\n'); do
     if [ -n "${plugin}" ] && [ ! -d "${CLAUDE_DIR}/plugins/${plugin}" ]; then
-      claude plugin install "${plugin}" 2>/dev/null || true
+      HOME="${NODE_HOME}" PATH="${PATH}" gosu node claude plugin install "${plugin}" 2>/dev/null || true
     fi
   done
 fi
 
-# 6. Network restriction — iptables OUTPUT rules when policy=restricted
+# 7. Network restriction — iptables OUTPUT rules when policy=restricted
 #    (requires --cap-add NET_ADMIN; ccpod adds this automatically)
 if [ "${CCPOD_NETWORK_POLICY}" = "restricted" ]; then
   iptables -A OUTPUT -o lo -j ACCEPT
@@ -190,15 +214,20 @@ if [ "${CCPOD_NETWORK_POLICY}" = "restricted" ]; then
   iptables -A OUTPUT -j DROP
 fi
 
-# Run claude as background job; signal-forward ensures docker stop works correctly.
+# Shell mode (ccpod shell): exec directly so bash gets TTY process group control.
+if [ "${CCPOD_SHELL_MODE}" = "1" ]; then
+  exec env HOME="${NODE_HOME}" PATH="${PATH}" gosu node "$@"
+fi
+
+# Normal mode: run as background job so signals forward cleanly.
 # On exit, write credentials back so they survive container removal.
-"$@" &
+HOME="${NODE_HOME}" PATH="${PATH}" gosu node "$@" &
 CHILD_PID=$!
 trap "kill -TERM $CHILD_PID 2>/dev/null" TERM INT HUP
 wait $CHILD_PID || STATUS=$?
 STATUS=${STATUS:-0}
 cp -f "${CLAUDE_DIR}/.credentials.json" /ccpod/credentials/.credentials.json 2>/dev/null || true
-cp -f "${HOME}/.claude.json" /ccpod/credentials/.claude.json 2>/dev/null || true
+cp -f "${NODE_HOME}/.claude.json" /ccpod/credentials/.claude.json 2>/dev/null || true
 exit $STATUS
 ```
 
@@ -252,11 +281,11 @@ Source precedence: profile → project → CLI override (later wins).
 ```
 ccpod run [-- claude-args]
 │
-├─ 1. Detect container runtime
+├─ 1. Detect container runtime (first matching socket wins)
 │     try: OrbStack (~/.orbstack/run/docker.sock)
-│          Docker (/var/run/docker.sock, ~/.docker/run/docker.sock)
-│          Colima (~/.colima/default/docker.sock, ~/.colima/docker.sock)
-│          Podman ($XDG_RUNTIME_DIR/podman/podman.sock)
+│          Docker   ($DOCKER_SOCKET_PATH or /var/run/docker.sock, ~/.docker/run/docker.sock)
+│          Colima   (~/.colima/default/docker.sock, ~/.colima/docker.sock)
+│          Podman   ($XDG_RUNTIME_DIR/podman/podman.sock)
 │     error if none available
 │
 ├─ 2. Resolve profile name
@@ -317,36 +346,41 @@ Integration tests require a real Docker socket and a minimal test image.
 
 ```
 tests/
-├── unit/
-│   ├── config/merger.test.ts
-│   ├── config/schema.test.ts
-│   ├── mcp/ports.test.ts
-│   └── profile/lock.test.ts
+├── unit/                              # 23 unit-test files; run without Docker
+│   ├── auth/resolver.test.ts
+│   ├── cli/config/{get,set}.test.ts
+│   ├── config/{loader,merger,permissions,schema,writer}.test.ts
+│   ├── container/{builder,runner}.test.ts
+│   ├── global/config.test.ts
+│   ├── image/{hash,manager}.test.ts
+│   ├── init/wizard.test.ts
+│   ├── mcp/parser.test.ts
+│   ├── profile/{exporter,git-sync,installer,installer.git,lock,manager}.test.ts
+│   ├── runtime/detector.test.ts
+│   └── update/checker.test.ts
 ├── integration/
-│   └── container/run.test.ts
-└── fixtures/
-    ├── profile.yml
-    ├── .ccpod.yml
-    └── .mcp.json
+│   └── container/docker.test.ts       # requires a real Docker socket
+└── fixtures/                          # profile.yml / .ccpod.yml / .mcp.json
 ```
 
 ## Runtime socket paths
 
-`src/runtime/detector.ts` tries these sockets in order until one is reachable:
+`src/runtime/detector.ts` tries these sockets in order until one is reachable. OrbStack is preferred over Docker because OrbStack also installs the standard `/var/run/docker.sock` symlink, so this order ensures the native OrbStack socket is chosen when both exist:
 
 ```typescript
 const RUNTIME_CANDIDATES = [
   {
-    name: 'docker',
-    sockets: [
-      '/var/run/docker.sock',
-      `${HOME}/.docker/run/docker.sock`,
-    ],
-  },
-  {
     name: 'orbstack',
     sockets: [
       `${HOME}/.orbstack/run/docker.sock`,
+    ],
+  },
+  {
+    name: 'docker',
+    sockets: [
+      // Honors $DOCKER_SOCKET_PATH first, falling back to the default path
+      DOCKER_SOCKET_PATH ?? '/var/run/docker.sock',
+      `${HOME}/.docker/run/docker.sock`,
     ],
   },
   {
@@ -366,7 +400,7 @@ const RUNTIME_CANDIDATES = [
 ];
 ```
 
-Override detection entirely by setting `DOCKER_SOCKET_PATH` in your environment.
+Override the Docker socket path entirely by setting `DOCKER_SOCKET_PATH` in your environment (useful for non-standard Docker installs and tests).
 
 Once a runtime is detected, `src/runtime/docker.ts` selects the CLI binary: `podman` when the runtime name is `podman`, `docker` for everything else. No `podman-docker` shim required.
 

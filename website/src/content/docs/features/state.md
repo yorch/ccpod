@@ -3,7 +3,7 @@ title: State Persistence
 description: Choose between ephemeral and persistent Claude state.
 ---
 
-Claude Code keeps history, projects, todos, and sessions in `~/.claude/`. ccpod treats that data as **state** and lets you choose how it lives across runs.
+Claude Code keeps projects, todos, and feature-flag state under `~/.claude/`. ccpod treats that data as **state** and lets you choose how it lives across runs.
 
 ## Modes
 

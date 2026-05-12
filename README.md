@@ -20,7 +20,7 @@ curl -fsSL https://ccpod.brnby.com/install.sh | sh
 bun run build   # outputs dist/ccpod
 ```
 
-The installer places `ccpod` in `/usr/local/bin` by default. Override with `CCPOD_INSTALL_DIR=~/.local/bin` or pin a version with `CCPOD_VERSION=v0.2.0`.
+The installer places `ccpod` in `/usr/local/bin` by default. Override with `CCPOD_INSTALL_DIR=~/.local/bin` or pin a version with `CCPOD_VERSION=v0.4.0`.
 
 ---
 
@@ -146,6 +146,9 @@ ccpod run --profile <name>       Use a specific profile
 ccpod run --env KEY=VALUE        Pass/override env var for this run
 ccpod run --rebuild              Force image rebuild or repull
 ccpod run --no-state             Force ephemeral state for this run
+ccpod run --resume <session-id>  Resume a previous Claude session
+
+ccpod shell                      Open an interactive shell in the container
 
 ccpod init                       First-run setup wizard
 ccpod init --profile <name>      Create a named profile
@@ -154,6 +157,8 @@ ccpod profile create <name>
 ccpod profile list
 ccpod profile update <name>      Force-pull git-based config
 ccpod profile delete <name>
+ccpod profile install <source>   Install a profile from URL, git repo, or base64 blob
+ccpod profile export <name>      Print a portable base64-encoded profile blob
 
 ccpod plugins list [--profile <name>]
 ccpod plugins update [--profile <name>]   Flush and reinstall all plugins

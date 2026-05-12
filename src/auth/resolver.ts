@@ -29,7 +29,7 @@ export function resolveAuth(
   return {};
 }
 
-export function interpolateHostEnv(
+function interpolateHostEnv(
   value: string,
   context: { source: string },
   warned: Set<string>,

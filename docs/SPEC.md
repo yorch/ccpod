@@ -68,7 +68,7 @@ The `~/.claude/` directory has three distinct categories requiring different per
 |---|---|---|
 | **Config** (read-only) | `settings.json`, `CLAUDE.md`, `skills/`, `hooks/` | Temp dir seeded from profile config source; bind-mounted read-only |
 | **Credentials** (read-write) | OAuth tokens, session auth, API key cache | `~/.ccpod/credentials/<profile>/` on host; bind-mounted read-write |
-| **State** (configurable) | `history.jsonl`, `projects/`, `todos/`, `sessions/` | `~/.ccpod/state/<profile>/` bind mount (`persistent`) or tmpfs (`ephemeral`) |
+| **State** (configurable) | `projects/`, `todos/`, `statsig/` | `~/.ccpod/state/<profile>/` bind mount (`persistent`) or tmpfs (`ephemeral`) |
 
 | ID | Requirement |
 |---|---|
@@ -196,7 +196,7 @@ auth:
   # keyFile: /run/secrets/api-key
 
 claudeArgs: []                      # extra flags passed to claude on every run
-# claudeArgs: ["--dangerously-skip-permissions", "--model", "claude-opus-4-5"]
+# claudeArgs: ["--dangerously-skip-permissions", "--model", "claude-opus-4-7"]
 
 state: ephemeral                    # "ephemeral" | "persistent"
 
@@ -253,15 +253,19 @@ env:
 ## CLI Interface
 
 ```
-ccpod [-- claude-args]              Interactive session
-ccpod run "prompt text"             Headless mode
+ccpod run [prompt|-- claude-args]   Interactive session or headless mode
 ccpod run --file prompt.txt         Headless from file
+ccpod run --resume <session-id>     Resume a prior Claude session
+ccpod shell                         Open an interactive shell in the container
 ccpod init                          First-run setup wizard
+ccpod update                        Self-update the ccpod binary
 
 ccpod profile create <name>
 ccpod profile list
 ccpod profile update <name>
 ccpod profile delete <name>
+ccpod profile install <source>      Install a profile from a URL, git repo, or base64 blob
+ccpod profile export <name>         Print a portable base64-encoded profile blob
 
 ccpod plugins list [profile]
 ccpod plugins update [profile]
@@ -270,13 +274,15 @@ ccpod image build [profile]
 ccpod image init [profile]
 ccpod image pull [profile]
 
-ccpod down                          Stop container + sidecars
+ccpod down                          Stop container + sidecars (--all clears across host)
 ccpod ps                            Show running ccpod containers
 
 ccpod state clear [profile]         Delete state volume (reset history/memory)
 
-ccpod config show                   Resolved merged config
+ccpod config show                   Resolved merged config (--json for machine output)
 ccpod config validate               Validate .ccpod.yml
+ccpod config get <key>              Read a global ccpod setting (e.g. autoCheckUpdates)
+ccpod config set <key> <value>      Write a global ccpod setting
 
 Flags:
   --rebuild                         Force image rebuild (when dockerfile: is set)
