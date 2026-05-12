@@ -19,6 +19,18 @@ function isGitHost(input: string): boolean {
   }
 }
 
+export function describeSource(source: InstallSource): string {
+  switch (source.type) {
+    case 'git':
+    case 'url':
+      return source.url;
+    case 'file':
+      return source.path;
+    case 'base64':
+      return '<inline base64>';
+  }
+}
+
 export function detectSource(input: string): InstallSource {
   if (/^https?:\/\/.+\.git$/.test(input) || isGitHost(input)) {
     return { type: 'git', url: input };

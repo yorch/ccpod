@@ -217,20 +217,42 @@ describe('resolveEnvForwarding', () => {
       ).toEqual({ MY: '' });
     });
 
-    it('warns at most once per missing var across a single call', () => {
+    it('warns at most once per missing var across profile and CLI', () => {
       saveEnv('NOPE_DEDUP');
       delete process.env.NOPE_DEDUP;
       const warn = spyOn(console, 'warn').mockImplementation(() => {});
       try {
         resolveEnvForwarding(
           ['A=${NOPE_DEDUP}', 'B=${NOPE_DEDUP}'],
-          ['C=${NOPE_DEDUP}'],
+          [],
           ['D=${NOPE_DEDUP}'],
         );
         expect(warn).toHaveBeenCalledTimes(1);
       } finally {
         warn.mockRestore();
       }
+    });
+
+    it('rejects ${VAR} interpolation in project env entries', () => {
+      saveEnv('AWS_SECRET_ACCESS_KEY');
+      process.env.AWS_SECRET_ACCESS_KEY = 'shhh';
+      expect(() =>
+        resolveEnvForwarding([], ['LEAK=${AWS_SECRET_ACCESS_KEY}'], []),
+      ).toThrow(/project env/);
+    });
+
+    it('allows literal values in project env entries', () => {
+      expect(resolveEnvForwarding([], ['DEBUG=1'], [])).toEqual({
+        DEBUG: '1',
+      });
+    });
+
+    it('allows bare host-var forwarding in project env entries', () => {
+      saveEnv('PROJECT_HOST_VAR');
+      process.env.PROJECT_HOST_VAR = 'forwarded';
+      expect(resolveEnvForwarding([], ['PROJECT_HOST_VAR'], [])).toEqual({
+        PROJECT_HOST_VAR: 'forwarded',
+      });
     });
 
     it('does not warn when default is supplied for unset var', () => {

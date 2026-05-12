@@ -33,6 +33,17 @@ jobs:
           bun build --compile --minify --target=bun-darwin-x64   src/cli/index.ts --outfile dist/ccpod-darwin-x64
           bun build --compile --minify --target=bun-darwin-arm64 src/cli/index.ts --outfile dist/ccpod-darwin-arm64
 
+      - name: Generate checksums
+        working-directory: dist
+        run: |
+          sha256sum \
+            ccpod-linux-x64 \
+            ccpod-linux-arm64 \
+            ccpod-darwin-x64 \
+            ccpod-darwin-arm64 \
+            > SHASUMS256.txt
+          cat SHASUMS256.txt
+
       - name: Create release
         env:
           GH_TOKEN: ${{ github.token }}
@@ -44,4 +55,5 @@ jobs:
             dist/ccpod-linux-x64 \
             dist/ccpod-linux-arm64 \
             dist/ccpod-darwin-x64 \
-            dist/ccpod-darwin-arm64
+            dist/ccpod-darwin-arm64 \
+            dist/SHASUMS256.txt

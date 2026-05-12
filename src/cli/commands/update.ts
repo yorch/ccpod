@@ -42,7 +42,7 @@ export default defineCommand({
     process.stdout.write(chalk.dim(`Downloading ${latest.version}...`));
 
     try {
-      await downloadAndReplace(latest.url, process.execPath);
+      await downloadAndReplace(latest, process.execPath);
     } catch (err) {
       process.stdout.write('\r\x1b[K');
       const code = (err as NodeJS.ErrnoException).code;

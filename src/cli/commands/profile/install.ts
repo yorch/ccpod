@@ -1,11 +1,15 @@
 import { chmodSync, mkdirSync, rmSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
-import { input, select } from '@inquirer/prompts';
+import { confirm, input, select } from '@inquirer/prompts';
 import chalk from 'chalk';
 import { defineCommand } from 'citty';
 import { parseDocument, parse as parseYaml } from 'yaml';
 import { profileConfigSchema } from '../../../config/schema.ts';
-import { detectSource, fetchProfileYaml } from '../../../profile/installer.ts';
+import {
+  describeSource,
+  detectSource,
+  fetchProfileYaml,
+} from '../../../profile/installer.ts';
 import {
   ensureCcpodDirs,
   getProfileDir,
@@ -21,6 +25,12 @@ export default defineCommand({
         'Profile source: git URL, raw HTTPS URL, file path, or base64 string',
       type: 'positional',
     },
+    yes: {
+      alias: 'y',
+      default: false,
+      description: 'Skip confirmation prompts for remote sources',
+      type: 'boolean',
+    },
   },
   meta: {
     description:
@@ -33,6 +43,26 @@ export default defineCommand({
     }
 
     const source = detectSource(args.source);
+
+    if (!args.yes && (source.type === 'git' || source.type === 'url')) {
+      console.log(
+        `About to fetch a profile from ${chalk.bold(describeSource(source))}.`,
+      );
+      console.log(
+        chalk.yellow(
+          '  Profiles can declare init scripts, sidecar images, and git config that runs on every ccpod run.',
+        ),
+      );
+      console.log(
+        chalk.yellow('  Only install profiles from sources you trust.'),
+      );
+      const ok = await confirm({ default: false, message: 'Continue?' });
+      if (!ok) {
+        console.log('Aborted.');
+        return;
+      }
+    }
+
     console.log(chalk.dim(`Fetching profile (${source.type})...`));
 
     let yaml: string;

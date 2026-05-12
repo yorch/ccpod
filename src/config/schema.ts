@@ -15,19 +15,74 @@ const serviceConfigSchema = z.object({
   volumes: z.array(z.string()).optional(),
 });
 
+// Reject refs that could be interpreted as flags or contain shell/path
+// traversal metacharacters. Git refs honor `--upload-pack=…` as an option,
+// which is a documented RCE vector when refs are user-controlled.
+const gitRefSchema = z
+  .string()
+  .min(1)
+  .max(255)
+  .refine((s) => !s.startsWith('-'), {
+    message: 'git ref must not start with "-"',
+  })
+  .refine((s) => !s.includes('..'), {
+    message: 'git ref must not contain ".."',
+  })
+  .refine((s) => !/[\s;&|`$<>'"\\]/.test(s), {
+    message: 'git ref must not contain whitespace or shell metacharacters',
+  });
+
+// Allow https://, http://, ssh://, git://, or scp-style `git@host:path`.
+// Reject anything starting with `-` (would be parsed as a git flag).
+const gitRepoSchema = z
+  .string()
+  .min(1)
+  .max(2048)
+  .refine((s) => !s.startsWith('-'), {
+    message: 'git repo URL must not start with "-"',
+  })
+  .refine(
+    (s) =>
+      /^https?:\/\//.test(s) ||
+      /^ssh:\/\//.test(s) ||
+      /^git:\/\//.test(s) ||
+      /^[a-zA-Z0-9_.-]+@[a-zA-Z0-9.-]+:/.test(s),
+    {
+      message:
+        'git repo URL must use https://, http://, ssh://, git://, or user@host:path form',
+    },
+  );
+
+// Limit keyFile to paths under ~/.ccpod (typically ~/.ccpod/credentials/<profile>/...).
+// Anything else risks shipping arbitrary host file contents into the container.
+const keyFileSchema = z
+  .string()
+  .min(1)
+  .refine(
+    (s) =>
+      (s.startsWith('~/.ccpod/') || s.startsWith('~/.ccpod')) &&
+      !s.includes('..'),
+    {
+      message:
+        'auth.keyFile must be a path under ~/.ccpod (e.g. ~/.ccpod/credentials/<profile>/key); use keyEnv for keys elsewhere',
+    },
+  );
+
 export const profileConfigSchema = z.object({
+  allowProjectHostMounts: z.boolean().default(false),
+  allowProjectInit: z.boolean().default(false),
   auth: z
     .object({
       keyEnv: z.string().default('ANTHROPIC_API_KEY'),
-      keyFile: z.string().optional(),
+      keyFile: keyFileSchema.optional(),
       type: z.enum(['api-key', 'oauth']).default('api-key'),
     })
     .default({ keyEnv: 'ANTHROPIC_API_KEY', type: 'api-key' }),
   claudeArgs: z.array(z.string()).default([]),
   config: z.object({
     path: z.string().optional(),
-    ref: z.string().optional(),
-    repo: z.string().optional(),
+    ref: gitRefSchema.optional(),
+    repo: gitRepoSchema.optional(),
     source: z.enum(['local', 'git']),
     sync: z.enum(['always', 'daily', 'pin']).default('daily'),
   }),

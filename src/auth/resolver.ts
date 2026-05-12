@@ -63,22 +63,36 @@ export function resolveEnvForwarding(
   const resolved: Record<string, string> = {};
   const warned = new Set<string>();
 
-  const apply = (entries: string[], source: string) => {
+  const apply = (
+    entries: string[],
+    source: string,
+    { allowInterpolation }: { allowInterpolation: boolean },
+  ) => {
     for (const entry of entries) {
       const eqIdx = entry.indexOf('=');
       if (eqIdx !== -1) {
         const name = entry.slice(0, eqIdx);
         const rawValue = entry.slice(eqIdx + 1);
-        resolved[name] = interpolateHostEnv(rawValue, { source }, warned);
+        if (!allowInterpolation && /\$\{[A-Za-z_]/.test(rawValue)) {
+          // A repo's .ccpod.yml is untrusted; interpolation would let it
+          // exfiltrate arbitrary host env vars (e.g. AWS_SECRET_ACCESS_KEY)
+          // into the container. Profile and CLI sources remain trusted.
+          throw new Error(
+            `${source} entry '${name}=…' uses \${VAR} interpolation, which is only allowed in profile or --env entries. Use a literal value or forward the variable bare.`,
+          );
+        }
+        resolved[name] = allowInterpolation
+          ? interpolateHostEnv(rawValue, { source }, warned)
+          : rawValue;
       } else if (process.env[entry] !== undefined) {
         resolved[entry] = process.env[entry] ?? '';
       }
     }
   };
 
-  apply(profileKeys, 'profile env');
-  apply(projectKeys, 'project env');
-  apply(cliOverrides, 'CLI --env');
+  apply(profileKeys, 'profile env', { allowInterpolation: true });
+  apply(projectKeys, 'project env', { allowInterpolation: false });
+  apply(cliOverrides, 'CLI --env', { allowInterpolation: true });
 
   return resolved;
 }

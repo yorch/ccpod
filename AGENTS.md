@@ -91,6 +91,15 @@ Docker volumes:
 - **Config temp dirs** are written mode `0o700`, files mode `0o600`.
 - **`SSH_AUTH_SOCK`** is rejected if it contains `:` (would corrupt Docker bind spec).
 - **`DOCKER_SOCKET_PATH`** env var overrides the hardcoded `/var/run/docker.sock` path (useful in tests and non-standard Docker setups).
+- **Profile `config.repo`** must use `https://`, `http://`, `ssh://`, `git://`, or scp-style (`user@host:path`). **`config.ref`** rejects values starting with `-`, containing `..`, or carrying shell metacharacters — closes git option-injection (`--upload-pack=...`) RCE.
+- **`auth.keyFile`** must point inside `~/.ccpod/` (typically `~/.ccpod/credentials/<profile>/...`); use `keyEnv` to load keys stored elsewhere.
+- **`profile install`** prompts for confirmation on `git` and `url` sources before fetching; pass `--yes` to bypass.
+- **Updater (`ccpod update`)** verifies the downloaded binary's SHA-256 against `SHASUMS256.txt` from the release; releases without that asset are refused.
+- **Project `.ccpod.yml` trust boundary** — a repo's project config is untrusted by default:
+  - `services[].volumes`: host-path mounts rejected; only named volumes allowed unless the profile sets `allowProjectHostMounts: true`.
+  - `services[].ports`: `0.0.0.0:` and non-localhost binds rejected; two-part `host:container` is auto-localized to `127.0.0.1:`.
+  - `env` entries from project may not use `${VAR}` interpolation (would exfiltrate host secrets). Profile and `--env` entries still support interpolation.
+  - `init:` commands are ignored unless the profile sets `allowProjectInit: true`.
 - **Project `.claude/settings.json`** deep-merges into profile settings (project wins on conflicts) — same trust level as `claudeArgs` passthrough. Only run ccpod against repos you control.
 
 ### Testing

