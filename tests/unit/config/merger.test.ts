@@ -270,6 +270,15 @@ describe('mergeConfigs', () => {
     expect(result.services.db?.ports).toEqual(['127.0.0.1:5432:5432']);
   });
 
+  it('rejects project service single-part port (would publish on 0.0.0.0)', () => {
+    const profile = makeProfile();
+    expect(() =>
+      mergeConfigs(profile, {
+        services: { db: { image: 'postgres', ports: ['5432'] } },
+      }),
+    ).toThrow(/publish on all interfaces/);
+  });
+
   it('accepts project service named-volume mount', () => {
     const profile = makeProfile();
     const result = mergeConfigs(profile, {

@@ -23,6 +23,15 @@ function sanitizeProjectServices(
     });
     const ports = (svc.ports ?? []).map((p) => {
       const parts = p.split(':');
+      if (parts.length === 1) {
+        // `docker run -p <containerPort>` publishes to a random host port on
+        // 0.0.0.0, so a bare port is not container-only — reject it.
+        throw new Error(
+          `Project service '${name}' port '${p}' would publish on all interfaces; ` +
+            'use "127.0.0.1:<host>:<container>" or set profile-level ' +
+            'allowProjectHostMounts: true.',
+        );
+      }
       if (parts.length >= 3) {
         const ip = parts[0];
         if (ip !== '127.0.0.1' && ip !== 'localhost') {
@@ -34,10 +43,7 @@ function sanitizeProjectServices(
         }
         return p;
       }
-      if (parts.length === 2) {
-        return `127.0.0.1:${p}`;
-      }
-      return p;
+      return `127.0.0.1:${p}`;
     });
     out[name] = { ...svc, ports, volumes };
   }

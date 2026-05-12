@@ -287,7 +287,7 @@ A repo's `.ccpod.yml` ships with the codebase being run inside the sandbox, so i
 - `services[].volumes` from project must be named volumes (`<name>:<path>[:opts]`). Host-path mounts (`/foo`, `./foo`, `~/foo`) are rejected.
 - `services[].ports` from project may bind only to `127.0.0.1` / `localhost`. Two-part `host:container` entries are auto-rewritten to `127.0.0.1:host:container`.
 - `env` from project may not use `${VAR}` interpolation (see above).
-- `init:` from project is silently ignored.
+- `init:` from project is dropped (with a one-line `console.warn`).
 
 To opt out, the profile may set `allowProjectHostMounts: true` (for sidecar volumes/ports) or `allowProjectInit: true` (for init commands). Both default to `false`.
 
