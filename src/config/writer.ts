@@ -86,20 +86,29 @@ export function writeMergedConfig(
   const hash = createHash('sha256').update(content).digest('hex').slice(0, 16);
   const outDir = join(tmpdir(), `ccpod-${hash}`);
 
-  if (existsSync(outDir)) {
-    // On multi-user hosts another user could pre-create this path. Refuse
-    // to reuse it unless we own the directory; refuse if it's a symlink.
-    const stat = lstatSync(outDir);
-    if (stat.isSymbolicLink() || !stat.isDirectory()) {
+  // Single lstat (catching ENOENT) avoids the TOCTOU window between an
+  // existsSync probe and a follow-up lstat. On multi-user hosts another
+  // user must not be able to pre-seed the deterministic path, so we also
+  // require it to be a regular directory owned by us.
+  let existing: ReturnType<typeof lstatSync> | undefined;
+  try {
+    existing = lstatSync(outDir);
+  } catch (err) {
+    if ((err as NodeJS.ErrnoException).code !== 'ENOENT') {
+      throw err;
+    }
+  }
+  if (existing) {
+    if (existing.isSymbolicLink() || !existing.isDirectory()) {
       throw new Error(
         `Refusing to reuse merged-config path ${outDir}: not a regular directory.`,
       );
     }
     const ourUid =
       typeof process.getuid === 'function' ? process.getuid() : null;
-    if (ourUid !== null && stat.uid !== ourUid) {
+    if (ourUid !== null && existing.uid !== ourUid) {
       throw new Error(
-        `Refusing to reuse merged-config path ${outDir}: owned by uid ${stat.uid}, not ${ourUid}.`,
+        `Refusing to reuse merged-config path ${outDir}: owned by uid ${existing.uid}, not ${ourUid}.`,
       );
     }
     return outDir;

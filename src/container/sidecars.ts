@@ -2,6 +2,12 @@ import chalk from 'chalk';
 import { dockerExec } from '../runtime/docker.ts';
 import type { ServiceConfig } from '../types/index.ts';
 import { VERSION } from '../version.ts';
+import {
+  LABEL_PROFILE,
+  LABEL_PROJECT,
+  LABEL_TYPE,
+  LABEL_VERSION,
+} from './builder.ts';
 
 export function sidecarNetworkName(projectHash: string): string {
   return `ccpod-net-${projectHash}`;
@@ -94,13 +100,13 @@ async function startSidecar(
     '--network',
     networkName,
     '--label',
-    `ccpod.profile=${profileName}`,
+    `${LABEL_PROFILE}=${profileName}`,
     '--label',
-    `ccpod.project=${projectHash}`,
+    `${LABEL_PROJECT}=${projectHash}`,
     '--label',
-    `ccpod.type=${serviceName}`,
+    `${LABEL_TYPE}=${serviceName}`,
     '--label',
-    `ccpod.version=${VERSION}`,
+    `${LABEL_VERSION}=${VERSION}`,
   ];
 
   for (const [k, v] of Object.entries(svc.env ?? {})) {

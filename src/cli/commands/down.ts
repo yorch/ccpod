@@ -1,6 +1,10 @@
 import chalk from 'chalk';
 import { defineCommand } from 'citty';
-import { computeProjectHash } from '../../container/builder.ts';
+import {
+  computeProjectHash,
+  LABEL_PROFILE,
+  LABEL_PROJECT,
+} from '../../container/builder.ts';
 import {
   removeSidecarNetwork,
   sidecarNetworkName,
@@ -23,20 +27,18 @@ export default defineCommand({
     const currentProjectHash = computeProjectHash(process.cwd());
 
     const filterArgs: string[] = args.all
-      ? ['--filter', 'label=ccpod.profile']
-      : ['--filter', `label=ccpod.project=${currentProjectHash}`];
+      ? ['--filter', `label=${LABEL_PROFILE}`]
+      : ['--filter', `label=${LABEL_PROJECT}=${currentProjectHash}`];
 
     if (!args.all && args.profile) {
-      filterArgs.push('--filter', `label=ccpod.profile=${args.profile}`);
+      filterArgs.push('--filter', `label=${LABEL_PROFILE}=${args.profile}`);
     }
 
-    // Single inspect that returns id, name, status, and project label so the
-    // loop below stays at one round-trip per container instead of three.
     const { stdout } = await dockerExec([
       'ps',
       '-a',
       '--format',
-      '{{.ID}}|{{.Names}}|{{.Status}}|{{.Label "ccpod.project"}}',
+      `{{.ID}}|{{.Names}}|{{.Status}}|{{.Label "${LABEL_PROJECT}"}}`,
       ...filterArgs,
     ]);
     const rows = stdout
@@ -80,8 +82,6 @@ export default defineCommand({
       process.stdout.write(`Removing ${chalk.cyan(displayName)}... `);
       const rmResult = await dockerExec(['rm', row.id]);
       if (rmResult.exitCode !== 0) {
-        // A concurrent run may have removed the container already — treat
-        // "no such container" as success rather than failing the command.
         if (/no such container/i.test(rmResult.stderr)) {
           console.log(chalk.dim('already gone'));
         } else {
@@ -93,17 +93,15 @@ export default defineCommand({
       }
     }
 
-    // Remove each project's shared sidecar network, but only when no
-    // containers still reference it. This prevents `--profile` from tearing
-    // down the network while sibling profiles are still running, and ensures
-    // `--all` cleans up networks per project.
+    // Only drop a project's shared sidecar network once nothing references
+    // its label — sibling profiles may still be using it.
     for (const projectHash of touchedProjectHashes) {
       const { stdout: remaining } = await dockerExec([
         'ps',
         '-a',
         '-q',
         '--filter',
-        `label=ccpod.project=${projectHash}`,
+        `label=${LABEL_PROJECT}=${projectHash}`,
       ]);
       if (remaining.trim() === '') {
         await removeSidecarNetwork(sidecarNetworkName(projectHash)).catch(

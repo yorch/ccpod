@@ -7,37 +7,23 @@ import { runContainer } from '../../container/runner.ts';
 import { dockerExec } from '../../runtime/docker.ts';
 import { setupContainer } from './_setup.ts';
 
-function installSignalForwarding(
-  containerName: string,
-  tty: boolean,
-): () => void {
-  // In TTY mode, docker -it forwards Ctrl+C through to the container's own
-  // signal handler. Intercepting at the ccpod layer there only risks
-  // swallowing subsequent signals (the user could never Ctrl+C ccpod
-  // itself if attach wedged). Only register in headless mode.
-  if (tty) {
-    return () => {};
-  }
+function installSignalForwarding(containerName: string): () => void {
   let triggered = false;
-  const handler = (_signal: NodeJS.Signals) => {
+  const handler = () => {
     if (triggered) {
       return;
     }
     triggered = true;
-    // Fire-and-forget: dockerExec will eventually return; ccpod's main await
-    // resolves and process exits with the container's status.
     void dockerExec(['stop', '-t', '5', containerName]).catch(() => {});
-    // Detach so a second Ctrl+C falls through to Node's default handler and
-    // kills ccpod immediately.
+    detach();
+  };
+  const detach = () => {
     process.off('SIGINT', handler);
     process.off('SIGTERM', handler);
   };
   process.on('SIGINT', handler);
   process.on('SIGTERM', handler);
-  return () => {
-    process.off('SIGINT', handler);
-    process.off('SIGTERM', handler);
-  };
+  return detach;
 }
 
 export default defineCommand({
@@ -135,17 +121,15 @@ export default defineCommand({
       const spec = buildContainerSpec(config, cwd, tty, networkName);
       console.log(chalk.dim('Starting container...'));
 
-      // In TTY mode docker forwards Ctrl+C through to the container; in
-      // headless mode the docker child does not, so the container would be
-      // orphaned (left as "stopped" rather than removed). Forward SIGINT /
-      // SIGTERM by asking docker to stop the container; the docker run
-      // child then exits cleanly and runContainer's await resolves.
-      const cleanup = installSignalForwarding(spec.name, tty);
+      // In TTY mode docker -it forwards Ctrl+C to the container natively;
+      // only headless mode needs ccpod-side signal forwarding to stop the
+      // container so it is not orphaned.
+      const detach = tty ? () => {} : installSignalForwarding(spec.name);
       let exitCode: number;
       try {
         exitCode = await runContainer(spec);
       } finally {
-        cleanup();
+        detach();
       }
       if (tty && !args.resume) {
         const profileFlag = args.profile ? ` --profile ${args.profile}` : '';
