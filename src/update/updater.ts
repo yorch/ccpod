@@ -11,6 +11,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { Readable } from 'node:stream';
 import { pipeline } from 'node:stream/promises';
+import type { ReadableStream as NodeReadableStream } from 'node:stream/web';
 import { GITHUB_REPO } from '../constants.ts';
 
 const CHECKSUMS_ASSET = 'SHASUMS256.txt';
@@ -136,7 +137,11 @@ export async function downloadAndReplace(
     // ArrayBuffer for hashing, once as a Buffer for writing).
     const hash = createHash('sha256');
     await pipeline(
-      Readable.fromWeb(binaryRes.body as never),
+      // Cast is the documented workaround for the DOM vs. node:stream/web
+      // ReadableStream type drift in Node's typings.
+      Readable.fromWeb(
+        binaryRes.body as unknown as NodeReadableStream<Uint8Array>,
+      ),
       async function* (source) {
         for await (const chunk of source) {
           hash.update(chunk as Uint8Array);

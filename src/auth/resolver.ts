@@ -1,14 +1,8 @@
 import { readFileSync, realpathSync } from 'node:fs';
 import { homedir } from 'node:os';
-import { join, resolve as resolvePath } from 'node:path';
+import { resolve as resolvePath } from 'node:path';
+import { getCcpodHome } from '../profile/manager.ts';
 import type { ProfileConfig } from '../types/index.ts';
-
-function ccpodHome(): string {
-  // CCPOD_TEST_DIR mirrors the test-override pattern in src/profile/manager.ts
-  // so unit tests can point auth resolution at a temp directory without
-  // polluting the developer's real ~/.ccpod.
-  return resolvePath(process.env.CCPOD_TEST_DIR ?? join(homedir(), '.ccpod'));
-}
 
 export function resolveAuth(
   auth: ProfileConfig['auth'],
@@ -40,7 +34,7 @@ export function resolveAuth(
       );
       return {};
     }
-    const home = ccpodHome();
+    const home = resolvePath(getCcpodHome());
     if (realKeyPath !== home && !realKeyPath.startsWith(`${home}/`)) {
       throw new Error(
         `auth.keyFile "${auth.keyFile}" resolves to ${realKeyPath}, outside ~/.ccpod. ` +

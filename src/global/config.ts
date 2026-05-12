@@ -1,8 +1,8 @@
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
-import { homedir } from 'node:os';
 import { dirname, join } from 'node:path';
 import { parse as yamlParse, stringify as yamlStringify } from 'yaml';
 import { z } from 'zod';
+import { getCcpodHome } from '../profile/manager.ts';
 
 const GlobalConfigSchema = z
   .object({
@@ -13,10 +13,7 @@ const GlobalConfigSchema = z
 export type GlobalConfig = z.infer<typeof GlobalConfigSchema>;
 
 function globalConfigPath(): string {
-  return join(
-    process.env.CCPOD_TEST_DIR ?? join(homedir(), '.ccpod'),
-    'config.yml',
-  );
+  return join(getCcpodHome(), 'config.yml');
 }
 
 export function loadGlobalConfig(): GlobalConfig {

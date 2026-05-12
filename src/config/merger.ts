@@ -7,6 +7,9 @@ import type {
 } from '../types/index.ts';
 
 const HEX_GROUP_RE = /^[0-9a-fA-F]{1,4}$/;
+const ZERO_GROUP_RE = /^0+$/;
+const ALLOWED_IPV4_HOSTS = new Set(['127.0.0.1', 'localhost']);
+const ALLOWED_HOSTS_MSG = '127.0.0.1 / localhost / ::1';
 
 // Parse an IPv6 string into its 8 hexadecimal groups, expanding any `::`
 // shorthand. Returns null if the input is not a syntactically valid IPv6
@@ -38,23 +41,23 @@ function parseIpv6Groups(ip: string): string[] | null {
   return [...head, ...middle, ...tail];
 }
 
-// True when `ip` is the IPv6 unspecified address (`::`, `0:0:0:0:0:0:0:0`,
-// or any `::`-expanding variant whose groups are all zero).
-function isIpv6Wildcard(ip: string): boolean {
-  const groups = parseIpv6Groups(ip);
-  return groups?.every((g) => /^0+$/.test(g)) ?? false;
-}
+type Ipv6Kind = 'wildcard' | 'loopback' | 'other' | 'invalid';
 
-// True when `ip` is the IPv6 loopback (`::1` and zero-padded equivalents).
-function isIpv6Loopback(ip: string): boolean {
+function classifyIpv6(ip: string): Ipv6Kind {
   const groups = parseIpv6Groups(ip);
   if (groups === null) {
-    return false;
+    return 'invalid';
   }
-  return (
-    groups.slice(0, -1).every((g) => /^0+$/.test(g)) &&
+  if (groups.every((g) => ZERO_GROUP_RE.test(g))) {
+    return 'wildcard';
+  }
+  if (
+    groups.slice(0, -1).every((g) => ZERO_GROUP_RE.test(g)) &&
     /^0*1$/.test(groups[7] ?? '')
-  );
+  ) {
+    return 'loopback';
+  }
+  return 'other';
 }
 
 function sanitizeProjectServices(
@@ -78,40 +81,36 @@ function sanitizeProjectServices(
   return out;
 }
 
+function portError(serviceName: string, spec: string, detail: string): Error {
+  return new Error(
+    `Project service '${serviceName}' port '${spec}' ${detail}; ` +
+      `only ${ALLOWED_HOSTS_MSG} is allowed without profile-level allowProjectHostMounts: true.`,
+  );
+}
+
 function sanitizePort(serviceName: string, spec: string): string {
   // Bracketed IPv6 host: [ip]:host:container. Match this first because its
   // colons would otherwise fool a naive split-by-colon.
   const bracketed = spec.match(/^\[([^\]]+)\]:(.+)$/);
   if (bracketed) {
     const ip = bracketed[1] ?? '';
-    if (isIpv6Loopback(ip)) {
-      return spec;
+    switch (classifyIpv6(ip)) {
+      case 'loopback':
+        return spec;
+      case 'wildcard':
+        throw portError(serviceName, spec, 'binds to all IPv6 interfaces');
+      default:
+        throw portError(serviceName, spec, `binds to ${ip}`);
     }
-    if (isIpv6Wildcard(ip)) {
-      throw new Error(
-        `Project service '${serviceName}' port '${spec}' binds to all IPv6 interfaces; ` +
-          'only ::1 / 127.0.0.1 is allowed without profile-level allowProjectHostMounts: true.',
-      );
-    }
-    throw new Error(
-      `Project service '${serviceName}' port '${spec}' binds to ${ip}; ` +
-        'only ::1 / 127.0.0.1 is allowed without profile-level allowProjectHostMounts: true.',
-    );
   }
   const parts = spec.split(':');
   if (parts.length === 1) {
-    throw new Error(
-      `Project service '${serviceName}' port '${spec}' would publish on all interfaces; ` +
-        'use "127.0.0.1:<host>:<container>" or set profile-level allowProjectHostMounts: true.',
-    );
+    throw portError(serviceName, spec, 'would publish on all interfaces');
   }
   if (parts.length >= 3) {
-    const ip = parts[0];
-    if (ip !== '127.0.0.1' && ip !== 'localhost') {
-      throw new Error(
-        `Project service '${serviceName}' port '${spec}' binds to ${ip || '0.0.0.0'}; ` +
-          'only 127.0.0.1 / localhost / ::1 is allowed without profile-level allowProjectHostMounts: true.',
-      );
+    const ip = parts[0] ?? '';
+    if (!ALLOWED_IPV4_HOSTS.has(ip)) {
+      throw portError(serviceName, spec, `binds to ${ip || '0.0.0.0'}`);
     }
     return spec;
   }
