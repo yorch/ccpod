@@ -85,7 +85,7 @@ The base image (`ghcr.io/yorch/ccpod`) ships an entrypoint that assembles `~/.cl
 /ccpod/config       → copied into ~/.claude (settings, CLAUDE.md, skills, hooks)
 /ccpod/credentials  → copied (overlays config defaults if same filename)
 /ccpod/plugins      → symlinked as ~/.claude/plugins
-/ccpod/state        → symlinked items (history.jsonl, projects/, todos/, sessions/)
+/ccpod/state        → symlinked items (projects/, todos/, statsig/)
                       only when state: persistent
 ```
 
