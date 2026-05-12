@@ -150,6 +150,19 @@ describe('profileConfigSchema auth.keyFile', () => {
     expect(result.success).toBe(false);
   });
 
+  it('rejects keyFile with a directory whose name only shares the ~/.ccpod prefix', () => {
+    const result = profileConfigSchema.safeParse({
+      auth: {
+        keyEnv: 'ANTHROPIC_API_KEY',
+        keyFile: '~/.ccpod-evil/key',
+        type: 'api-key',
+      },
+      config: { source: 'local' },
+      name: 'test',
+    });
+    expect(result.success).toBe(false);
+  });
+
   it('rejects keyFile containing ".."', () => {
     const result = profileConfigSchema.safeParse({
       auth: {

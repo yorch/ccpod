@@ -1,5 +1,11 @@
 import { createHash } from 'node:crypto';
-import { chmodSync, copyFileSync, unlinkSync } from 'node:fs';
+import {
+  chmodSync,
+  copyFileSync,
+  mkdtempSync,
+  rmSync,
+  unlinkSync,
+} from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { GITHUB_REPO } from '../constants.ts';
@@ -64,7 +70,6 @@ export async function fetchLatestRelease(): Promise<LatestRelease | null> {
   };
 }
 
-// SHASUMS256.txt format: "<hex-digest>  <filename>" per line (sha256sum format).
 export function parseChecksums(text: string): Map<string, string> {
   const out = new Map<string, string>();
   for (const line of text.split('\n')) {
@@ -105,21 +110,15 @@ export async function downloadAndReplace(
   release: LatestRelease,
   targetPath: string,
 ): Promise<void> {
-  const expectedDigest = await fetchExpectedDigest(
-    release.checksumsUrl,
-    release.assetName,
-  );
-
-  const tmpPath = join(tmpdir(), `ccpod-update-${Date.now()}`);
-
-  const res = await fetch(release.url, {
-    headers: { 'User-Agent': 'ccpod-updater' },
-  });
-  if (!res.ok) {
-    throw new Error(`Download failed: ${res.status}`);
+  const [expectedDigest, binaryRes] = await Promise.all([
+    fetchExpectedDigest(release.checksumsUrl, release.assetName),
+    fetch(release.url, { headers: { 'User-Agent': 'ccpod-updater' } }),
+  ]);
+  if (!binaryRes.ok) {
+    throw new Error(`Download failed: ${binaryRes.status}`);
   }
 
-  const bytes = new Uint8Array(await res.arrayBuffer());
+  const bytes = new Uint8Array(await binaryRes.arrayBuffer());
   const actualDigest = createHash('sha256').update(bytes).digest('hex');
   if (actualDigest !== expectedDigest) {
     throw new Error(
@@ -127,19 +126,27 @@ export async function downloadAndReplace(
     );
   }
 
+  // mkdtempSync avoids the predictable-path symlink-attack vector that
+  // `tmpdir()/ccpod-update-<timestamp>` would have on multi-user hosts.
+  const tmpDir = mkdtempSync(join(tmpdir(), 'ccpod-update-'));
+  const tmpPath = join(tmpDir, release.assetName);
   await Bun.write(tmpPath, bytes);
   chmodSync(tmpPath, 0o755);
 
   try {
+    // Atomic on same filesystem
     const { renameSync } = await import('node:fs');
     renameSync(tmpPath, targetPath);
+    rmSync(tmpDir, { force: true, recursive: true });
   } catch (err) {
     if ((err as NodeJS.ErrnoException).code === 'EXDEV') {
+      // Cross-device link: fall back to copy + delete
       copyFileSync(tmpPath, targetPath);
       chmodSync(targetPath, 0o755);
       unlinkSync(tmpPath);
+      rmSync(tmpDir, { force: true, recursive: true });
     } else {
-      unlinkSync(tmpPath);
+      rmSync(tmpDir, { force: true, recursive: true });
       throw err;
     }
   }

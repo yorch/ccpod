@@ -6,18 +6,12 @@ import type {
   ServiceConfig,
 } from '../types/index.ts';
 
-// A repo's `.ccpod.yml` is untrusted input: it ships with the codebase being
-// run inside the sandbox. Without these guards a malicious project could
-// declare `volumes: ["/:/host:rw"]` and escape the container, or bind a
-// sidecar port to 0.0.0.0 to expose it to the LAN.
 function sanitizeProjectServices(
   services: Record<string, ServiceConfig>,
 ): Record<string, ServiceConfig> {
   const out: Record<string, ServiceConfig> = {};
   for (const [name, svc] of Object.entries(services)) {
     const volumes = (svc.volumes ?? []).map((v) => {
-      // Named volume form: <name>:<container_path>[:opts]. Anything starting
-      // with `/`, `.`, or `~` is a host bind.
       if (!/^[a-zA-Z0-9][a-zA-Z0-9_.-]*:/.test(v)) {
         throw new Error(
           `Project service '${name}' volume '${v}' is not a named volume. ` +
@@ -28,7 +22,6 @@ function sanitizeProjectServices(
       return v;
     });
     const ports = (svc.ports ?? []).map((p) => {
-      // Forms: container, host:container, host_ip:host:container[/proto]
       const parts = p.split(':');
       if (parts.length >= 3) {
         const ip = parts[0];
@@ -41,12 +34,9 @@ function sanitizeProjectServices(
         }
         return p;
       }
-      // Two-part `host:container` — Docker would bind to all interfaces.
-      // Localize it.
       if (parts.length === 2) {
         return `127.0.0.1:${p}`;
       }
-      // Single value: container-only port, no host bind, safe.
       return p;
     });
     out[name] = { ...svc, ports, volumes };
@@ -109,8 +99,6 @@ export function mergeConfigs(
       ? (project?.claudeArgs ?? [])
       : [...profile.claudeArgs, ...(project?.claudeArgs ?? [])];
 
-  // Project-level `init:` runs arbitrary shell inside the container before
-  // Claude starts. Treat it as untrusted unless the profile opts in.
   const projectInit = profile.allowProjectInit ? (project?.init ?? []) : [];
   if (!profile.allowProjectInit && project?.init && project.init.length > 0) {
     console.warn(

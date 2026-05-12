@@ -15,9 +15,8 @@ const serviceConfigSchema = z.object({
   volumes: z.array(z.string()).optional(),
 });
 
-// Reject refs that could be interpreted as flags or contain shell/path
-// traversal metacharacters. Git refs honor `--upload-pack=…` as an option,
-// which is a documented RCE vector when refs are user-controlled.
+// Refs starting with `-` are parsed as git options — `--upload-pack=…` is a
+// documented RCE vector when refs are user-controlled.
 const gitRefSchema = z
   .string()
   .min(1)
@@ -32,8 +31,6 @@ const gitRefSchema = z
     message: 'git ref must not contain whitespace or shell metacharacters',
   });
 
-// Allow https://, http://, ssh://, git://, or scp-style `git@host:path`.
-// Reject anything starting with `-` (would be parsed as a git flag).
 const gitRepoSchema = z
   .string()
   .min(1)
@@ -43,9 +40,7 @@ const gitRepoSchema = z
   })
   .refine(
     (s) =>
-      /^https?:\/\//.test(s) ||
-      /^ssh:\/\//.test(s) ||
-      /^git:\/\//.test(s) ||
+      /^(https?|ssh|git):\/\//.test(s) ||
       /^[a-zA-Z0-9_.-]+@[a-zA-Z0-9.-]+:/.test(s),
     {
       message:
@@ -53,15 +48,11 @@ const gitRepoSchema = z
     },
   );
 
-// Limit keyFile to paths under ~/.ccpod (typically ~/.ccpod/credentials/<profile>/...).
-// Anything else risks shipping arbitrary host file contents into the container.
 const keyFileSchema = z
   .string()
   .min(1)
   .refine(
-    (s) =>
-      (s.startsWith('~/.ccpod/') || s.startsWith('~/.ccpod')) &&
-      !s.includes('..'),
+    (s) => (s === '~/.ccpod' || s.startsWith('~/.ccpod/')) && !s.includes('..'),
     {
       message:
         'auth.keyFile must be a path under ~/.ccpod (e.g. ~/.ccpod/credentials/<profile>/key); use keyEnv for keys elsewhere',
