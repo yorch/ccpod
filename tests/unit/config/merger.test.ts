@@ -287,6 +287,65 @@ describe('mergeConfigs', () => {
     expect(result.services.db?.volumes).toEqual(['dbdata:/var/lib/db']);
   });
 
+  it('accepts bracketed IPv6 loopback [::1] in project service ports', () => {
+    const profile = makeProfile();
+    const result = mergeConfigs(profile, {
+      services: {
+        db: { image: 'postgres', ports: ['[::1]:5432:5432'] },
+      },
+    });
+    expect(result.services.db?.ports).toEqual(['[::1]:5432:5432']);
+  });
+
+  it('rejects bracketed IPv6 wildcard [::] in project service ports', () => {
+    const profile = makeProfile();
+    expect(() =>
+      mergeConfigs(profile, {
+        services: { db: { image: 'postgres', ports: ['[::]:5432:5432'] } },
+      }),
+    ).toThrow(/all IPv6 interfaces/);
+  });
+
+  it('rejects expanded IPv6 wildcard variants (e.g. [0::0])', () => {
+    const profile = makeProfile();
+    for (const ip of ['[0::]', '[::0]', '[0::0]', '[0:0:0:0:0:0:0:0]']) {
+      expect(() =>
+        mergeConfigs(profile, {
+          services: {
+            db: { image: 'postgres', ports: [`${ip}:5432:5432`] },
+          },
+        }),
+      ).toThrow(/all IPv6 interfaces/);
+    }
+  });
+
+  it('rejects non-loopback bracketed IPv6 in project service ports', () => {
+    const profile = makeProfile();
+    expect(() =>
+      mergeConfigs(profile, {
+        services: {
+          db: { image: 'postgres', ports: ['[2001:db8::1]:5432:5432'] },
+        },
+      }),
+    ).toThrow(/binds to 2001:db8::1/);
+  });
+
+  it('rejects syntactically invalid IPv6 with too many groups', () => {
+    // 9 explicit groups around `::` is structurally invalid; must not be
+    // silently accepted as loopback or wildcard.
+    const profile = makeProfile();
+    expect(() =>
+      mergeConfigs(profile, {
+        services: {
+          db: {
+            image: 'postgres',
+            ports: ['[0:0:0:0:0::0:0:0:1]:5432:5432'],
+          },
+        },
+      }),
+    ).toThrow(/binds to 0:0:0:0:0::0:0:0:1/);
+  });
+
   it('isolated profile: CLI state override still honoured', () => {
     const result = mergeConfigs(
       makeProfile({ isolation: true, state: 'persistent' }),

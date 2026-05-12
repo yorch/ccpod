@@ -1,6 +1,12 @@
 // biome-ignore-all lint/suspicious/noTemplateCurlyInString: ${VAR} literals are the system under test
 import { afterEach, describe, expect, it, spyOn } from 'bun:test';
-import { mkdtempSync, rmSync, writeFileSync } from 'node:fs';
+import {
+  mkdirSync,
+  mkdtempSync,
+  rmSync,
+  symlinkSync,
+  writeFileSync,
+} from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import {
@@ -53,22 +59,45 @@ describe('resolveAuth', () => {
     });
   });
 
-  it('reads key from file when env var absent', () => {
-    saveEnv('ANTHROPIC_API_KEY');
+  it('reads key from file under ~/.ccpod', () => {
+    saveEnv('ANTHROPIC_API_KEY', 'CCPOD_TEST_DIR');
     delete process.env.ANTHROPIC_API_KEY;
-
-    const dir = mkdtempSync(`${tmpdir()}/ccpod-test-`);
-    const keyFile = join(dir, 'api_key');
+    const fakeCcpod = mkdtempSync(`${tmpdir()}/ccpod-home-`);
+    process.env.CCPOD_TEST_DIR = fakeCcpod;
+    const keyFile = join(fakeCcpod, 'credentials', 'default', 'key');
+    mkdirSync(join(fakeCcpod, 'credentials', 'default'), { recursive: true });
     writeFileSync(keyFile, 'sk-from-file\n');
-
     try {
       expect(
         resolveAuth({ keyEnv: 'ANTHROPIC_API_KEY', keyFile, type: 'api-key' }),
-      ).toEqual({
-        ANTHROPIC_API_KEY: 'sk-from-file',
-      });
+      ).toEqual({ ANTHROPIC_API_KEY: 'sk-from-file' });
     } finally {
-      rmSync(dir, { force: true, recursive: true });
+      rmSync(fakeCcpod, { force: true, recursive: true });
+    }
+  });
+
+  it('rejects symlink under ~/.ccpod that targets a path outside it', () => {
+    saveEnv('ANTHROPIC_API_KEY', 'CCPOD_TEST_DIR');
+    delete process.env.ANTHROPIC_API_KEY;
+    const fakeCcpod = mkdtempSync(`${tmpdir()}/ccpod-home-`);
+    process.env.CCPOD_TEST_DIR = fakeCcpod;
+    const externalDir = mkdtempSync(`${tmpdir()}/ccpod-external-`);
+    const externalFile = join(externalDir, 'secret');
+    writeFileSync(externalFile, 'sk-secret\n');
+    const symlinkPath = join(fakeCcpod, 'credentials', 'default', 'key');
+    mkdirSync(join(fakeCcpod, 'credentials', 'default'), { recursive: true });
+    symlinkSync(externalFile, symlinkPath);
+    try {
+      expect(() =>
+        resolveAuth({
+          keyEnv: 'ANTHROPIC_API_KEY',
+          keyFile: symlinkPath,
+          type: 'api-key',
+        }),
+      ).toThrow(/outside ~\/\.ccpod/);
+    } finally {
+      rmSync(fakeCcpod, { force: true, recursive: true });
+      rmSync(externalDir, { force: true, recursive: true });
     }
   });
 

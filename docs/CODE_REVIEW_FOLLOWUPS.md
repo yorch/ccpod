@@ -33,9 +33,13 @@ scripted use. See `src/cli/commands/profile/install.ts`.
 
 `mergeConfigs` runs `sanitizeProjectServices` on project-sourced `services`:
 rejects host-path volume entries (must be `<named>:<path>` form) and rejects
-ports bound to anything except `127.0.0.1` / `localhost`; two-part
-`host:container` ports are auto-rewritten to bind to `127.0.0.1`. The new
-profile-level flag `allowProjectHostMounts: true` opts out of this hardening.
+ports bound to anything except `127.0.0.1` / `localhost` / `::1`; two-part
+`host:container` ports are auto-rewritten to bind to `127.0.0.1`. Bracketed
+IPv6 is parsed explicitly so `[::1]:host:container` loopback is accepted and
+every `::`-expanding wildcard form (`[::]`, `[0::]`, `[::0:0]`,
+`[0:0:0:0:0:0:0:0]`, …) is rejected with a clear "all IPv6 interfaces"
+message. The profile-level flag `allowProjectHostMounts: true` opts out of
+the entire sanitizer.
 
 ---
 
@@ -50,16 +54,22 @@ bare `KEY` forwarding and `KEY=literal` continue to work.
 ### H3. Updater performs no integrity verification ✅
 
 `release.yml` now publishes a `SHASUMS256.txt` asset (`sha256sum` of each
-binary). `downloadAndReplace` fetches it, looks up the entry for the current
-platform's asset, and compares against the in-memory SHA-256 of the downloaded
-bytes before `renameSync`. A release without `SHASUMS256.txt` is refused with
-a clear error.
+binary). `downloadAndReplace` fetches `SHASUMS256.txt` and the asset in
+parallel, then streams the response body through `createHash('sha256')` into
+a write pipeline — the hash is computed as bytes arrive and nothing is
+buffered, so a 50–80 MB binary never lives twice in memory. The computed
+digest is compared to the entry for the current platform's asset before
+`renameSync`. A release without `SHASUMS256.txt`, a missing entry, or a
+mismatch is refused with a clear error.
 
 ### H4. `auth.keyFile` follows arbitrary host paths ✅
 
-`auth.keyFile` is now restricted at the schema level to paths under `~/.ccpod/`
+`auth.keyFile` is restricted at the schema level to paths under `~/.ccpod/`
 (typically `~/.ccpod/credentials/<profile>/...`); paths containing `..` are
-rejected. Users with keys stored elsewhere should use `keyEnv` instead.
+rejected. At read time `resolveAuth` `realpathSync`-es the path and re-checks
+containment so a symlink under `~/.ccpod/` cannot redirect to `/etc/shadow`
+(or `~/.aws/credentials`, etc.). Users with keys stored elsewhere should use
+`keyEnv` instead.
 
 ### H5. Project `init` runs arbitrary shell in-container without trust opt-in ✅
 

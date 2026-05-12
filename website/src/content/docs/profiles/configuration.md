@@ -27,7 +27,7 @@ image:
 auth:
   type: api-key                 # "api-key" | "oauth"
   keyEnv: ANTHROPIC_API_KEY     # env var to read from
-  # keyFile: /run/secrets/api-key
+  # keyFile: ~/.ccpod/credentials/default/api-key  # must be under ~/.ccpod
 
 state: ephemeral                # "ephemeral" (default) | "persistent"
 
@@ -90,7 +90,7 @@ When `use: build`, both `ccpod run` and `ccpod image build` use the same tag `cc
 |---|---|---|
 | `type` | `api-key` \| `oauth` | |
 | `keyEnv` | string | Env var name to read on the host (`api-key` only). |
-| `keyFile` | string | File on the host to read (`api-key` only). |
+| `keyFile` | string | File on the host to read (`api-key` only). Must be a path under `~/.ccpod/` (no `..`, no escape via symlink); use `keyEnv` for keys stored elsewhere. |
 
 For `oauth`, ccpod manages tokens in `~/.ccpod/credentials/<name>/`.
 

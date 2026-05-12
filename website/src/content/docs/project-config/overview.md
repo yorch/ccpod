@@ -60,7 +60,7 @@ services:
 | `network` | partial network block | Adds to (or replaces) the profile's network config. |
 | `ports` | object | Extra port mappings (`list`, `autoDetectMcp`). |
 | `services` | object | Extra sidecars; merged by key. |
-| `env` | string[] | Extra env entries. Each is `KEY` (forward host var), `KEY=value` (literal), or `KEY=${HOST_VAR}` / `KEY=${HOST_VAR:-default}` (interpolate). See [profile env reference](../../profiles/configuration/#env). |
+| `env` | string[] | Extra env entries. Each is `KEY` (forward host var) or `KEY=value` (literal). Unlike profile and `--env`, project entries may **not** use `${VAR}` interpolation — a malicious project repo could otherwise exfiltrate host secrets. See [profile env reference](../../profiles/configuration/#env). |
 
 > **Note:** If the profile has [`isolation: true`](../profiles/configuration/#isolation), this entire file is ignored — the profile config is used as-is regardless of what `.ccpod.yml` contains.
 

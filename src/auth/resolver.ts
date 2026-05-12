@@ -1,5 +1,7 @@
-import { existsSync, readFileSync } from 'node:fs';
+import { readFileSync, realpathSync } from 'node:fs';
 import { homedir } from 'node:os';
+import { resolve as resolvePath } from 'node:path';
+import { getCcpodHome } from '../profile/manager.ts';
 import type { ProfileConfig } from '../types/index.ts';
 
 export function resolveAuth(
@@ -17,10 +19,29 @@ export function resolveAuth(
   }
 
   if (auth.keyFile) {
-    const keyPath = auth.keyFile.replace(/^~/, homedir());
-    if (existsSync(keyPath)) {
-      return { ANTHROPIC_API_KEY: readFileSync(keyPath, 'utf8').trim() };
+    const keyPath = resolvePath(auth.keyFile.replace(/^~/, homedir()));
+    // Schema already restricts auth.keyFile to "~/.ccpod/..." strings.
+    // Resolve symlinks before reading so a symlink under ~/.ccpod that
+    // targets /etc/shadow can't bypass the schema check.
+    let realKeyPath: string;
+    try {
+      realKeyPath = realpathSync(keyPath);
+    } catch {
+      // File doesn't exist yet — warn and skip the keyFile path, matching the
+      // historical behaviour for a missing file.
+      console.warn(
+        `Warning: ${envVar} not set and no keyFile found. Container may fail to authenticate.`,
+      );
+      return {};
     }
+    const home = resolvePath(getCcpodHome());
+    if (realKeyPath !== home && !realKeyPath.startsWith(`${home}/`)) {
+      throw new Error(
+        `auth.keyFile "${auth.keyFile}" resolves to ${realKeyPath}, outside ~/.ccpod. ` +
+          'Refusing to read it — symlinks under ~/.ccpod cannot redirect to host paths.',
+      );
+    }
+    return { ANTHROPIC_API_KEY: readFileSync(realKeyPath, 'utf8').trim() };
   }
 
   console.warn(

@@ -6,6 +6,60 @@ import type {
   ServiceConfig,
 } from '../types/index.ts';
 
+const HEX_GROUP_RE = /^[0-9a-fA-F]{1,4}$/;
+const ZERO_GROUP_RE = /^0+$/;
+const ALLOWED_IPV4_HOSTS = new Set(['127.0.0.1', 'localhost']);
+const ALLOWED_HOSTS_MSG = '127.0.0.1 / localhost / ::1';
+
+// Parse an IPv6 string into its 8 hexadecimal groups, expanding any `::`
+// shorthand. Returns null if the input is not a syntactically valid IPv6
+// address (too many groups, multiple `::`, non-hex characters, etc.).
+function parseIpv6Groups(ip: string): string[] | null {
+  if (!ip.includes(':')) {
+    return null;
+  }
+  const halves = ip.split('::');
+  if (halves.length > 2) {
+    return null;
+  }
+  const head = halves[0] ? halves[0].split(':') : [];
+  const tail = halves.length === 2 && halves[1] ? halves[1].split(':') : [];
+  if (halves.length === 1) {
+    if (head.length !== 8) {
+      return null;
+    }
+  } else if (head.length + tail.length > 7) {
+    // `::` must collapse at least one zero group, so the explicit parts can
+    // total at most 7.
+    return null;
+  }
+  if (![...head, ...tail].every((g) => HEX_GROUP_RE.test(g))) {
+    return null;
+  }
+  const fillCount = 8 - head.length - tail.length;
+  const middle = halves.length === 2 ? new Array(fillCount).fill('0') : [];
+  return [...head, ...middle, ...tail];
+}
+
+type Ipv6Kind = 'wildcard' | 'loopback' | 'other' | 'invalid';
+
+function classifyIpv6(ip: string): Ipv6Kind {
+  const groups = parseIpv6Groups(ip);
+  if (groups === null) {
+    return 'invalid';
+  }
+  if (groups.every((g) => ZERO_GROUP_RE.test(g))) {
+    return 'wildcard';
+  }
+  if (
+    groups.slice(0, -1).every((g) => ZERO_GROUP_RE.test(g)) &&
+    /^0*1$/.test(groups[7] ?? '')
+  ) {
+    return 'loopback';
+  }
+  return 'other';
+}
+
 function sanitizeProjectServices(
   services: Record<string, ServiceConfig>,
 ): Record<string, ServiceConfig> {
@@ -21,33 +75,46 @@ function sanitizeProjectServices(
       }
       return v;
     });
-    const ports = (svc.ports ?? []).map((p) => {
-      const parts = p.split(':');
-      if (parts.length === 1) {
-        // `docker run -p <containerPort>` publishes to a random host port on
-        // 0.0.0.0, so a bare port is not container-only — reject it.
-        throw new Error(
-          `Project service '${name}' port '${p}' would publish on all interfaces; ` +
-            'use "127.0.0.1:<host>:<container>" or set profile-level ' +
-            'allowProjectHostMounts: true.',
-        );
-      }
-      if (parts.length >= 3) {
-        const ip = parts[0];
-        if (ip !== '127.0.0.1' && ip !== 'localhost') {
-          throw new Error(
-            `Project service '${name}' port '${p}' binds to ${ip || '0.0.0.0'}; ` +
-              'only 127.0.0.1 is allowed without profile-level ' +
-              'allowProjectHostMounts: true.',
-          );
-        }
-        return p;
-      }
-      return `127.0.0.1:${p}`;
-    });
+    const ports = (svc.ports ?? []).map((p) => sanitizePort(name, p));
     out[name] = { ...svc, ports, volumes };
   }
   return out;
+}
+
+function portError(serviceName: string, spec: string, detail: string): Error {
+  return new Error(
+    `Project service '${serviceName}' port '${spec}' ${detail}; ` +
+      `only ${ALLOWED_HOSTS_MSG} is allowed without profile-level allowProjectHostMounts: true.`,
+  );
+}
+
+function sanitizePort(serviceName: string, spec: string): string {
+  // Bracketed IPv6 host: [ip]:host:container. Match this first because its
+  // colons would otherwise fool a naive split-by-colon.
+  const bracketed = spec.match(/^\[([^\]]+)\]:(.+)$/);
+  if (bracketed) {
+    const ip = bracketed[1] ?? '';
+    switch (classifyIpv6(ip)) {
+      case 'loopback':
+        return spec;
+      case 'wildcard':
+        throw portError(serviceName, spec, 'binds to all IPv6 interfaces');
+      default:
+        throw portError(serviceName, spec, `binds to ${ip}`);
+    }
+  }
+  const parts = spec.split(':');
+  if (parts.length === 1) {
+    throw portError(serviceName, spec, 'would publish on all interfaces');
+  }
+  if (parts.length >= 3) {
+    const ip = parts[0] ?? '';
+    if (!ALLOWED_IPV4_HOSTS.has(ip)) {
+      throw portError(serviceName, spec, `binds to ${ip || '0.0.0.0'}`);
+    }
+    return spec;
+  }
+  return `127.0.0.1:${spec}`;
 }
 
 export function mergeConfigs(

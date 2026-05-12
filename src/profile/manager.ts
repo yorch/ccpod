@@ -10,14 +10,15 @@ import { homedir } from 'node:os';
 import { join } from 'node:path';
 import { parseDocument } from 'yaml';
 
-// For external consumers (e.g. wizard.ts) — computed once at import time
-export const CCPOD_DIR = join(homedir(), '.ccpod');
-export const PROFILES_DIR = join(CCPOD_DIR, 'profiles');
-export const CREDENTIALS_DIR = join(CCPOD_DIR, 'credentials');
-
-// Internal: re-evaluated at each call so CCPOD_TEST_DIR env override works in tests
-function baseDir(): string {
+// Re-evaluated at each call so CCPOD_TEST_DIR env override works in tests.
+// Other modules (auth/resolver.ts, global/config.ts, update/checker.ts) import
+// this so the test override stays a single source of truth.
+export function getCcpodHome(): string {
   return process.env.CCPOD_TEST_DIR ?? join(homedir(), '.ccpod');
+}
+
+function baseDir(): string {
+  return getCcpodHome();
 }
 
 function profilesDir(): string {

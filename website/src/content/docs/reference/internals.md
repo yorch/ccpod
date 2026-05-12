@@ -285,7 +285,7 @@ Source precedence: profile → project → CLI override (later wins).
 A repo's `.ccpod.yml` ships with the codebase being run inside the sandbox, so it is treated as untrusted by default. `mergeConfigs` enforces:
 
 - `services[].volumes` from project must be named volumes (`<name>:<path>[:opts]`). Host-path mounts (`/foo`, `./foo`, `~/foo`) are rejected.
-- `services[].ports` from project may bind only to `127.0.0.1` / `localhost`. Two-part `host:container` entries are auto-rewritten to `127.0.0.1:host:container`.
+- `services[].ports` from project may bind only to `127.0.0.1` / `localhost` / `::1`. Two-part `host:container` entries are auto-rewritten to `127.0.0.1:host:container`. Bracketed IPv6 is parsed explicitly so `[::1]:host:container` loopback is accepted and every `::`-expanding wildcard (`[::]`, `[0::]`, `[::0:0]`, `[0:0:0:0:0:0:0:0]`, …) is rejected with an "all IPv6 interfaces" error.
 - `env` from project may not use `${VAR}` interpolation (see above).
 - `init:` from project is dropped (with a one-line `console.warn`).
 
@@ -293,7 +293,7 @@ To opt out, the profile may set `allowProjectHostMounts: true` (for sidecar volu
 
 ### Updater integrity
 
-`ccpod update` requires each release to publish a `SHASUMS256.txt` asset alongside the binaries. The updater fetches that file, parses the `sha256sum`-format line for the platform asset, computes the SHA-256 of the downloaded bytes in memory, and refuses to install on mismatch. Releases missing `SHASUMS256.txt` are refused.
+`ccpod update` requires each release to publish a `SHASUMS256.txt` asset alongside the binaries. The updater fetches `SHASUMS256.txt` and the platform asset in parallel, then streams the response body through `createHash('sha256')` into a write pipeline (`node:stream/promises#pipeline`). The hash is computed as bytes arrive, so the 50–80 MB binary is never buffered twice in memory; it is compared to the entry for the platform asset before the temp file is moved into place. A missing `SHASUMS256.txt`, a missing entry, or a mismatch all refuse the install with a clear error and leave nothing on disk.
 
 ## Startup sequence
 

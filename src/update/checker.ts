@@ -1,7 +1,7 @@
 import { existsSync, readFileSync, writeFileSync } from 'node:fs';
-import { homedir } from 'node:os';
 import { join } from 'node:path';
 import { GITHUB_REPO } from '../constants.ts';
+import { getCcpodHome } from '../profile/manager.ts';
 
 const CHECK_INTERVAL_MS = 24 * 60 * 60 * 1000;
 
@@ -11,10 +11,7 @@ interface UpdateCache {
 }
 
 function cachePath(): string {
-  return join(
-    process.env.CCPOD_TEST_DIR ?? join(homedir(), '.ccpod'),
-    'update-check.json',
-  );
+  return join(getCcpodHome(), 'update-check.json');
 }
 
 function readCache(): UpdateCache | null {
