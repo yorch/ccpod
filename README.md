@@ -64,7 +64,7 @@ image:
 auth:
   type: api-key              # "api-key" | "oauth"
   keyEnv: ANTHROPIC_API_KEY  # env var to read key from
-  # keyFile: /run/secrets/api-key
+  # keyFile: ~/.ccpod/credentials/default/api-key  # must be under ~/.ccpod
 
 state: ephemeral             # "ephemeral" (default) | "persistent"
 

@@ -193,7 +193,7 @@ image:
 auth:
   type: api-key                     # "api-key" | "oauth"
   # keyEnv: ANTHROPIC_API_KEY
-  # keyFile: /run/secrets/api-key
+  # keyFile: ~/.ccpod/credentials/default/api-key  # must be under ~/.ccpod
 
 claudeArgs: []                      # extra flags passed to claude on every run
 # claudeArgs: ["--dangerously-skip-permissions", "--model", "claude-opus-4-7"]

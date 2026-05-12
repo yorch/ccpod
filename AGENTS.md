@@ -92,12 +92,12 @@ Docker volumes:
 - **`SSH_AUTH_SOCK`** is rejected if it contains `:` (would corrupt Docker bind spec).
 - **`DOCKER_SOCKET_PATH`** env var overrides the hardcoded `/var/run/docker.sock` path (useful in tests and non-standard Docker setups).
 - **Profile `config.repo`** must use `https://`, `http://`, `ssh://`, `git://`, or scp-style (`user@host:path`). **`config.ref`** rejects values starting with `-`, containing `..`, or carrying shell metacharacters — closes git option-injection (`--upload-pack=...`) RCE.
-- **`auth.keyFile`** must point inside `~/.ccpod/` (typically `~/.ccpod/credentials/<profile>/...`); use `keyEnv` to load keys stored elsewhere.
+- **`auth.keyFile`** must point inside `~/.ccpod/` (typically `~/.ccpod/credentials/<profile>/...`). At read time the resolver `realpathSync`-es the path and rejects it if the symlink target escapes `~/.ccpod/` — schema validation alone is a string-prefix check and would otherwise let a symlink under `~/.ccpod/` redirect to `/etc/shadow`. Use `keyEnv` to load keys stored elsewhere.
 - **`profile install`** prompts for confirmation on `git` and `url` sources before fetching; pass `--yes` to bypass.
 - **Updater (`ccpod update`)** verifies the downloaded binary's SHA-256 against `SHASUMS256.txt` from the release; releases without that asset are refused.
 - **Project `.ccpod.yml` trust boundary** — a repo's project config is untrusted by default:
   - `services[].volumes`: host-path mounts rejected; only named volumes allowed unless the profile sets `allowProjectHostMounts: true`.
-  - `services[].ports`: `0.0.0.0:` and non-localhost binds rejected; two-part `host:container` is auto-localized to `127.0.0.1:`.
+  - `services[].ports`: `0.0.0.0:` and non-localhost binds rejected; two-part `host:container` is auto-localized to `127.0.0.1:`. Bracketed IPv6 is recognised — `[::1]:host:container` loopback is accepted, every `::`-expanding wildcard (`[::]`, `[0::]`, `[::0:0]`, `[0:0:0:0:0:0:0:0]`, …) is rejected.
   - `env` entries from project may not use `${VAR}` interpolation (would exfiltrate host secrets). Profile and `--env` entries still support interpolation.
   - `init:` commands are ignored unless the profile sets `allowProjectInit: true`.
 - **Project `.claude/settings.json`** deep-merges into profile settings (project wins on conflicts) — same trust level as `claudeArgs` passthrough. Only run ccpod against repos you control.
