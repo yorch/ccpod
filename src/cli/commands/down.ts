@@ -38,7 +38,7 @@ export default defineCommand({
       'ps',
       '-a',
       '--format',
-      `{{.ID}}|{{.Names}}|{{.Status}}|{{.Label "${LABEL_PROJECT}"}}`,
+      `{{.ID}}|{{.Names}}|{{.State}}|{{.Label "${LABEL_PROJECT}"}}`,
       ...filterArgs,
     ]);
     const rows = stdout
@@ -46,9 +46,9 @@ export default defineCommand({
       .map((s) => s.trim())
       .filter(Boolean)
       .map((line) => {
-        const [id = '', name = '', status = '', projectHash = ''] =
+        const [id = '', name = '', state = '', projectHash = ''] =
           line.split('|');
-        return { id, name, projectHash, status };
+        return { id, name, projectHash, state };
       })
       .filter((row) => row.id);
 
@@ -66,9 +66,16 @@ export default defineCommand({
         touchedProjectHashes.add(row.projectHash);
       }
       const displayName = row.name || row.id.slice(0, 12);
-      const isRunning = row.status.toLowerCase().startsWith('up');
+      // `.State` is the machine-readable lifecycle field: running, paused,
+      // restarting, exited, created, dead, removing. Anything other than
+      // "exited", "created", "dead", or "" still needs a stop before rm.
+      const needsStop =
+        row.state !== '' &&
+        row.state !== 'exited' &&
+        row.state !== 'created' &&
+        row.state !== 'dead';
 
-      if (isRunning) {
+      if (needsStop) {
         process.stdout.write(`Stopping ${chalk.cyan(displayName)}... `);
         const stopResult = await dockerExec(['stop', '-t', '5', row.id]);
         if (stopResult.exitCode !== 0) {

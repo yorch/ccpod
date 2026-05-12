@@ -49,8 +49,11 @@ describe('isNewer()', () => {
     expect(isNewer('v2.0.0', '2.0')).toBe(false);
   });
 
-  it('returns false for unparseable input', () => {
+  it('treats unparseable latest as 0.0.0 (no update offered)', () => {
     expect(isNewer('not-a-version', '1.0.0')).toBe(false);
+  });
+
+  it('treats unparseable current as 0.0.0 (update offered)', () => {
     expect(isNewer('1.0.0', 'not-a-version')).toBe(true);
   });
 });

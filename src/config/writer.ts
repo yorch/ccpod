@@ -86,31 +86,9 @@ export function writeMergedConfig(
   const hash = createHash('sha256').update(content).digest('hex').slice(0, 16);
   const outDir = join(tmpdir(), `ccpod-${hash}`);
 
-  // Single lstat (catching ENOENT) avoids the TOCTOU window between an
-  // existsSync probe and a follow-up lstat. On multi-user hosts another
-  // user must not be able to pre-seed the deterministic path, so we also
-  // require it to be a regular directory owned by us.
-  let existing: ReturnType<typeof lstatSync> | undefined;
-  try {
-    existing = lstatSync(outDir);
-  } catch (err) {
-    if ((err as NodeJS.ErrnoException).code !== 'ENOENT') {
-      throw err;
-    }
-  }
-  if (existing) {
-    if (existing.isSymbolicLink() || !existing.isDirectory()) {
-      throw new Error(
-        `Refusing to reuse merged-config path ${outDir}: not a regular directory.`,
-      );
-    }
-    const ourUid =
-      typeof process.getuid === 'function' ? process.getuid() : null;
-    if (ourUid !== null && existing.uid !== ourUid) {
-      throw new Error(
-        `Refusing to reuse merged-config path ${outDir}: owned by uid ${existing.uid}, not ${ourUid}.`,
-      );
-    }
+  // On multi-user hosts another user must not be able to pre-seed the
+  // deterministic path; require it to be a regular directory owned by us.
+  if (validateOwnedDir(outDir)) {
     return outDir;
   }
 
@@ -143,11 +121,40 @@ export function writeMergedConfig(
     renameSync(tmpOut, outDir);
   } catch (err) {
     rmSync(tmpOut, { force: true, recursive: true });
-    if (existsSync(outDir)) {
+    // A concurrent run may have populated outDir between our lstat and the
+    // rename; re-validate before reusing it.
+    if (validateOwnedDir(outDir)) {
       return outDir;
     }
     throw err;
   }
 
   return outDir;
+}
+
+// Single-syscall existence + ownership check. Returns true if outDir is a
+// regular directory owned by the current uid; false if it does not exist;
+// throws if the path exists but fails the safety checks.
+function validateOwnedDir(outDir: string): boolean {
+  let existing: ReturnType<typeof lstatSync>;
+  try {
+    existing = lstatSync(outDir);
+  } catch (err) {
+    if ((err as NodeJS.ErrnoException).code === 'ENOENT') {
+      return false;
+    }
+    throw err;
+  }
+  if (existing.isSymbolicLink() || !existing.isDirectory()) {
+    throw new Error(
+      `Refusing to reuse merged-config path ${outDir}: not a regular directory.`,
+    );
+  }
+  const ourUid = typeof process.getuid === 'function' ? process.getuid() : null;
+  if (ourUid !== null && existing.uid !== ourUid) {
+    throw new Error(
+      `Refusing to reuse merged-config path ${outDir}: owned by uid ${existing.uid}, not ${ourUid}.`,
+    );
+  }
+  return true;
 }
