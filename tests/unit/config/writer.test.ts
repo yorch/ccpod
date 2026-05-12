@@ -233,6 +233,20 @@ describe('writeMergedConfig', () => {
     expect(a).toBe(b);
   });
 
+  it('refuses to reuse outDir when it is a symlink', () => {
+    const profileDir = makeTempDir();
+    // First write to populate the cache
+    const out = run(profileDir, 'symlink-guard', { v: 1 });
+    // Replace outDir with a symlink pointing at an attacker-controlled dir
+    const decoy = makeTempDir();
+    rmSync(out, { force: true, recursive: true });
+    symlinkSync(decoy, out);
+    cleanup.push(out);
+    expect(() => run(profileDir, 'symlink-guard', { v: 1 })).toThrow(
+      /not a regular directory/,
+    );
+  });
+
   it('skips nested symlinks inside subdirectories', () => {
     const profileDir = makeTempDir();
     const skillsDir = join(profileDir, 'skills');

@@ -29,6 +29,30 @@ describe('isNewer()', () => {
     expect(isNewer('1.0.0', 'v0.9.9')).toBe(true);
     expect(isNewer('v1.0.0', '0.9.9')).toBe(true);
   });
+
+  it('ignores pre-release suffixes when comparing different triples', () => {
+    expect(isNewer('v1.2.3-rc1', '1.2.2')).toBe(true);
+    expect(isNewer('v1.2.2', '1.2.3-rc1')).toBe(false);
+  });
+
+  it('treats GA as newer than the same triple with a pre-release', () => {
+    expect(isNewer('v1.2.3', '1.2.3-rc1')).toBe(true);
+    expect(isNewer('v1.2.3-rc1', '1.2.3')).toBe(false);
+    // Two pre-releases on the same triple are not ordered against each other.
+    expect(isNewer('v1.2.3-rc2', '1.2.3-rc1')).toBe(false);
+  });
+
+  it('treats missing minor/patch as zero', () => {
+    expect(isNewer('v2.0', '1.9.9')).toBe(true);
+    expect(isNewer('v2', '1.9.9')).toBe(true);
+    expect(isNewer('v2.0', '2.0.0')).toBe(false);
+    expect(isNewer('v2.0.0', '2.0')).toBe(false);
+  });
+
+  it('returns false for unparseable input', () => {
+    expect(isNewer('not-a-version', '1.0.0')).toBe(false);
+    expect(isNewer('1.0.0', 'not-a-version')).toBe(true);
+  });
 });
 
 // checkForUpdate I/O behaviour via CCPOD_TEST_DIR

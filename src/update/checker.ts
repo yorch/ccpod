@@ -39,16 +39,38 @@ function isFresh(cache: UpdateCache): boolean {
 }
 
 export function isNewer(latest: string, current: string): boolean {
-  const parse = (v: string) => v.replace(/^v/, '').split('.').map(Number);
-  const [lMaj, lMin, lPatch] = parse(latest);
-  const [cMaj, cMin, cPatch] = parse(current);
+  // Strip a leading "v" and any pre-release / build suffix (e.g. "-rc1",
+  // "+meta") to compare on the numeric triple. Missing minor/patch
+  // components default to 0 so "v2.0" is treated as "2.0.0". A version
+  // without a pre-release is considered newer than one with the same
+  // triple plus pre-release (so users on `1.2.3-rc1` are prompted to
+  // upgrade to `1.2.3` GA).
+  const parse = (v: string): [number, number, number, boolean] => {
+    const match = v.match(/^v?(\d+)(?:\.(\d+))?(?:\.(\d+))?(-[\w.+-]+)?/);
+    if (!match) {
+      return [0, 0, 0, false];
+    }
+    return [
+      Number(match[1]),
+      Number(match[2] ?? 0),
+      Number(match[3] ?? 0),
+      Boolean(match[4]),
+    ];
+  };
+  const [lMaj, lMin, lPatch, lPre] = parse(latest);
+  const [cMaj, cMin, cPatch, cPre] = parse(current);
   if (lMaj !== cMaj) {
-    return (lMaj ?? 0) > (cMaj ?? 0);
+    return lMaj > cMaj;
   }
   if (lMin !== cMin) {
-    return (lMin ?? 0) > (cMin ?? 0);
+    return lMin > cMin;
   }
-  return (lPatch ?? 0) > (cPatch ?? 0);
+  if (lPatch !== cPatch) {
+    return lPatch > cPatch;
+  }
+  // Same numeric triple — GA is newer than pre-release, but we don't
+  // attempt to order between two pre-releases (rc1 vs rc2).
+  return !lPre && cPre;
 }
 
 async function fetchLatestVersion(): Promise<string | null> {

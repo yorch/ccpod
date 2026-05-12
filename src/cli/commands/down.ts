@@ -1,6 +1,6 @@
-import { createHash } from 'node:crypto';
 import chalk from 'chalk';
 import { defineCommand } from 'citty';
+import { computeProjectHash } from '../../container/builder.ts';
 import {
   removeSidecarNetwork,
   sidecarNetworkName,
@@ -20,50 +20,55 @@ export default defineCommand({
     description: 'Stop and remove ccpod containers for the current project',
   },
   async run({ args }) {
-    const projectHash = createHash('sha256')
-      .update(process.cwd())
-      .digest('hex')
-      .slice(0, 16);
+    const currentProjectHash = computeProjectHash(process.cwd());
 
     const filterArgs: string[] = args.all
       ? ['--filter', 'label=ccpod.profile']
-      : ['--filter', `label=ccpod.project=${projectHash}`];
+      : ['--filter', `label=ccpod.project=${currentProjectHash}`];
 
     if (!args.all && args.profile) {
       filterArgs.push('--filter', `label=ccpod.profile=${args.profile}`);
     }
 
-    const { stdout } = await dockerExec(['ps', '-a', '-q', ...filterArgs]);
-    const ids = stdout
+    // Single inspect that returns id, name, status, and project label so the
+    // loop below stays at one round-trip per container instead of three.
+    const { stdout } = await dockerExec([
+      'ps',
+      '-a',
+      '--format',
+      '{{.ID}}|{{.Names}}|{{.Status}}|{{.Label "ccpod.project"}}',
+      ...filterArgs,
+    ]);
+    const rows = stdout
       .split('\n')
       .map((s) => s.trim())
-      .filter(Boolean);
+      .filter(Boolean)
+      .map((line) => {
+        const [id = '', name = '', status = '', projectHash = ''] =
+          line.split('|');
+        return { id, name, projectHash, status };
+      })
+      .filter((row) => row.id);
 
-    if (ids.length === 0) {
+    if (rows.length === 0) {
       console.log(
         `No ccpod containers found${args.all ? '.' : ' for this project.'}`,
       );
       return;
     }
 
-    for (const id of ids) {
-      const { stdout: nameOut } = await dockerExec([
-        'inspect',
-        '--format',
-        '{{.Name}}',
-        id,
-      ]);
-      const name = nameOut.replace(/^\//, '') || id.slice(0, 12);
+    const touchedProjectHashes = new Set<string>();
 
-      const { stdout: statusOut } = await dockerExec([
-        'inspect',
-        '--format',
-        '{{.State.Status}}',
-        id,
-      ]);
-      if (statusOut === 'running') {
-        process.stdout.write(`Stopping ${chalk.cyan(name)}... `);
-        const stopResult = await dockerExec(['stop', '-t', '5', id]);
+    for (const row of rows) {
+      if (row.projectHash) {
+        touchedProjectHashes.add(row.projectHash);
+      }
+      const displayName = row.name || row.id.slice(0, 12);
+      const isRunning = row.status.toLowerCase().startsWith('up');
+
+      if (isRunning) {
+        process.stdout.write(`Stopping ${chalk.cyan(displayName)}... `);
+        const stopResult = await dockerExec(['stop', '-t', '5', row.id]);
         if (stopResult.exitCode !== 0) {
           console.log(chalk.red('failed'));
           console.error(`  ${stopResult.stderr}`);
@@ -72,21 +77,39 @@ export default defineCommand({
         console.log(chalk.green('done'));
       }
 
-      process.stdout.write(`Removing ${chalk.cyan(name)}... `);
-      const rmResult = await dockerExec(['rm', id]);
+      process.stdout.write(`Removing ${chalk.cyan(displayName)}... `);
+      const rmResult = await dockerExec(['rm', row.id]);
       if (rmResult.exitCode !== 0) {
-        console.log(chalk.red('failed'));
-        console.error(`  ${rmResult.stderr}`);
+        // A concurrent run may have removed the container already — treat
+        // "no such container" as success rather than failing the command.
+        if (/no such container/i.test(rmResult.stderr)) {
+          console.log(chalk.dim('already gone'));
+        } else {
+          console.log(chalk.red('failed'));
+          console.error(`  ${rmResult.stderr}`);
+        }
       } else {
         console.log(chalk.green('done'));
       }
     }
 
-    // Remove shared sidecar network for this project (idempotent — ignore errors)
-    if (!args.all) {
-      await removeSidecarNetwork(sidecarNetworkName(projectHash)).catch(
-        () => {},
-      );
+    // Remove each project's shared sidecar network, but only when no
+    // containers still reference it. This prevents `--profile` from tearing
+    // down the network while sibling profiles are still running, and ensures
+    // `--all` cleans up networks per project.
+    for (const projectHash of touchedProjectHashes) {
+      const { stdout: remaining } = await dockerExec([
+        'ps',
+        '-a',
+        '-q',
+        '--filter',
+        `label=ccpod.project=${projectHash}`,
+      ]);
+      if (remaining.trim() === '') {
+        await removeSidecarNetwork(sidecarNetworkName(projectHash)).catch(
+          () => {},
+        );
+      }
     }
   },
 });

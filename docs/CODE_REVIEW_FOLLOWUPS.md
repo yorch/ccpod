@@ -18,17 +18,14 @@ marked ✅ inline so future readers don't re-verify them.
 
 Highest-leverage open items, in suggested order:
 
-1. **Must-fix #2** — SIGINT/SIGTERM handling. Headless `ccpod run` orphans the
-   main container and leaks sidecars on Ctrl+C; users hit this and rarely
-   report it.
-2. **Must-fix #4** — `${VAR:-default}` empty-string semantics. Documented
-   POSIX behavior in `CLAUDE.md` is not what the code does.
-3. **Must-fix #5** — `isNewer` silently skips updates whose tag carries a
-   pre-release suffix.
-4. **Must-fix #1** — `ccpod down --profile` removes the shared sidecar network
-   even when sibling profiles are still using it.
-5. **M1** — `writeMergedConfig` ownership check on the deterministic `outDir`
-   (multi-user host risk).
+1. **Must-fix #3** — Sidecar startup atomicity / `ensureNetwork` TOCTOU.
+2. **Must-fix #7** — `runContainer` "no such container" race (already partly
+   mitigated in `ccpod down`; still affects `runContainer` and `shellContainer`).
+3. **Must-fix #8** — `computeProjectHash` platform stability (`realpathSync`,
+   darwin case-folding).
+4. **Must-fix #9** — `writeMergedConfig` rename race / sentinel marker.
+5. **M2** — Apply `0o700` to `profilesDir()` and `getStateDir()`.
+6. **M3** — Validate `.mcp.json` with Zod and bound port range.
 
 ---
 
@@ -99,10 +96,14 @@ project init commands are silently dropped.
 
 ## MEDIUM — security
 
-- **M1.** `writeMergedConfig` reuses deterministic `outDir` without checking
-  ownership (`src/config/writer.ts:87-91, 119`). On multi-user machines another
-  user could pre-create the dir. Fix: `lstat(outDir).uid === process.getuid()`
-  check before reuse.
+- ✅ **M1.** Addressed. `writeMergedConfig` now `lstat`-s the deterministic
+  `outDir` before reuse and refuses it if it is a symlink, not a directory,
+  or owned by a different uid (`src/config/writer.ts:87-107`). Residue: an
+  attacker running under the *same* uid (compromised earlier ccpod run,
+  shared CI uid) could still pre-seed the deterministic path with a
+  malicious `settings.json` before first use, since the cache short-circuit
+  returns without verifying contents. Close together with Must-fix #9
+  (sentinel marker / per-pid temp dir).
 - **M2.** Partially addressed. `credentialsBase()` now uses `mode: 0o700`
   (`src/profile/manager.ts:34`), but `profilesDir()` (line 33) and
   `getStateDir()` (line 57) still create with default modes. Apply 0o700 to
@@ -120,27 +121,31 @@ project init commands are silently dropped.
 
 ## MUST-FIX — correctness
 
-1. **`ccpod down` mismanages sidecar networks** (`src/cli/commands/down.ts:86-90`)
-   - `--profile` removes the project's shared network even when sibling profiles
-     are still using it; `--all` never removes networks at all. Fix: only remove
-     the network when no main/sidecar containers reference it; iterate per
-     project when `--all`.
-2. **No SIGINT / SIGTERM handlers in headless run** (`src/cli/index.ts`,
-   `src/container/runner.ts`). Ctrl+C orphans the container and skips
-   sidecar/tmpdir cleanup. Fix: register handlers that propagate to the active
-   docker child and tear down sidecars/temp dirs.
+1. ✅ **`ccpod down` mismanages sidecar networks** — addressed. `down.ts`
+   collects every `ccpod.project` label touched by the run, then only removes
+   each `ccpod-net-<hash>` once no containers reference that hash. `--all`
+   now cleans networks per project. As a bonus the inspect-per-container
+   loop is collapsed to a single `docker ps --format` round-trip.
+2. ✅ **No SIGINT / SIGTERM handlers in headless run** — addressed.
+   `src/cli/commands/run.ts:installSignalForwarding` registers SIGINT/SIGTERM
+   handlers that issue `docker stop -t 5 <name>` for the active container
+   in headless mode. TTY mode relies on docker's existing forwarding; a
+   second Ctrl+C re-arms the default handler so it kills ccpod immediately.
 3. **Sidecar startup is not atomic** (`src/container/sidecars.ts:30-44`). Partial
    failure leaves containers running and the network in place. Also `ensureNetwork`
    has a TOCTOU race for concurrent `ccpod run` invocations. Fix: treat
    "already exists" as success; on per-service failure, tear down services started
    so far.
-4. **`${VAR:-default}` does not fall back on empty string**
-   (`src/auth/resolver.ts:40-47`). Contradicts CLAUDE.md's documented POSIX
-   semantics. Fix: when syntax is `:-`, fall back on `undefined` OR empty.
-5. **`isNewer` mishandles pre-releases and 2-component tags**
-   (`src/update/checker.ts:44-55`). `v1.2.3-rc1` parses to `[1, 2, NaN]` →
-   updates silently skipped. `v2.0` (2 parts) → treated as equal to anything.
-   Fix: strip pre-release with `^v?(\d+)\.(\d+)\.(\d+)`, default missing parts to 0.
+4. ✅ **`${VAR:-default}` empty-string fallback** — addressed.
+   `interpolateHostEnv` now matches POSIX: when the syntax is `:-`, fall
+   back on `default` whenever the host value is unset **or** empty
+   (`src/auth/resolver.ts:53-77`). Existing tests updated; new coverage for
+   empty + empty-default.
+5. ✅ **`isNewer` pre-release / 2-component tags** — addressed.
+   `src/update/checker.ts:41-64` now parses with
+   `/^v?(\d+)(?:\.(\d+))?(?:\.(\d+))?/`, treating missing parts as 0 and
+   silently ignoring pre-release/build suffixes. New tests cover `v1.2.3-rc1`,
+   `v2.0`, and unparseable input.
 6. ✅ **`downloadAndReplace` tmp cleanup + EXDEV** — addressed.
    `src/update/updater.ts` now wraps the rename in try/finally and falls back
    to copy+unlink on EXDEV (`updater.ts:160-180`). Note: explicit
@@ -159,9 +164,10 @@ project init commands are silently dropped.
    runs can race on rename; reader may see a half-populated mount. Fix: write
    a sentinel marker file last and poll for it on rename failure, or use a
    per-pid temp dir.
-10. **`computeProjectHash` reinvented inline in down**
-    (`src/cli/commands/down.ts:23-26`). Diverges silently if the algorithm
-    changes. Fix: import `computeProjectHash` from `src/container/builder.ts`.
+10. ✅ **`computeProjectHash` reinvented inline in down** — addressed.
+    `src/cli/commands/down.ts` now imports `computeProjectHash` from
+    `src/container/builder.ts` instead of duplicating the inline sha256
+    truncation.
 
 ---
 
@@ -257,9 +263,11 @@ project init commands are silently dropped.
 - **`src/config/writer.ts:hashProfileDir` (~line 35)** walks the entire profile
   config dir including `mtimeMs` on every run. Caches break on `git checkout`.
   Re-think: either content-hash small files, or drop directory hashing.
-- **`src/cli/commands/down.ts:50-83`** processes containers sequentially with
-  two inspects each. Combine inspects (`{{.Name}}|{{.State.Status}}`) and
-  `Promise.all` the loop.
+- ✅ **`src/cli/commands/down.ts`** — addressed (partial). The two-inspect
+  loop is replaced by a single `docker ps --format` round-trip that returns
+  id, name, status, and project label in one shot. The actual stop/rm calls
+  are still sequential — `Promise.all`-ing them is a future optimization
+  but is rarely the bottleneck.
 - **`src/container/sidecars.ts:30-44`** starts sidecars sequentially. Parallelize.
 
 ---
@@ -269,14 +277,18 @@ project init commands are silently dropped.
 - `src/container/sidecars.ts` — no tests for network race or partial-failure
   rollback.
 - `src/update/updater.ts` — no tests for EXDEV / ETXTBSY paths.
-- SIGINT handling in `runContainer` — no tests (because the handler doesn't
-  exist yet — see Must-fix #2).
+- SIGINT handling in headless `ccpod run` — no tests for
+  `installSignalForwarding` in `src/cli/commands/run.ts`. The handler is
+  fire-and-forget and hard to assert on without spawning a real subprocess;
+  consider a child-process integration test.
 - `src/cli/commands/{down,ps}.ts`, `src/cli/commands/state/clear.ts`,
   `src/plugins/*` — no tests.
-- `interpolateHostEnv` — missing coverage for empty-string + `:-` semantics
+- ✅ `interpolateHostEnv` — addressed.
+  `tests/unit/auth/resolver.test.ts` covers empty-string fallback for `:-`
   (Must-fix #4).
-- `isNewer` — missing pre-release and 2-component version tests
-  (Must-fix #5).
+- ✅ `isNewer` — addressed.
+  `tests/unit/update/checker.test.ts` covers pre-release tags, 2-component
+  versions, and unparseable input (Must-fix #5).
 - `detectSource` — missing `raw.githubusercontent.com` and
   `github.com/.../raw/...` cases.
 
@@ -290,10 +302,7 @@ project init commands are silently dropped.
   "shown in `ccpod profile list`" but `src/cli/commands/profile/list.ts` does
   not display it. Either wire it into `profile list` (preferred) or remove the
   field entirely from schema, types, and docs.
-- **Broken contributor instruction (escalated from cosmetic).** `AGENTS.md`
-  and `CLAUDE.md` line 115 instruct contributors to spawn a
-  `feature-dev:code-reviewer` subagent before every commit. This subagent is
-  not registered in the available agent set in current sessions, so the
-  instruction is dead. Either replace with the generic `code-reviewer` /
-  `general-purpose` agent name that ships with the harness, or drop the
-  bullet — leaving it as-is silently degrades the commit checklist.
+- ✅ **Broken contributor instruction** — addressed. The commit checklist in
+  `AGENTS.md` (line 115) now references the harness's built-in code reviewer
+  (`code-reviewer` / `general-purpose`) instead of the unregistered
+  `feature-dev:code-reviewer`.

@@ -88,7 +88,7 @@ Docker volumes:
 
 - **Profile names** are validated by Zod regex `/^[a-zA-Z0-9_-]{1,64}$/` — enforced at parse time in `schema.ts`.
 - **`--file` arg** in `run.ts` is normalized and rejected if it starts with `..` or is absolute.
-- **Config temp dirs** are written mode `0o700`, files mode `0o600`.
+- **Config temp dirs** are written mode `0o700`, files mode `0o600`. On reuse, the writer `lstat`s the deterministic `outDir` and refuses it if it is a symlink, not a directory, or owned by a different uid (multi-user host hardening).
 - **`SSH_AUTH_SOCK`** is rejected if it contains `:` (would corrupt Docker bind spec).
 - **`DOCKER_SOCKET_PATH`** env var overrides the hardcoded `/var/run/docker.sock` path (useful in tests and non-standard Docker setups).
 - **Profile `config.repo`** must use `https://`, `http://`, `ssh://`, `git://`, or scp-style (`user@host:path`). **`config.ref`** rejects values starting with `-`, containing `..`, or carrying shell metacharacters — closes git option-injection (`--upload-pack=...`) RCE.
@@ -112,7 +112,7 @@ Before every commit:
 
 1. **Quality gates** — `bun run typecheck && bun test tests/unit/ && bun run check` must all pass
 2. **Docs** — update `CLAUDE.md`, `website/src/content/docs/reference/internals.md`, or any affected docs to reflect the change
-3. **Code review** — spawn a fresh subagent (`feature-dev:code-reviewer`) to review the diff; address any real bugs or meaningful risks before committing
+3. **Code review** — spawn a fresh subagent (the harness's built-in code reviewer, e.g. `code-reviewer` or `general-purpose`) to review the diff against the rest of the codebase; address any real bugs or meaningful risks before committing
 
 Commit messages must follow [Conventional Commits](https://www.conventionalcommits.org/):
 

@@ -56,15 +56,16 @@ function interpolateHostEnv(
   warned: Set<string>,
 ): string {
   // Local regex avoids shared `lastIndex` state. Names follow POSIX shell
-  // identifier rules. Defaults are literal — no nested expansion.
+  // identifier rules. Defaults are literal — no nested expansion. The `:-`
+  // form falls back on both unset and empty values, matching POSIX semantics.
   const re = /\$\{([A-Za-z_][A-Za-z0-9_]*)(?::-([^}]*))?\}/g;
   return value.replace(re, (_match, name: string, def?: string) => {
     const hostValue = process.env[name];
+    if (def !== undefined) {
+      return hostValue !== undefined && hostValue !== '' ? hostValue : def;
+    }
     if (hostValue !== undefined) {
       return hostValue;
-    }
-    if (def !== undefined) {
-      return def;
     }
     if (!warned.has(name)) {
       warned.add(name);
