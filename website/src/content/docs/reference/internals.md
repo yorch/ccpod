@@ -86,6 +86,8 @@ export interface ProfileConfig {
   ports: PortsConfig;
   services: Record<string, ServiceConfig>;
   env: string[];
+  allowProjectHostMounts: boolean;
+  allowProjectInit: boolean;
 }
 
 export interface ProjectConfig {
@@ -272,9 +274,26 @@ write_merged_config(result) → /tmp/ccpod-<sha256(content)>/
 - `KEY=value` — literal value
 - `KEY=...${VAR}...` / `KEY=...${VAR:-default}...` — interpolate host vars into the value
 
-Interpolation is governed by `INTERPOLATION_RE = /\$\{([A-Za-z_][A-Za-z0-9_]*)(?::-([^}]*))?\}/g`. Missing host vars without `:-default` resolve to empty string and warn once per unique name. Interpolation runs on `env` values only — other config string fields are taken verbatim by design (limits attack surface from project-controlled `.ccpod.yml`). Future broadening would require revisiting that trust boundary.
+Interpolation is governed by `INTERPOLATION_RE = /\$\{([A-Za-z_][A-Za-z0-9_]*)(?::-([^}]*))?\}/g`. Missing host vars without `:-default` resolve to empty string and warn once per unique name. Interpolation runs on `env` values only — other config string fields are taken verbatim by design (limits attack surface from project-controlled `.ccpod.yml`).
+
+**Project entries cannot interpolate.** Because a repo's `.ccpod.yml` is untrusted input, `${VAR}` in a project-sourced entry throws an error rather than reading from `process.env`. Profile- and CLI-sourced entries retain full interpolation. Bare `KEY` forwarding and `KEY=literal` still work everywhere.
 
 Source precedence: profile → project → CLI override (later wins).
+
+### Project config trust boundary
+
+A repo's `.ccpod.yml` ships with the codebase being run inside the sandbox, so it is treated as untrusted by default. `mergeConfigs` enforces:
+
+- `services[].volumes` from project must be named volumes (`<name>:<path>[:opts]`). Host-path mounts (`/foo`, `./foo`, `~/foo`) are rejected.
+- `services[].ports` from project may bind only to `127.0.0.1` / `localhost`. Two-part `host:container` entries are auto-rewritten to `127.0.0.1:host:container`.
+- `env` from project may not use `${VAR}` interpolation (see above).
+- `init:` from project is dropped (with a one-line `console.warn`).
+
+To opt out, the profile may set `allowProjectHostMounts: true` (for sidecar volumes/ports) or `allowProjectInit: true` (for init commands). Both default to `false`.
+
+### Updater integrity
+
+`ccpod update` requires each release to publish a `SHASUMS256.txt` asset alongside the binaries. The updater fetches that file, parses the `sha256sum`-format line for the platform asset, computes the SHA-256 of the downloaded bytes in memory, and refuses to install on mismatch. Releases missing `SHASUMS256.txt` are refused.
 
 ## Startup sequence
 

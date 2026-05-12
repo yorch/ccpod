@@ -15,19 +15,65 @@ const serviceConfigSchema = z.object({
   volumes: z.array(z.string()).optional(),
 });
 
+// Refs starting with `-` are parsed as git options — `--upload-pack=…` is a
+// documented RCE vector when refs are user-controlled.
+const gitRefSchema = z
+  .string()
+  .min(1)
+  .max(255)
+  .refine((s) => !s.startsWith('-'), {
+    message: 'git ref must not start with "-"',
+  })
+  .refine((s) => !s.includes('..'), {
+    message: 'git ref must not contain ".."',
+  })
+  .refine((s) => !/[\s;&|`$<>'"\\]/.test(s), {
+    message: 'git ref must not contain whitespace or shell metacharacters',
+  });
+
+const gitRepoSchema = z
+  .string()
+  .min(1)
+  .max(2048)
+  .refine((s) => !s.startsWith('-'), {
+    message: 'git repo URL must not start with "-"',
+  })
+  .refine(
+    (s) =>
+      /^(https?|ssh|git):\/\//.test(s) ||
+      /^[a-zA-Z0-9_.-]+@[a-zA-Z0-9.-]+:/.test(s),
+    {
+      message:
+        'git repo URL must use https://, http://, ssh://, git://, or user@host:path form',
+    },
+  );
+
+const keyFileSchema = z
+  .string()
+  .min(1)
+  .refine(
+    (s) => (s === '~/.ccpod' || s.startsWith('~/.ccpod/')) && !s.includes('..'),
+    {
+      message:
+        'auth.keyFile must be a path under ~/.ccpod (e.g. ~/.ccpod/credentials/<profile>/key); use keyEnv for keys elsewhere',
+    },
+  );
+
 export const profileConfigSchema = z.object({
+  allowProjectHostMounts: z.boolean().default(false),
+  allowProjectInit: z.boolean().default(false),
   auth: z
     .object({
       keyEnv: z.string().default('ANTHROPIC_API_KEY'),
-      keyFile: z.string().optional(),
+      keyFile: keyFileSchema.optional(),
       type: z.enum(['api-key', 'oauth']).default('api-key'),
     })
     .default({ keyEnv: 'ANTHROPIC_API_KEY', type: 'api-key' }),
   claudeArgs: z.array(z.string()).default([]),
   config: z.object({
     path: z.string().optional(),
-    ref: z.string().optional(),
-    repo: z.string().optional(),
+    ref: gitRefSchema.optional(),
+    repo: gitRepoSchema.optional(),
     source: z.enum(['local', 'git']),
     sync: z.enum(['always', 'daily', 'pin']).default('daily'),
   }),

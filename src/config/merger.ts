@@ -3,7 +3,52 @@ import type {
   ProfileConfig,
   ProjectConfig,
   ResolvedConfig,
+  ServiceConfig,
 } from '../types/index.ts';
+
+function sanitizeProjectServices(
+  services: Record<string, ServiceConfig>,
+): Record<string, ServiceConfig> {
+  const out: Record<string, ServiceConfig> = {};
+  for (const [name, svc] of Object.entries(services)) {
+    const volumes = (svc.volumes ?? []).map((v) => {
+      if (!/^[a-zA-Z0-9][a-zA-Z0-9_.-]*:/.test(v)) {
+        throw new Error(
+          `Project service '${name}' volume '${v}' is not a named volume. ` +
+            'Host-path mounts from project config require profile-level ' +
+            'allowProjectHostMounts: true.',
+        );
+      }
+      return v;
+    });
+    const ports = (svc.ports ?? []).map((p) => {
+      const parts = p.split(':');
+      if (parts.length === 1) {
+        // `docker run -p <containerPort>` publishes to a random host port on
+        // 0.0.0.0, so a bare port is not container-only — reject it.
+        throw new Error(
+          `Project service '${name}' port '${p}' would publish on all interfaces; ` +
+            'use "127.0.0.1:<host>:<container>" or set profile-level ' +
+            'allowProjectHostMounts: true.',
+        );
+      }
+      if (parts.length >= 3) {
+        const ip = parts[0];
+        if (ip !== '127.0.0.1' && ip !== 'localhost') {
+          throw new Error(
+            `Project service '${name}' port '${p}' binds to ${ip || '0.0.0.0'}; ` +
+              'only 127.0.0.1 is allowed without profile-level ' +
+              'allowProjectHostMounts: true.',
+          );
+        }
+        return p;
+      }
+      return `127.0.0.1:${p}`;
+    });
+    out[name] = { ...svc, ports, volumes };
+  }
+  return out;
+}
 
 export function mergeConfigs(
   profile: ProfileConfig,
@@ -47,20 +92,28 @@ export function mergeConfigs(
     list: [...(profile.ports.list ?? []), ...(project?.ports?.list ?? [])],
   };
 
+  const projectServices = profile.allowProjectHostMounts
+    ? (project?.services ?? {})
+    : sanitizeProjectServices(project?.services ?? {});
   const services =
     strategy === 'override' && project?.services
-      ? project.services
-      : { ...profile.services, ...(project?.services ?? {}) };
+      ? projectServices
+      : { ...profile.services, ...projectServices };
 
   const claudeArgs =
     strategy === 'override'
       ? (project?.claudeArgs ?? [])
       : [...profile.claudeArgs, ...(project?.claudeArgs ?? [])];
 
+  const projectInit = profile.allowProjectInit ? (project?.init ?? []) : [];
+  if (!profile.allowProjectInit && project?.init && project.init.length > 0) {
+    console.warn(
+      'Warning: project .ccpod.yml declares init commands, but the active ' +
+        'profile does not set allowProjectInit: true — ignoring them.',
+    );
+  }
   const init =
-    strategy === 'override'
-      ? (project?.init ?? [])
-      : [...profile.init, ...(project?.init ?? [])];
+    strategy === 'override' ? projectInit : [...profile.init, ...projectInit];
 
   return {
     auth: profile.auth,

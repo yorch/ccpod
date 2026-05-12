@@ -3,98 +3,69 @@
 Items identified during the comprehensive code review on branch
 `claude/comprehensive-code-review-uTT1C` but **not** addressed in that PR.
 The branch in scope landed documentation refreshes and dead-code removal only;
-everything below is queued for follow-up PRs.
+the remainder is queued for follow-up PRs.
 
 Format: each item has `area`, `file:line` references, a short description, and
 a concrete suggested fix. Items are grouped by severity.
 
----
-
-## CRITICAL — security
-
-### C1. Git ref / repo injection in `simple-git` calls
-
-- **Files:** `src/profile/git-sync.ts:18,29-30`, `src/profile/installer.ts:50`
-- **Problem:** `profile.config.ref` and `profile.config.repo` flow into `simple-git`
-  unvalidated. Schema (`src/config/schema.ts:29-30`) accepts any string. Many git
-  subcommands honor refs that begin with `--` (e.g. `--upload-pack=…`, a documented
-  RCE vector). Similarly, SSH-style URLs starting with `-` (`-oProxyCommand=…`)
-  break out of normal clone semantics.
-- **Exploit chain:** Combined with C2 below, a profile published at any URL becomes
-  remote code execution on the next `ccpod run` after a user runs
-  `ccpod profile install <attacker-url>`.
-- **Fix:** Reject `ref` strings that contain `..`, start with `-`, or contain shell
-  metacharacters. Reject `repo` URLs that do not start with `https://`, `http://`,
-  `git@`, `git://`, or `ssh://` and do not begin with `-`. Add a Zod refinement to
-  `profileConfigSchema.config.{ref,repo}`.
-
-### C2. Profile install accepts arbitrary URLs (SSRF / RCE delivery vector)
-
-- **Files:** `src/profile/installer.ts:60-65`, `src/cli/commands/profile/install.ts`
-- **Problem:** `type: 'url'` performs `fetch(source.url)` with no scheme/host
-  allow-list. `http://169.254.169.254/...` (cloud metadata), `http://localhost`,
-  internal HTTP services are all reachable. `type: 'git'` similarly accepts any
-  URL.
-- **Fix:** Display the full target URL and require interactive confirmation before
-  fetching. Optionally allow-list common hosts (github.com,
-  raw.githubusercontent.com, gitlab.com, etc.). Combine with C1's URL pattern
-  validation for the resulting profile YAML.
-
-### C3. Sidecar host-path mounts escape the sandbox
-
-- **Files:** `src/container/sidecars.ts:106-116`, `src/config/schema.ts:11-16`
-- **Problem:** Project-level `.ccpod.yml services.*.volumes` accepts arbitrary
-  strings. A repo can ship `volumes: ["/:/host:rw"]` and any `ccpod run` against
-  that repo mounts host root rw into a sidecar.
-- **Fix:** Restrict `services[].volumes` entries to named volumes
-  (regex: `^[a-zA-Z0-9_.-]+:`) by default. Require an explicit
-  `services.allowHostMounts: true` opt-in at the profile (not project) level for
-  host paths. Same treatment for `ports` (reject `0.0.0.0:` binds; restrict to
-  localhost by default).
+> ✅ All CRITICAL (C1–C3) and HIGH (H1, H3–H5) security items were addressed in
+> the `claude/review-code-items-NoaPZ` branch. See the "Security invariants"
+> section of `AGENTS.md` for the resulting trust boundary.
 
 ---
 
-## HIGH — security
+## CRITICAL — security (✅ addressed)
 
-### H1. Env interpolation exfiltrates arbitrary host env vars
+### C1. Git ref / repo injection in `simple-git` calls ✅
 
-- **File:** `src/auth/resolver.ts:32-56`
-- **Problem:** `${VAR}` interpolation reads `process.env` with no allow-list.
-  Project `.ccpod.yml` can declare `env: ["LEAK=${AWS_SECRET_ACCESS_KEY}…"]` and
-  ship the value into the container, which can then post it outbound.
-- **Fix:** For project-sourced env entries, forbid `${...}` interpolation entirely
-  (accept only bare `KEY` or `KEY=literal`). Profile-sourced entries can keep
-  interpolation. Log a one-line summary at runtime listing which host vars were
-  read.
+Zod refinements on `profileConfigSchema.config.{ref,repo}` (see
+`src/config/schema.ts`) reject refs starting with `-`, containing `..`, or
+holding shell metacharacters, and require repo URLs to use
+`https://`, `http://`, `ssh://`, `git://`, or scp-style `user@host:path`.
 
-### H3. Updater performs no integrity verification
+### C2. Profile install accepts arbitrary URLs ✅
 
-- **File:** `src/update/updater.ts:49-78`
-- **Problem:** GitHub release asset is downloaded and renamed over the running
-  binary with no checksum or signature check. Asset tampering, TLS MITM, or
-  release-storage compromise → instant RCE.
-- **Fix:** Add a `SHASUMS256.txt` to releases (CI step in `release.yml`), verify
-  the asset's SHA-256 before `renameSync`. Optionally minisign/cosign.
+`ccpod profile install <git|url>` now displays the full target and requires
+interactive confirmation before fetching. Pass `--yes` / `-y` to bypass for
+scripted use. See `src/cli/commands/profile/install.ts`.
 
-### H4. `auth.keyFile` follows arbitrary host paths
+### C3. Sidecar host-path mounts escape the sandbox ✅
 
-- **File:** `src/auth/resolver.ts:19-23`
-- **Problem:** A malicious profile can set `keyFile: ~/.aws/credentials` or
-  `/etc/shadow` (if running as root) and the file contents are shipped into the
-  container as `ANTHROPIC_API_KEY`.
-- **Fix:** Restrict `keyFile` to `~/.ccpod/credentials/<profile>/...` or warn
-  loudly and require confirmation on first use of any other path.
+`mergeConfigs` runs `sanitizeProjectServices` on project-sourced `services`:
+rejects host-path volume entries (must be `<named>:<path>` form) and rejects
+ports bound to anything except `127.0.0.1` / `localhost`; two-part
+`host:container` ports are auto-rewritten to bind to `127.0.0.1`. The new
+profile-level flag `allowProjectHostMounts: true` opts out of this hardening.
 
-### H5. Project `init` runs arbitrary shell in-container without trust opt-in
+---
 
-- **File:** `src/config/writer.ts:111-117`
-- **Problem:** Project `.ccpod.yml init: [...]` lines are concatenated verbatim
-  into `post-init.sh` and run as `node` in `/workspace`. A malicious project can
-  install backdoors into the persistent state volume the moment `ccpod run`
-  starts.
-- **Fix:** Add an explicit `profile.allowProjectInit: true` opt-in. Without it,
-  ignore project-level `init`. Update CLAUDE.md's "Security invariants" section
-  to document the resulting trust boundary.
+## HIGH — security (✅ addressed)
+
+### H1. Env interpolation exfiltrates arbitrary host env vars ✅
+
+`resolveEnvForwarding` accepts `${VAR}` interpolation only for profile- and
+CLI-sourced entries. Project-sourced entries with `${...}` throw immediately;
+bare `KEY` forwarding and `KEY=literal` continue to work.
+
+### H3. Updater performs no integrity verification ✅
+
+`release.yml` now publishes a `SHASUMS256.txt` asset (`sha256sum` of each
+binary). `downloadAndReplace` fetches it, looks up the entry for the current
+platform's asset, and compares against the in-memory SHA-256 of the downloaded
+bytes before `renameSync`. A release without `SHASUMS256.txt` is refused with
+a clear error.
+
+### H4. `auth.keyFile` follows arbitrary host paths ✅
+
+`auth.keyFile` is now restricted at the schema level to paths under `~/.ccpod/`
+(typically `~/.ccpod/credentials/<profile>/...`); paths containing `..` are
+rejected. Users with keys stored elsewhere should use `keyEnv` instead.
+
+### H5. Project `init` runs arbitrary shell in-container without trust opt-in ✅
+
+Project-level `init:` is ignored unless the profile sets
+`allowProjectInit: true`. A one-line `console.warn` is emitted whenever
+project init commands are silently dropped.
 
 ---
 
