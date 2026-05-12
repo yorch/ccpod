@@ -6,49 +6,54 @@ import type {
   ServiceConfig,
 } from '../types/index.ts';
 
-// True when `ip` is any form of the IPv6 unspecified address: `::`,
-// `0:0:0:0:0:0:0:0`, or any variant where `::` expansion produces all-zero
-// groups (e.g. `0::`, `::0:0`, `0:0::0`).
-function isIpv6Wildcard(ip: string): boolean {
+const HEX_GROUP_RE = /^[0-9a-fA-F]{1,4}$/;
+
+// Parse an IPv6 string into its 8 hexadecimal groups, expanding any `::`
+// shorthand. Returns null if the input is not a syntactically valid IPv6
+// address (too many groups, multiple `::`, non-hex characters, etc.).
+function parseIpv6Groups(ip: string): string[] | null {
   if (!ip.includes(':')) {
-    return false;
+    return null;
   }
   const halves = ip.split('::');
   if (halves.length > 2) {
-    return false;
+    return null;
   }
   const head = halves[0] ? halves[0].split(':') : [];
   const tail = halves.length === 2 && halves[1] ? halves[1].split(':') : [];
-  if (halves.length === 1 && head.length !== 8) {
-    return false;
+  if (halves.length === 1) {
+    if (head.length !== 8) {
+      return null;
+    }
+  } else if (head.length + tail.length > 7) {
+    // `::` must collapse at least one zero group, so the explicit parts can
+    // total at most 7.
+    return null;
   }
-  return [...head, ...tail].every((g) => /^0+$/.test(g));
+  if (![...head, ...tail].every((g) => HEX_GROUP_RE.test(g))) {
+    return null;
+  }
+  const fillCount = 8 - head.length - tail.length;
+  const middle = halves.length === 2 ? new Array(fillCount).fill('0') : [];
+  return [...head, ...middle, ...tail];
 }
 
+// True when `ip` is the IPv6 unspecified address (`::`, `0:0:0:0:0:0:0:0`,
+// or any `::`-expanding variant whose groups are all zero).
+function isIpv6Wildcard(ip: string): boolean {
+  const groups = parseIpv6Groups(ip);
+  return groups?.every((g) => /^0+$/.test(g)) ?? false;
+}
+
+// True when `ip` is the IPv6 loopback (`::1` and zero-padded equivalents).
 function isIpv6Loopback(ip: string): boolean {
-  if (ip === '::1') {
-    return true;
-  }
-  // Long forms `0:0:0:0:0:0:0:1`, `0::1`, etc.
-  if (!ip.includes(':')) {
+  const groups = parseIpv6Groups(ip);
+  if (groups === null) {
     return false;
   }
-  const halves = ip.split('::');
-  if (halves.length > 2) {
-    return false;
-  }
-  const head = halves[0] ? halves[0].split(':') : [];
-  const tail = halves.length === 2 && halves[1] ? halves[1].split(':') : [];
-  if (halves.length === 1 && head.length !== 8) {
-    return false;
-  }
-  const groups = [...head, ...tail];
-  if (groups.length === 0) {
-    return false;
-  }
-  const last = groups[groups.length - 1];
   return (
-    groups.slice(0, -1).every((g) => /^0+$/.test(g)) && /^0*1$/.test(last ?? '')
+    groups.slice(0, -1).every((g) => /^0+$/.test(g)) &&
+    /^0*1$/.test(groups[7] ?? '')
   );
 }
 
@@ -105,7 +110,7 @@ function sanitizePort(serviceName: string, spec: string): string {
     if (ip !== '127.0.0.1' && ip !== 'localhost') {
       throw new Error(
         `Project service '${serviceName}' port '${spec}' binds to ${ip || '0.0.0.0'}; ` +
-          'only 127.0.0.1 / ::1 is allowed without profile-level allowProjectHostMounts: true.',
+          'only 127.0.0.1 / localhost / ::1 is allowed without profile-level allowProjectHostMounts: true.',
       );
     }
     return spec;

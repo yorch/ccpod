@@ -130,45 +130,48 @@ export async function downloadAndReplace(
   const tmpDir = mkdtempSync(join(tmpdir(), 'ccpod-update-'));
   const tmpPath = join(tmpDir, release.assetName);
 
-  // Stream the response through the hash and into the temp file at the same
-  // time, so a ~50-80 MB binary is never held in memory twice (once as an
-  // ArrayBuffer for hashing, once as a Buffer for writing).
-  const hash = createHash('sha256');
-  await pipeline(
-    Readable.fromWeb(binaryRes.body as never),
-    async function* (source) {
-      for await (const chunk of source) {
-        hash.update(chunk as Uint8Array);
-        yield chunk;
-      }
-    },
-    createWriteStream(tmpPath),
-  );
-  const actualDigest = hash.digest('hex');
-  if (actualDigest !== expectedDigest) {
-    rmSync(tmpDir, { force: true, recursive: true });
-    throw new Error(
-      `Checksum mismatch for ${release.assetName}: expected ${expectedDigest}, got ${actualDigest}. Refusing to install.`,
-    );
-  }
-
-  chmodSync(tmpPath, 0o755);
-
   try {
-    // Atomic on same filesystem
-    const { renameSync } = await import('node:fs');
-    renameSync(tmpPath, targetPath);
-    rmSync(tmpDir, { force: true, recursive: true });
-  } catch (err) {
-    if ((err as NodeJS.ErrnoException).code === 'EXDEV') {
-      // Cross-device link: fall back to copy + delete
-      copyFileSync(tmpPath, targetPath);
-      chmodSync(targetPath, 0o755);
-      unlinkSync(tmpPath);
-      rmSync(tmpDir, { force: true, recursive: true });
-    } else {
-      rmSync(tmpDir, { force: true, recursive: true });
-      throw err;
+    // Stream the response through the hash and into the temp file at the same
+    // time, so a ~50-80 MB binary is never held in memory twice (once as an
+    // ArrayBuffer for hashing, once as a Buffer for writing).
+    const hash = createHash('sha256');
+    await pipeline(
+      Readable.fromWeb(binaryRes.body as never),
+      async function* (source) {
+        for await (const chunk of source) {
+          hash.update(chunk as Uint8Array);
+          yield chunk;
+        }
+      },
+      createWriteStream(tmpPath),
+    );
+    const actualDigest = hash.digest('hex');
+    if (actualDigest !== expectedDigest) {
+      throw new Error(
+        `Checksum mismatch for ${release.assetName}: expected ${expectedDigest}, got ${actualDigest}. Refusing to install.`,
+      );
     }
+
+    chmodSync(tmpPath, 0o755);
+
+    try {
+      // Atomic on same filesystem
+      const { renameSync } = await import('node:fs');
+      renameSync(tmpPath, targetPath);
+    } catch (err) {
+      if ((err as NodeJS.ErrnoException).code === 'EXDEV') {
+        // Cross-device link: fall back to copy + delete
+        copyFileSync(tmpPath, targetPath);
+        chmodSync(targetPath, 0o755);
+        unlinkSync(tmpPath);
+      } else {
+        throw err;
+      }
+    }
+  } finally {
+    // Always remove tmpDir: on success it's empty (rename/copy moved the
+    // binary out); on any error it may contain a partial file. rmSync is
+    // idempotent thanks to `force: true`.
+    rmSync(tmpDir, { force: true, recursive: true });
   }
 }

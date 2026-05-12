@@ -330,6 +330,22 @@ describe('mergeConfigs', () => {
     ).toThrow(/binds to 2001:db8::1/);
   });
 
+  it('rejects syntactically invalid IPv6 with too many groups', () => {
+    // 9 explicit groups around `::` is structurally invalid; must not be
+    // silently accepted as loopback or wildcard.
+    const profile = makeProfile();
+    expect(() =>
+      mergeConfigs(profile, {
+        services: {
+          db: {
+            image: 'postgres',
+            ports: ['[0:0:0:0:0::0:0:0:1]:5432:5432'],
+          },
+        },
+      }),
+    ).toThrow(/binds to 0:0:0:0:0::0:0:0:1/);
+  });
+
   it('isolated profile: CLI state override still honoured', () => {
     const result = mergeConfigs(
       makeProfile({ isolation: true, state: 'persistent' }),

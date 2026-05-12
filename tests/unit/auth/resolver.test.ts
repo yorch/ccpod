@@ -7,7 +7,7 @@ import {
   symlinkSync,
   writeFileSync,
 } from 'node:fs';
-import { homedir, tmpdir } from 'node:os';
+import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import {
   resolveAuth,
@@ -60,38 +60,32 @@ describe('resolveAuth', () => {
   });
 
   it('reads key from file under ~/.ccpod', () => {
-    saveEnv('ANTHROPIC_API_KEY');
+    saveEnv('ANTHROPIC_API_KEY', 'CCPOD_TEST_DIR');
     delete process.env.ANTHROPIC_API_KEY;
-    // os.homedir() is not influenced by $HOME on all platforms, so write
-    // under the real home dir's .ccpod and clean up.
-    const ccpodDir = join(homedir(), '.ccpod', 'test-credentials');
-    mkdirSync(ccpodDir, { recursive: true });
-    const keyFile = join(
-      ccpodDir,
-      `key-${Date.now()}-${Math.random().toString(36).slice(2)}`,
-    );
+    const fakeCcpod = mkdtempSync(`${tmpdir()}/ccpod-home-`);
+    process.env.CCPOD_TEST_DIR = fakeCcpod;
+    const keyFile = join(fakeCcpod, 'credentials', 'default', 'key');
+    mkdirSync(join(fakeCcpod, 'credentials', 'default'), { recursive: true });
     writeFileSync(keyFile, 'sk-from-file\n');
     try {
       expect(
         resolveAuth({ keyEnv: 'ANTHROPIC_API_KEY', keyFile, type: 'api-key' }),
       ).toEqual({ ANTHROPIC_API_KEY: 'sk-from-file' });
     } finally {
-      rmSync(keyFile, { force: true });
+      rmSync(fakeCcpod, { force: true, recursive: true });
     }
   });
 
   it('rejects symlink under ~/.ccpod that targets a path outside it', () => {
-    saveEnv('ANTHROPIC_API_KEY');
+    saveEnv('ANTHROPIC_API_KEY', 'CCPOD_TEST_DIR');
     delete process.env.ANTHROPIC_API_KEY;
-    const ccpodDir = join(homedir(), '.ccpod', 'test-credentials');
-    mkdirSync(ccpodDir, { recursive: true });
+    const fakeCcpod = mkdtempSync(`${tmpdir()}/ccpod-home-`);
+    process.env.CCPOD_TEST_DIR = fakeCcpod;
     const externalDir = mkdtempSync(`${tmpdir()}/ccpod-external-`);
     const externalFile = join(externalDir, 'secret');
     writeFileSync(externalFile, 'sk-secret\n');
-    const symlinkPath = join(
-      ccpodDir,
-      `link-${Date.now()}-${Math.random().toString(36).slice(2)}`,
-    );
+    const symlinkPath = join(fakeCcpod, 'credentials', 'default', 'key');
+    mkdirSync(join(fakeCcpod, 'credentials', 'default'), { recursive: true });
     symlinkSync(externalFile, symlinkPath);
     try {
       expect(() =>
@@ -102,7 +96,7 @@ describe('resolveAuth', () => {
         }),
       ).toThrow(/outside ~\/\.ccpod/);
     } finally {
-      rmSync(symlinkPath, { force: true });
+      rmSync(fakeCcpod, { force: true, recursive: true });
       rmSync(externalDir, { force: true, recursive: true });
     }
   });

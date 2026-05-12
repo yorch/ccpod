@@ -1,10 +1,13 @@
 import { readFileSync, realpathSync } from 'node:fs';
 import { homedir } from 'node:os';
-import { resolve as resolvePath } from 'node:path';
+import { join, resolve as resolvePath } from 'node:path';
 import type { ProfileConfig } from '../types/index.ts';
 
 function ccpodHome(): string {
-  return resolvePath(homedir(), '.ccpod');
+  // CCPOD_TEST_DIR mirrors the test-override pattern in src/profile/manager.ts
+  // so unit tests can point auth resolution at a temp directory without
+  // polluting the developer's real ~/.ccpod.
+  return resolvePath(process.env.CCPOD_TEST_DIR ?? join(homedir(), '.ccpod'));
 }
 
 export function resolveAuth(
@@ -30,7 +33,8 @@ export function resolveAuth(
     try {
       realKeyPath = realpathSync(keyPath);
     } catch {
-      // File doesn't exist yet; fall through to the warning below.
+      // File doesn't exist yet — warn and skip the keyFile path, matching the
+      // historical behaviour for a missing file.
       console.warn(
         `Warning: ${envVar} not set and no keyFile found. Container may fail to authenticate.`,
       );
