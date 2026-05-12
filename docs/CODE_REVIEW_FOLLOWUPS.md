@@ -1,16 +1,34 @@
 # Code Review Follow-ups
 
-Items identified during the comprehensive code review on branch
-`claude/comprehensive-code-review-uTT1C` but **not** addressed in that PR.
-The branch in scope landed documentation refreshes and dead-code removal only;
-the remainder is queued for follow-up PRs.
+Items identified during the comprehensive code review originally tracked on
+branch `claude/comprehensive-code-review-uTT1C` (now deleted; the doc commit
+introducing this file is the canonical record). The original branch landed
+documentation refreshes and dead-code removal only; the remainder is queued
+for follow-up PRs.
 
 Format: each item has `area`, `file:line` references, a short description, and
-a concrete suggested fix. Items are grouped by severity.
+a concrete suggested fix. Items are grouped by severity. Resolved items are
+marked ✅ inline so future readers don't re-verify them.
 
 > ✅ All CRITICAL (C1–C3) and HIGH (H1, H3–H5) security items were addressed in
 > the `claude/review-code-items-NoaPZ` branch. See the "Security invariants"
 > section of `AGENTS.md` for the resulting trust boundary.
+
+## Next up
+
+Highest-leverage open items, in suggested order:
+
+1. **Must-fix #2** — SIGINT/SIGTERM handling. Headless `ccpod run` orphans the
+   main container and leaks sidecars on Ctrl+C; users hit this and rarely
+   report it.
+2. **Must-fix #4** — `${VAR:-default}` empty-string semantics. Documented
+   POSIX behavior in `CLAUDE.md` is not what the code does.
+3. **Must-fix #5** — `isNewer` silently skips updates whose tag carries a
+   pre-release suffix.
+4. **Must-fix #1** — `ccpod down --profile` removes the shared sidecar network
+   even when sibling profiles are still using it.
+5. **M1** — `writeMergedConfig` ownership check on the deterministic `outDir`
+   (multi-user host risk).
 
 ---
 
@@ -82,16 +100,19 @@ project init commands are silently dropped.
 ## MEDIUM — security
 
 - **M1.** `writeMergedConfig` reuses deterministic `outDir` without checking
-  ownership (`src/config/writer.ts:88-91, 119`). On multi-user machines another
+  ownership (`src/config/writer.ts:87-91, 119`). On multi-user machines another
   user could pre-create the dir. Fix: `lstat(outDir).uid === process.getuid()`
   check before reuse.
-- **M2.** State and profiles directories created without `mode: 0o700`
-  (`src/profile/manager.ts:54-58`, `manager.ts:31-34`). Credentials dir does
-  use 0o700. Apply the same to `getStateDir` and `profilesDir`.
+- **M2.** Partially addressed. `credentialsBase()` now uses `mode: 0o700`
+  (`src/profile/manager.ts:34`), but `profilesDir()` (line 33) and
+  `getStateDir()` (line 57) still create with default modes. Apply 0o700 to
+  both.
 - **M3.** `.mcp.json` parser does not validate parsed structure with Zod and does
   not bound port range or count (`src/mcp/parser.ts:14-24,33`). A malicious
   `.mcp.json` could conflict with privileged host ports. Fix: validate via Zod;
   cap servers and require port in 1024-65535.
+- **M4.** *(intentionally skipped during the original review — kept for stable
+  numbering.)*
 - **M5.** `removeSidecarNetwork` swallows exit codes (`src/container/sidecars.ts:47-49`)
   — silent failures.
 
@@ -120,9 +141,12 @@ project init commands are silently dropped.
    (`src/update/checker.ts:44-55`). `v1.2.3-rc1` parses to `[1, 2, NaN]` →
    updates silently skipped. `v2.0` (2 parts) → treated as equal to anything.
    Fix: strip pre-release with `^v?(\d+)\.(\d+)\.(\d+)`, default missing parts to 0.
-6. **`downloadAndReplace` leaks tmp file on EXDEV; no ETXTBSY handling**
-   (`src/update/updater.ts:63-77`). Fix: try/finally on tmp cleanup; explicit
-   ETXTBSY/EBUSY error message on macOS.
+6. ✅ **`downloadAndReplace` tmp cleanup + EXDEV** — addressed.
+   `src/update/updater.ts` now wraps the rename in try/finally and falls back
+   to copy+unlink on EXDEV (`updater.ts:160-180`). Note: explicit
+   ETXTBSY/EBUSY messaging on macOS is **not** added — the rmSync still cleans
+   up, but the surfaced error is generic. Leave open as a polish item if
+   noisy in practice.
 7. **`runContainer` race when container removed concurrently**
    (`src/container/runner.ts:27-34`). `docker rm` "no such container" is fatal.
    Same in `shellContainer`. Fix: treat "no such container" stderr as success.
@@ -204,7 +228,8 @@ project init commands are silently dropped.
   `/ccpod/credentials`, `/ccpod/plugins`, `/ccpod/state`, hash truncation
   length `16`, container/network/volume prefixes (`ccpod-net-`, `ccpod-svc-`,
   `ccpod-plugins-`, `ccpod-tmp-`), default git ref `'main'`. Move to
-  `src/constants.ts`.
+  `src/constants.ts`. (Partial: `src/constants.ts` exists but only holds
+  GitHub URL constants; the container-path/prefix set is still scattered.)
 - **Naming inconsistencies:** `profileName` vs `name` vs `profile`; `cwd` vs
   `projectDir` vs `workdir`; `mergedConfigDir` vs `outDir`. Pick one and apply
   consistently.
@@ -224,8 +249,9 @@ project init commands are silently dropped.
 
 ## Performance
 
-- **`src/update/updater.ts:60`** buffers the entire ~50-80 MB binary in memory.
-  Stream `res.body` directly to `Bun.write`.
+- ✅ **`src/update/updater.ts` streaming** — addressed. Body is now piped
+  through `node:stream/promises::pipeline` while the SHA-256 hash is computed
+  incrementally; nothing is buffered.
 - **`src/image/downloader.ts:36-52`** fetches Dockerfile + entrypoint
   sequentially. `Promise.all` them.
 - **`src/config/writer.ts:hashProfileDir` (~line 35)** walks the entire profile
@@ -258,14 +284,16 @@ project init commands are silently dropped.
 
 ## Documentation
 
-These were noted but considered cosmetic enough to leave for a future pass:
-
 - `ProfileConfig.description` is written by the wizard
   (`src/init/wizard.ts:578`) and documented in profile examples, but **never
   read** anywhere in `src/` or `tests/`. The annotation comment claims it is
   "shown in `ccpod profile list`" but `src/cli/commands/profile/list.ts` does
   not display it. Either wire it into `profile list` (preferred) or remove the
   field entirely from schema, types, and docs.
-- `AGENTS.md` references a `feature-dev:code-reviewer` subagent in the commit
-  checklist. Confirm it still exists in the harness; otherwise drop the
-  instruction.
+- **Broken contributor instruction (escalated from cosmetic).** `AGENTS.md`
+  and `CLAUDE.md` line 115 instruct contributors to spawn a
+  `feature-dev:code-reviewer` subagent before every commit. This subagent is
+  not registered in the available agent set in current sessions, so the
+  instruction is dead. Either replace with the generic `code-reviewer` /
+  `general-purpose` agent name that ships with the harness, or drop the
+  bullet — leaving it as-is silently degrades the commit checklist.
