@@ -21,7 +21,7 @@ Docker operations use the `docker` CLI via `Bun.spawn` — no Docker SDK depende
 
 ## Core types
 
-All shared types live in `src/types/index.ts`.
+Most shared types live in `src/types/index.ts`. The `ContainerSpec` type is the exception — it is declared in `src/container/builder.ts` next to its builder.
 
 ```typescript
 export type SyncStrategy = 'always' | 'daily' | 'pin';
@@ -122,7 +122,7 @@ export interface ResolvedConfig {
 }
 ```
 
-`ContainerSpec` (consumed by `runner.ts`/`sidecars.ts`) is declared in `src/container/builder.ts` rather than `types/index.ts`.
+`ContainerSpec` is consumed by `src/container/runner.ts` and by `buildContainerSpec` callers in `src/cli/commands/`.
 
 ## ~/.claude assembly
 
@@ -135,7 +135,8 @@ Host mounts                     Inside container         ~/.claude/ result
   settings.json                                          CLAUDE.md     (copied)
   CLAUDE.md                                              skills/       (copied)
   hooks/                                                 hooks/        (copied)
-  skills/
+  skills/                                                extensions/   (copied)
+  extensions/                                            …             (copied)
 
 ~/.ccpod/creds/<p>/  ──rw──►   /ccpod/credentials/ ──►  *.json auth files
                                                           (overlays config)
@@ -147,7 +148,7 @@ ccpod-plugins-<p>   (volume) ► /ccpod/plugins/     ──►  plugins/  ← sy
 $PWD                 ──rw──►   /workspace/
 ```
 
-Full `entrypoint.sh` (kept in sync with `docker/entrypoint.sh`):
+Abridged `entrypoint.sh` (full source: [`docker/entrypoint.sh`](https://github.com/yorch/ccpod/blob/main/docker/entrypoint.sh)):
 
 ```sh
 #!/bin/sh
@@ -160,7 +161,7 @@ NODE_HOME=/home/node
 CLAUDE_DIR="${CLAUDE_CONFIG_DIR:-${NODE_HOME}/.claude}"
 mkdir -p "${CLAUDE_DIR}"
 
-# 1. Seed config (CLAUDE.md, settings.json, skills/, extensions/) — ro source → rw dest
+# 1. Seed config (CLAUDE.md, settings.json, skills/, hooks/, extensions/, …) — ro source → rw dest
 if [ -d /ccpod/config ]; then
   cp -r /ccpod/config/. "${CLAUDE_DIR}/"
 fi
