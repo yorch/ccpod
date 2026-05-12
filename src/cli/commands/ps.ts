@@ -1,5 +1,10 @@
 import chalk from 'chalk';
 import { defineCommand } from 'citty';
+import {
+  LABEL_PROFILE,
+  LABEL_PROJECT,
+  LABEL_WORKDIR,
+} from '../../container/builder.ts';
 import { dockerExec } from '../../runtime/docker.ts';
 
 type PsRow = { Names: string; Image: string; Status: string; Labels: string };
@@ -30,7 +35,7 @@ export default defineCommand({
       'ps',
       ...filterArgs,
       '--filter',
-      'label=ccpod.profile',
+      `label=${LABEL_PROFILE}`,
       '--format',
       '{{json .}}',
     ]);
@@ -71,8 +76,8 @@ export default defineCommand({
     for (const c of containers) {
       const labels = parseLabels(c.Labels);
       const name = c.Names.replace(/^\//, '');
-      const profile = labels['ccpod.profile'] ?? '-';
-      const workdir = labels['ccpod.workdir'] ?? labels['ccpod.project'] ?? '-';
+      const profile = labels[LABEL_PROFILE] ?? '-';
+      const workdir = labels[LABEL_WORKDIR] ?? labels[LABEL_PROJECT] ?? '-';
       const isRunning = c.Status.startsWith('Up');
       const stateRaw = isRunning ? 'running' : 'stopped';
       const stateColored = isRunning

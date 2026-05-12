@@ -4,7 +4,27 @@ import { defineCommand } from 'citty';
 import { ZodError } from 'zod';
 import { buildContainerSpec } from '../../container/builder.ts';
 import { runContainer } from '../../container/runner.ts';
+import { dockerExec } from '../../runtime/docker.ts';
 import { setupContainer } from './_setup.ts';
+
+function installSignalForwarding(containerName: string): () => void {
+  let triggered = false;
+  const handler = () => {
+    if (triggered) {
+      return;
+    }
+    triggered = true;
+    void dockerExec(['stop', '-t', '5', containerName]).catch(() => {});
+    detach();
+  };
+  const detach = () => {
+    process.off('SIGINT', handler);
+    process.off('SIGTERM', handler);
+  };
+  process.on('SIGINT', handler);
+  process.on('SIGTERM', handler);
+  return detach;
+}
 
 export default defineCommand({
   args: {
@@ -100,7 +120,17 @@ export default defineCommand({
       const tty = !fileArg && !promptArg;
       const spec = buildContainerSpec(config, cwd, tty, networkName);
       console.log(chalk.dim('Starting container...'));
-      const exitCode = await runContainer(spec);
+
+      // In TTY mode docker -it forwards Ctrl+C to the container natively;
+      // only headless mode needs ccpod-side signal forwarding to stop the
+      // container so it is not orphaned.
+      const detach = tty ? () => {} : installSignalForwarding(spec.name);
+      let exitCode: number;
+      try {
+        exitCode = await runContainer(spec);
+      } finally {
+        detach();
+      }
       if (tty && !args.resume) {
         const profileFlag = args.profile ? ` --profile ${args.profile}` : '';
         console.log(

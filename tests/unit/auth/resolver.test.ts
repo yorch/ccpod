@@ -238,12 +238,20 @@ describe('resolveEnvForwarding', () => {
       });
     });
 
-    it('treats host var set to empty string as set (POSIX :- semantics)', () => {
+    it('falls back to default when host var is empty (POSIX :- semantics)', () => {
       saveEnv('EMPTY_SET');
       process.env.EMPTY_SET = '';
       expect(
         resolveEnvForwarding(['MY=${EMPTY_SET:-fallback}'], [], []),
-      ).toEqual({ MY: '' });
+      ).toEqual({ MY: 'fallback' });
+    });
+
+    it('falls back to empty default when host var is empty', () => {
+      saveEnv('EMPTY_SET2');
+      process.env.EMPTY_SET2 = '';
+      expect(resolveEnvForwarding(['MY=${EMPTY_SET2:-}'], [], [])).toEqual({
+        MY: '',
+      });
     });
 
     it('warns at most once per missing var across profile and CLI', () => {

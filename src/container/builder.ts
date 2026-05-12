@@ -5,6 +5,12 @@ import { detectRuntime } from '../runtime/detector.ts';
 import type { ResolvedConfig } from '../types/index.ts';
 import { VERSION } from '../version.ts';
 
+export const LABEL_PROFILE = 'ccpod.profile';
+export const LABEL_PROJECT = 'ccpod.project';
+export const LABEL_TYPE = 'ccpod.type';
+export const LABEL_VERSION = 'ccpod.version';
+export const LABEL_WORKDIR = 'ccpod.workdir';
+
 export interface ContainerSpec {
   binds: string[];
   capAdd?: string[];
@@ -93,11 +99,11 @@ export function buildContainerSpec(
     env,
     image: config.image,
     labels: {
-      'ccpod.profile': config.profileName,
-      'ccpod.project': hash,
-      'ccpod.type': 'main',
-      'ccpod.version': VERSION,
-      'ccpod.workdir': projectDir,
+      [LABEL_PROFILE]: config.profileName,
+      [LABEL_PROJECT]: hash,
+      [LABEL_TYPE]: 'main',
+      [LABEL_VERSION]: VERSION,
+      [LABEL_WORKDIR]: projectDir,
     },
     ...(capAdd.length > 0 ? { capAdd } : {}),
     name: `ccpod-${config.profileName}-${hash}`,
