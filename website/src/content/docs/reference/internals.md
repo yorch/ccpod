@@ -247,6 +247,17 @@ load_profile_config(name)
   → local: read files directly
   → parse profile.yml (Zod validation)
 
+apply_overlay(profile)
+  → if config.overlay (default true): read ccpod-overlay.yml from config dir
+  → validate against profileOverlaySchema (subset of profile fields)
+  → merge into in-memory profile:
+      lists (plugins)        → union+dedupe
+      lists (claudeArgs/init/env/ports.list) → concat
+      objects (services)     → merge by key, overlay wins
+      network                → policy overrides; allow union+dedupe
+      image, ssh, ports.autoDetectMcp, permissions → overlay wins per-key
+  → auth, name, state, config, isolation never sourced from overlay
+
 load_project_config($PWD)
   → find .ccpod.yml walking up from $PWD
   → parse (Zod validation)

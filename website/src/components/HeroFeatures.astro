@@ -1,27 +1,27 @@
 ---
 const features = [
   {
-    body: 'A profile bundles your Claude config, plugins, CLAUDE.md, MCPs, and image into a single versionable unit.',
-    title: 'Portable profiles',
+    body: 'Claude runs in a container with only your project mounted at /workspace. Your host ~/.claude stays untouched, and a restricted network mode locks the agent to an explicit allow-list.',
+    title: 'Isolated by default',
   },
   {
-    body: 'Every ccpod run boots a clean container from a pinned image — no drift between machines or teammates.',
+    body: 'Every ccpod run boots a clean container from a pinned image. Same Node version, same plugins, same MCP runtimes — no "works on my laptop" drift.',
     title: 'Reproducible sessions',
   },
   {
-    body: '.ccpod.yml sits in your repo and merges with the profile: deep-merge settings, append CLAUDE.md, add sidecars.',
-    title: 'Project-level overrides',
+    body: 'Point a profile at a git repo. CLAUDE.md, settings, and a ccpod-overlay.yml (plugins, image, sidecars, network policy) all sync to the team — daily or pinned to a ref.',
+    title: 'Shareable via git',
   },
   {
-    body: 'Declare a Postgres, Redis, or queue alongside Claude. ccpod wires them onto a shared network automatically.',
-    title: 'Sidecar services',
+    body: '.ccpod.yml lives in the repo and overlays the profile: deep-merge settings, append CLAUDE.md, add sidecars per project.',
+    title: 'Composable per project',
   },
   {
-    body: 'HTTP/SSE MCP servers from .mcp.json are exposed without manual port flags.',
-    title: 'MCP auto-detection',
+    body: 'Declare Postgres, Redis, or a queue alongside Claude. ccpod wires them onto a shared network automatically — and exposes HTTP/SSE MCPs from .mcp.json without manual port flags.',
+    title: 'Services & MCP, batteries included',
   },
   {
-    body: 'Works with Docker, OrbStack, Colima, and Podman. ccpod auto-detects the socket.',
+    body: 'Works with Docker, OrbStack, Colima, and Podman. ccpod auto-detects the socket — no flags, no config.',
     title: 'Runtime-agnostic',
   },
 ];

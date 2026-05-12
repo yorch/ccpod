@@ -8,8 +8,10 @@ import {
   loadProjectConfig,
 } from '../../../config/loader.ts';
 import { mergeClaudes, mergeConfigs } from '../../../config/merger.ts';
+import { loadAndApplyOverlay } from '../../../config/overlay.ts';
 import {
   expandProfilePath,
+  getConfigSourceDir,
   getProfileDir,
   profileExists,
 } from '../../../profile/manager.ts';
@@ -32,7 +34,11 @@ export default defineCommand({
       process.exit(1);
     }
 
-    const profile = loadProfileConfig(getProfileDir(profileName));
+    const profileDir = getProfileDir(profileName);
+    const profile = loadAndApplyOverlay(
+      loadProfileConfig(profileDir),
+      profileDir,
+    );
     const merged = mergeConfigs(profile, projectConfig);
 
     // Display env forwarding keys (values are resolved at run time from the host env)
@@ -78,12 +84,7 @@ export default defineCommand({
     console.log(chalk.bold(`\nMerged config — profile '${profileName}'\n`));
     console.log(yamlStringify(display));
 
-    // Show CLAUDE.md preview
-    const configSourceDir =
-      profile.config.source === 'local'
-        ? (profile.config.path ?? getProfileDir(profileName))
-        : join(getProfileDir(profileName), 'config');
-
+    const configSourceDir = getConfigSourceDir(profile, profileDir);
     const profileMd = readIfExists(join(configSourceDir, 'CLAUDE.md'));
     const projectMd = readIfExists(join(cwd, 'CLAUDE.md'));
 

@@ -9,6 +9,7 @@ import {
 import { homedir } from 'node:os';
 import { join } from 'node:path';
 import { parseDocument } from 'yaml';
+import type { ProfileConfig } from '../types/index.ts';
 
 // For external consumers (e.g. wizard.ts) — computed once at import time
 export const CCPOD_DIR = join(homedir(), '.ccpod');
@@ -43,6 +44,15 @@ export function getProfileDir(name: string): string {
 
 export function expandProfilePath(path: string, profileName: string): string {
   return path.replaceAll('{{profile_dir}}', getProfileDir(profileName));
+}
+
+export function getConfigSourceDir(
+  profile: ProfileConfig,
+  profileDir: string,
+): string {
+  return profile.config.source === 'local'
+    ? (profile.config.path ?? profileDir)
+    : join(profileDir, 'config');
 }
 
 export function getCredentialsDir(profileName: string): string {
