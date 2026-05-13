@@ -365,7 +365,7 @@ Integration tests require a real Docker socket and a minimal test image.
 
 ```
 tests/
-├── unit/                              # 23 unit-test files; run without Docker
+├── unit/                              # 24 unit-test files; run without Docker
 │   ├── auth/resolver.test.ts
 │   ├── cli/config/{get,set}.test.ts
 │   ├── config/{loader,merger,permissions,schema,writer}.test.ts
@@ -376,7 +376,7 @@ tests/
 │   ├── mcp/parser.test.ts
 │   ├── profile/{exporter,git-sync,installer,installer.git,lock,manager}.test.ts
 │   ├── runtime/detector.test.ts
-│   └── update/checker.test.ts
+│   └── update/{checker,updater}.test.ts
 ├── integration/
 │   └── container/docker.test.ts       # requires a real Docker socket
 └── fixtures/                          # profile.yml / .ccpod.yml / .mcp.json

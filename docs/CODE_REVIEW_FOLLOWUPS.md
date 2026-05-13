@@ -18,14 +18,18 @@ marked ✅ inline so future readers don't re-verify them.
 
 Highest-leverage open items, in suggested order:
 
-1. **Must-fix #3** — Sidecar startup atomicity / `ensureNetwork` TOCTOU.
-2. **Must-fix #7** — `runContainer` "no such container" race (already partly
+1. **Must-fix #8** — `computeProjectHash` platform stability (`realpathSync`,
+   darwin case-folding). Actively produces duplicate stopped containers on
+   case-folding hosts.
+2. **Must-fix #3** — Sidecar startup atomicity / `ensureNetwork` TOCTOU.
+3. **Must-fix #7** — `runContainer` "no such container" race (already partly
    mitigated in `ccpod down`; still affects `runContainer` and `shellContainer`).
-3. **Must-fix #8** — `computeProjectHash` platform stability (`realpathSync`,
-   darwin case-folding).
-4. **Must-fix #9** — `writeMergedConfig` rename race / sentinel marker.
-5. **M2** — Apply `0o700` to `profilesDir()` and `getStateDir()`.
-6. **M3** — Validate `.mcp.json` with Zod and bound port range.
+4. **M2** — Apply `0o700` to `profilesDir()` and `getStateDir()`.
+5. **M3** — Validate `.mcp.json` with Zod and bound port range.
+6. **Must-fix #9 (residual)** — `writeMergedConfig` partial-tree visibility.
+   Lstat/own-uid revalidation is in place; remaining gap is the absence of a
+   sentinel marker so a concurrent reader could in principle observe a
+   half-populated `outDir` before `renameSync` lands.
 
 ---
 
@@ -160,10 +164,14 @@ project init commands are silently dropped.
    and realpath variations produce different hashes for the same dir, yielding
    duplicate stopped containers. Fix: `realpathSync(projectDir)`; normalize case
    on darwin.
-9. **`writeMergedConfig` race** (`src/config/writer.ts:88-119`). Two concurrent
-   runs can race on rename; reader may see a half-populated mount. Fix: write
-   a sentinel marker file last and poll for it on rename failure, or use a
-   per-pid temp dir.
+9. **`writeMergedConfig` race — partially addressed** (`src/config/writer.ts:72-160`).
+   Reuse path now `lstat`s `outDir` and rejects symlinks / non-dirs / foreign
+   uids; rename failure cleans the temp and re-validates `outDir` so the
+   loser of a concurrent rename reuses the winner's tree. Residual: no
+   sentinel marker on the final mount, so a reader that races between
+   `copyAssets` and `renameSync` *could* in principle observe a partially
+   populated dir. Close by writing a sentinel marker last (or per-pid temp
+   dir) before declaring this fully resolved.
 10. ✅ **`computeProjectHash` reinvented inline in down** — addressed.
     `src/cli/commands/down.ts` now imports `computeProjectHash` from
     `src/container/builder.ts` instead of duplicating the inline sha256
@@ -296,12 +304,10 @@ project init commands are silently dropped.
 
 ## Documentation
 
-- `ProfileConfig.description` is written by the wizard
-  (`src/init/wizard.ts:578`) and documented in profile examples, but **never
-  read** anywhere in `src/` or `tests/`. The annotation comment claims it is
-  "shown in `ccpod profile list`" but `src/cli/commands/profile/list.ts` does
-  not display it. Either wire it into `profile list` (preferred) or remove the
-  field entirely from schema, types, and docs.
+- ✅ **`ProfileConfig.description` was unused** — addressed.
+  `src/cli/commands/profile/list.ts` now renders a `DESCRIPTION` column
+  (truncated to 60 chars, only shown if any profile has one set), matching
+  the schema annotation.
 - ✅ **Broken contributor instruction** — addressed. The commit checklist in
   `AGENTS.md` (line 115) now references the harness's built-in code reviewer
   (`code-reviewer` / `general-purpose`) instead of the unregistered
