@@ -1,184 +1,206 @@
 # Code Review Follow-ups
 
-Open items from the project's code reviews, queued for follow-up PRs. Each item
-lists `area`, `file:line` references, a short description, and a concrete
-suggested fix, grouped by category.
+Items identified during the comprehensive code review originally tracked on
+branch `claude/comprehensive-code-review-uTT1C` (now deleted; the doc commit
+introducing this file is the canonical record). The original branch landed
+documentation refreshes and dead-code removal only; the remainder is queued
+for follow-up PRs.
 
-Resolved items have been pruned from this doc — their record lives in git
-history and, for the security trust boundary, in the "Security invariants"
-section of `AGENTS.md`. Identifiers `R#` are from the 2026-07 multi-agent
-review; `M#` / `Must-fix #` / `SHOULD-FIX` are from the earlier comprehensive
-review. Numbering is left stable (with gaps) so cross-references stay valid.
+Format: each item has `area`, `file:line` references, a short description, and
+a concrete suggested fix. Items are grouped by severity. Resolved items are
+marked ✅ inline so future readers don't re-verify them.
+
+> ✅ All CRITICAL (C1–C3) and HIGH (H1, H3–H5) security items were addressed in
+> the `claude/review-code-items-NoaPZ` branch. See the "Security invariants"
+> section of `AGENTS.md` for the resulting trust boundary.
 
 ## Next up
 
 Highest-leverage open items, in suggested order:
 
-1. **Security hardening** — M2 (dir perms `0700` for profile/state), M3
-   (`.mcp.json` Zod validation + port bounds), R11 (CLI profile-name validation).
-2. **Container/runtime correctness** — R12 (image tag case), R13 (port-binding
-   collisions), R14 (`mountSshDir` path), R16 (image build-context), R17
-   (`down --all --profile` filter).
-3. **Config/CLI & auth correctness** — R5 (`run --` passthrough), R7 (updater
-   `ETXTBSY`), R18 (config-show masking), R20, R21, R23, R24, R27.
-4. **DRY / maintainability, performance, and test-coverage** backlogs (below).
-
-> **Addressed:** the trust-boundary trio (**R1–R3**) and dead-`claudeArgs`
-> (**R4**); the container-lifecycle cluster **Must-fix #3 / #7 / #8**, **R6**,
-> **R15**, **R19**, **R28**, R22; and the security-hardening batch
-> **Must-fix #9** (per-uid config dir), **R8** (secrets off the cmdline),
-> **R9** (fail-closed restricted network), **R10** (`install.sh` checksum),
-> **M5** (`removeSidecarNetwork` exit code). See the "Security invariants"
-> section of `AGENTS.md` and git history.
+1. **Must-fix #8** — `computeProjectHash` platform stability (`realpathSync`,
+   darwin case-folding). Actively produces duplicate stopped containers on
+   case-folding hosts.
+2. **Must-fix #3** — Sidecar startup atomicity / `ensureNetwork` TOCTOU.
+3. **Must-fix #7** — `runContainer` "no such container" race (already partly
+   mitigated in `ccpod down`; still affects `runContainer` and `shellContainer`).
+4. **M2** — Apply `0o700` to `profilesDir()` and `getStateDir()`.
+5. **M3** — Validate `.mcp.json` with Zod and bound port range.
+6. **Must-fix #9 (residual)** — `writeMergedConfig` partial-tree visibility.
+   Lstat/own-uid revalidation is in place; remaining gap is the absence of a
+   sentinel marker so a concurrent reader could in principle observe a
+   half-populated `outDir` before `renameSync` lands.
 
 ---
 
-## Security
+## CRITICAL — security (✅ addressed)
 
-Untrusted project `.ccpod.yml` (and `.mcp.json`) can escalate past the trust
-boundary documented in `AGENTS.md`. The R1–R3 escapes were closed (network is
-profile-owned, project `env` denylists redirect/TLS keys, main-container
-project/`.mcp.json` ports pinned to loopback), and the hardening batch **R8**
-(secrets off the `docker run` cmdline), **R9** (fail-closed restricted network),
-and **R10** (`install.sh` checksum) landed. Remaining items:
+### C1. Git ref / repo injection in `simple-git` calls ✅
 
-- **R11. CLI profile names bypass `NAME_RE`; `profile delete` does recursive
-  deletes on unvalidated joined paths.** `src/profile/manager.ts:42,72-83`
-  (`getProfileDir`/`deleteProfile` raw-`join`), reached from `delete.ts`,
-  `create.ts`, and `--profile` in `run`/`state clear`. Only YAML/export/install
-  paths validate. `ccpod profile delete '../x'` `rmSync(recursive)`s a
-  traversed path (gated only by a `profile.yml` existing there). Self-inflicted
-  but contradicts the "enforced at parse time" invariant. Fix: apply `NAME_RE`
-  in `getProfileDir`/`deleteProfile` or at each CLI entry.
+Zod refinements on `profileConfigSchema.config.{ref,repo}` (see
+`src/config/schema.ts`) reject refs starting with `-`, containing `..`, or
+holding shell metacharacters, and require repo URLs to use
+`https://`, `http://`, `ssh://`, `git://`, or scp-style `user@host:path`.
 
-- **M2 + R26. Directory permissions are inconsistent.**
-  `credentialsBase()` uses `mode: 0o700` (`src/profile/manager.ts:34`), but
-  `profilesDir()` (line 25) and `getStateDir()` (line 56) create with default
-  (0755) modes, so profile config and Claude conversation state are readable by
-  other local users. Fix: apply `0o700` to both.
+### C2. Profile install accepts arbitrary URLs ✅
 
-- **M3. `.mcp.json` is parsed without validation or port bounds.**
-  `src/mcp/parser.ts:14-24,33`. No Zod validation of structure and no port
-  range/count cap; a malicious `.mcp.json` could conflict with privileged host
-  ports. Fix: validate via Zod; cap servers and require port in 1024–65535.
-  (Range-validation and the silent JSON-error swallow below are part of this.)
+`ccpod profile install <git|url>` now displays the full target and requires
+interactive confirmation before fetching. Pass `--yes` / `-y` to bypass for
+scripted use. See `src/cli/commands/profile/install.ts`.
+
+### C3. Sidecar host-path mounts escape the sandbox ✅
+
+`mergeConfigs` runs `sanitizeProjectServices` on project-sourced `services`:
+rejects host-path volume entries (must be `<named>:<path>` form) and rejects
+ports bound to anything except `127.0.0.1` / `localhost` / `::1`; two-part
+`host:container` ports are auto-rewritten to bind to `127.0.0.1`. Bracketed
+IPv6 is parsed explicitly so `[::1]:host:container` loopback is accepted and
+every `::`-expanding wildcard form (`[::]`, `[0::]`, `[::0:0]`,
+`[0:0:0:0:0:0:0:0]`, …) is rejected with a clear "all IPv6 interfaces"
+message. The profile-level flag `allowProjectHostMounts: true` opts out of
+the entire sanitizer.
 
 ---
 
-## Correctness
+## HIGH — security (✅ addressed)
 
-### Config / CLI wiring
+### H1. Env interpolation exfiltrates arbitrary host env vars ✅
 
-- **R5. `ccpod run -- <flags>` passthrough is double-parsed** (verified: citty
-  0.2.2 yields `{prompt:"--verbose"}` for `rawArgs:['--','--verbose']`).
-  `src/cli/commands/run.ts:89-106`. citty parses post-`--` tokens as the
-  `prompt` positional *and* run.ts re-extracts them from `process.argv`, so
-  they double-apply: `run -- --verbose` silently goes headless (`tty=false`)
-  and passes `--verbose` twice; `run -- --model opus` hard-errors on the bare
-  `opus`. Fix: derive the prompt from pre-`--` argv only.
+`resolveEnvForwarding` accepts `${VAR}` interpolation only for profile- and
+CLI-sourced entries. Project-sourced entries with `${...}` throw immediately;
+bare `KEY` forwarding and `KEY=literal` continue to work.
 
-- **R17.** `ccpod down --all --profile X` silently ignores `--profile` and
-  removes every ccpod container (`src/cli/commands/down.ts:33` — filter only
-  added when `!args.all`). Warn or honor the filter.
+### H3. Updater performs no integrity verification ✅
 
-- **R18.** `config show` masks only env keys containing "key"/"token"
-  (`src/cli/commands/config/show.ts:49`); `PASSWORD`/`SECRET`/`CREDENTIALS`
-  names print in cleartext, including `--json`. Broaden the mask list.
+`release.yml` now publishes a `SHASUMS256.txt` asset (`sha256sum` of each
+binary). `downloadAndReplace` fetches `SHASUMS256.txt` and the asset in
+parallel, then streams the response body through `createHash('sha256')` into
+a write pipeline — the hash is computed as bytes arrive and nothing is
+buffered, so a 50–80 MB binary never lives twice in memory. The computed
+digest is compared to the entry for the current platform's asset before
+`renameSync`. A release without `SHASUMS256.txt`, a missing entry, or a
+mismatch is refused with a clear error.
 
-- **R21.** `loadGlobalConfig` swallows all YAML parse errors and reverts to
-  defaults (`src/global/config.ts:24-28`), silently re-enabling
-  `autoCheckUpdates` on a typo. Emit a stderr warning.
+### H4. `auth.keyFile` follows arbitrary host paths ✅
 
-- **R23.** `DOCKER_SOCKET_PATH` override is silently outranked by an installed
-  OrbStack (`src/runtime/detector.ts:9-16`) — it only substitutes into the
-  lower-ranked `docker` candidate. An explicit env override should win.
+`auth.keyFile` is restricted at the schema level to paths under `~/.ccpod/`
+(typically `~/.ccpod/credentials/<profile>/...`); paths containing `..` are
+rejected. At read time `resolveAuth` `realpathSync`-es the path and re-checks
+containment so a symlink under `~/.ccpod/` cannot redirect to `/etc/shadow`
+(or `~/.aws/credentials`, etc.). Users with keys stored elsewhere should use
+`keyEnv` instead.
 
-- **R27.** Wizard emits unquoted YAML for values with a leading `"`/`'`, and
-  `keyEnv` unquoted (`src/init/wizard.ts:559-598`) → unparseable `profile.yml`.
-  Broaden `q()`'s quote-trigger class.
+### H5. Project `init` runs arbitrary shell in-container without trust opt-in ✅
 
-- **`services` deep-merge replaces wholesale** instead of merging per-service
-  fields (`src/config/merger.ts:50-53`). Surprises users who only want to add
-  one env var to a sidecar.
+Project-level `init:` is ignored unless the profile sets
+`allowProjectInit: true`. A one-line `console.warn` is emitted whenever
+project init commands are silently dropped.
 
-- **Oauth credential presence is not validated** in headless mode
-  (`src/cli/commands/_setup.ts:88-97`). Container fails opaquely with no auth.
+---
 
-### Container / runtime state handling
+## MEDIUM — security
 
-The container-lifecycle cluster (**Must-fix #3 / #7 / #8**, **R15**, **R19**,
-**R28**) was addressed: `runContainer`/`shellContainer` now `rm -f`
-paused/restarting/dead containers, tolerate a concurrently-removed container,
-and refuse to attach a headless run to a live interactive session; sidecar
-startup rolls back on partial failure and `ensureNetwork` re-checks on a create
-race; `computeProjectHash` normalizes via `realpathSync` + darwin case-folding;
-and `syncGitConfig` clones through a temp dir + atomic rename. **Must-fix #9**
-(config-writer) is also addressed — output lives under a private per-uid `0700`
-parent and is atomically renamed into place — and **M5** (`removeSidecarNetwork`
-now surfaces its exit code). Remaining open items:
+- ✅ **M1.** Addressed. `writeMergedConfig` now `lstat`-s the deterministic
+  `outDir` before reuse and refuses it if it is a symlink, not a directory,
+  or owned by a different uid (`src/config/writer.ts:87-107`). Residue: an
+  attacker running under the *same* uid (compromised earlier ccpod run,
+  shared CI uid) could still pre-seed the deterministic path with a
+  malicious `settings.json` before first use, since the cache short-circuit
+  returns without verifying contents. Close together with Must-fix #9
+  (sentinel marker / per-pid temp dir).
+- **M2.** Partially addressed. `credentialsBase()` now uses `mode: 0o700`
+  (`src/profile/manager.ts:34`), but `profilesDir()` (line 33) and
+  `getStateDir()` (line 57) still create with default modes. Apply 0o700 to
+  both.
+- **M3.** `.mcp.json` parser does not validate parsed structure with Zod and does
+  not bound port range or count (`src/mcp/parser.ts:14-24,33`). A malicious
+  `.mcp.json` could conflict with privileged host ports. Fix: validate via Zod;
+  cap servers and require port in 1024-65535.
+- **M4.** *(intentionally skipped during the original review — kept for stable
+  numbering.)*
+- **M5.** `removeSidecarNetwork` swallows exit codes (`src/container/sidecars.ts:47-49`)
+  — silent failures.
 
-- **R13. `portBindings` keyed by container port drops colliding mappings.**
-  `src/container/builder.ts:63-66`. Colliding container ports overwrite
-  silently, and `.mcp.json` ports (appended last, `_setup.ts:185`) can override
-  a profile's declared host-port mapping. Fix: key by host:container pair, or
-  detect collisions.
+---
 
-- **R14. `ssh.mountSshDir` is non-functional.** `src/container/builder.ts:50`
-  mounts host `~/.ssh` at `/root/.ssh:ro`, but `entrypoint.sh` drops to the
-  `node` user (`HOME=/home/node`), which reads `/home/node/.ssh` and can't
-  traverse root-owned `/root` → git-over-SSH fails publickey. Fix: mount at
-  `/home/node/.ssh` (and chown/relax perms appropriately).
+## MUST-FIX — correctness
 
-- **R16. `image build` and `run` build the same tag from different contexts.**
-  `src/cli/commands/image/build.ts:66-68` uses `cwd`; `_setup.ts:163-167` uses
-  `dirname(dockerfileAbs)`. `computeLocalImageTag` hashes Dockerfile content
-  only, so whichever builds first wins the tag and the other reuses a
-  divergently-built image; editing `entrypoint.sh` also never triggers a
-  rebuild on `run`. Fix: unify the context; include context-file digests in
-  the tag.
+1. ✅ **`ccpod down` mismanages sidecar networks** — addressed. `down.ts`
+   collects every `ccpod.project` label touched by the run, then only removes
+   each `ccpod-net-<hash>` once no containers reference that hash. `--all`
+   now cleans networks per project. As a bonus the inspect-per-container
+   loop is collapsed to a single `docker ps --format` round-trip.
+2. ✅ **No SIGINT / SIGTERM handlers in headless run** — addressed.
+   `src/cli/commands/run.ts:installSignalForwarding` registers SIGINT/SIGTERM
+   handlers that issue `docker stop -t 5 <name>` for the active container
+   in headless mode. TTY mode relies on docker's existing forwarding; a
+   second Ctrl+C re-arms the default handler so it kills ccpod immediately.
+3. **Sidecar startup is not atomic** (`src/container/sidecars.ts:30-44`). Partial
+   failure leaves containers running and the network in place. Also `ensureNetwork`
+   has a TOCTOU race for concurrent `ccpod run` invocations. Fix: treat
+   "already exists" as success; on per-service failure, tear down services started
+   so far.
+4. ✅ **`${VAR:-default}` empty-string fallback** — addressed.
+   `interpolateHostEnv` now matches POSIX: when the syntax is `:-`, fall
+   back on `default` whenever the host value is unset **or** empty
+   (`src/auth/resolver.ts:53-77`). Existing tests updated; new coverage for
+   empty + empty-default.
+5. ✅ **`isNewer` pre-release / 2-component tags** — addressed.
+   `src/update/checker.ts:41-64` now parses with
+   `/^v?(\d+)(?:\.(\d+))?(?:\.(\d+))?/`, treating missing parts as 0 and
+   silently ignoring pre-release/build suffixes. New tests cover `v1.2.3-rc1`,
+   `v2.0`, and unparseable input.
+6. ✅ **`downloadAndReplace` tmp cleanup + EXDEV** — addressed.
+   `src/update/updater.ts` now wraps the rename in try/finally and falls back
+   to copy+unlink on EXDEV (`updater.ts:160-180`). Note: explicit
+   ETXTBSY/EBUSY messaging on macOS is **not** added — the rmSync still cleans
+   up, but the surfaced error is generic. Leave open as a polish item if
+   noisy in practice.
+7. **`runContainer` race when container removed concurrently**
+   (`src/container/runner.ts:27-34`). `docker rm` "no such container" is fatal.
+   Same in `shellContainer`. Fix: treat "no such container" stderr as success.
+8. **`computeProjectHash` is not platform-stable**
+   (`src/container/builder.ts:24-26`). Case-insensitive macOS HFS+, symlinks,
+   and realpath variations produce different hashes for the same dir, yielding
+   duplicate stopped containers. Fix: `realpathSync(projectDir)`; normalize case
+   on darwin.
+9. **`writeMergedConfig` race — partially addressed** (`src/config/writer.ts:72-160`).
+   Reuse path now `lstat`s `outDir` and rejects symlinks / non-dirs / foreign
+   uids; rename failure cleans the temp and re-validates `outDir` so the
+   loser of a concurrent rename reuses the winner's tree. Residual: no
+   sentinel marker on the final mount, so a reader that races between
+   `copyAssets` and `renameSync` *could* in principle observe a partially
+   populated dir. Close by writing a sentinel marker last (or per-pid temp
+   dir) before declaring this fully resolved.
+10. ✅ **`computeProjectHash` reinvented inline in down** — addressed.
+    `src/cli/commands/down.ts` now imports `computeProjectHash` from
+    `src/container/builder.ts` instead of duplicating the inline sha256
+    truncation.
 
-- **R12. Uppercase profile name breaks image build.** `src/image/hash.ts:16` +
-  `src/config/schema.ts` name regex allows `A-Z`, but `computeLocalImageTag`
-  embeds the name verbatim in a Docker tag, which must be lowercase →
-  `ccpod run`/`image build` fail with "repository name must be lowercase".
-  Fix: `.toLowerCase()` in the tag (hash already disambiguates).
+---
 
-### Auth / update
-
-- **R7. `ccpod update` copy-fallback fails on the running binary** (verified:
-  `ETXTBSY`). `src/update/updater.ts:169`. The EXDEV fallback
-  `copyFileSync(tmp, targetPath)` opens the live executable for write →
-  `ETXTBSY` on Linux (tmpfs-`/tmp` hosts: Fedora/Arch), so the update can never
-  complete and `update.ts` surfaces a raw stack. Fix: copy to
-  `${targetPath}.new` in the target dir, then `renameSync` over it (atomic,
-  same filesystem).
-
-- **R20.** `auth.keyFile` is always rejected when `~/.ccpod` is itself a
-  symlink (`src/auth/resolver.ts:37-43` compares `realpathSync(keyPath)`
-  against a non-realpath'd home). Fails closed. Fix: `realpathSync` the home
-  dir before comparing.
-
-- **R24.** `ccpod update` run via `bun run dev` replaces the user's `bun`
-  binary (`src/cli/commands/update.ts:45` uses `process.execPath`). Guard:
-  refuse when not a compiled `ccpod` build.
-
-### Git-sync / installer
-
-> **R6** (tag/changed-ref sync) and the partial-corrupt-configDir case were
-> addressed: `syncGitConfig` resets to `FETCH_HEAD` and clones via a temp dir +
-> atomic rename. The SHA-ref clone below is still open.
+## SHOULD-FIX — correctness
 
 - **Git ref as commit SHA fails** — `git clone --depth 1 --branch <sha>` is
-  invalid (`src/profile/git-sync.ts`). Detect SHA-shaped refs and fall back
+  invalid (`src/profile/git-sync.ts:18`). Detect SHA-shaped refs and fall back
   to clone-then-checkout.
-
-- **R25 + `detectSource` URL misclassification.** `src/profile/installer.ts:35`
-  classifies `github.com/.../blob/...` and `github.com/.../raw/...` file URLs
-  as git clones. Fix: prefer `.git` suffix; `raw.githubusercontent.com` and
-  `blob`/`raw` paths should be `url`.
-
+- **Partial clone leaves corrupt configDir** — next run sees `existsSync` and
+  skips, then fetch fails. Fix: `rmSync(configDir, {recursive, force})` on clone
+  failure.
+- **`mergeConfigs` array concat duplicates** in `network.allow` and similar
+  (`src/config/merger.ts:43`). Dedupe arrays in `customMerge`.
+- **`services` deep-merge replaces wholesale** instead of merging per-service
+  fields (`src/config/merger.ts:50-53`). Surprises users who only want to add
+  one env var.
 - **`parseMcpJson` silently swallows JSON errors** (`src/mcp/parser.ts:19-23`).
-  Log a warning. (Part of the M3 hardening.)
+  Log a warning.
+- **MCP ports not range-validated** (`src/mcp/parser.ts:33`); container start
+  fails late.
+- **`detectSource` misclassifies `github.com/.../raw/...` URLs as git**
+  (`src/profile/installer.ts`). Fix: prefer `.git` suffix; raw.githubusercontent.com
+  hosts should be `url`.
+- **Oauth credential presence is not validated** in headless mode
+  (`src/cli/commands/_setup.ts:88-97`). Container fails opaquely with no auth.
 
 ---
 
@@ -208,10 +230,6 @@ now surfaces its exit code). Remaining open items:
   `src/cli/commands/_setup.ts:209`, `src/mcp/parser.ts:20`,
   `src/update/checker.ts:26`, `src/update/updater.ts:34-37`. Define Zod
   schemas for each.
-- **Array-valued config fields can accumulate duplicates** where profile and
-  project lists concatenate (e.g. `claudeArgs`, `init`, `ports.list`). Dedupe
-  where a duplicate is meaningless. (`network.allow` no longer takes project
-  input after R1, so it is no longer a concern here.)
 - **`init/wizard.ts` is 751 lines.** Split into `src/init/steps/auth.ts`,
   `src/init/steps/image.ts`, etc. The auth detection logic belongs in
   `src/auth/detector.ts`, not init.
@@ -245,14 +263,20 @@ now surfaces its exit code). Remaining open items:
 
 ## Performance
 
+- ✅ **`src/update/updater.ts` streaming** — addressed. Body is now piped
+  through `node:stream/promises::pipeline` while the SHA-256 hash is computed
+  incrementally; nothing is buffered.
 - **`src/image/downloader.ts:36-52`** fetches Dockerfile + entrypoint
   sequentially. `Promise.all` them.
 - **`src/config/writer.ts:hashProfileDir` (~line 35)** walks the entire profile
   config dir including `mtimeMs` on every run. Caches break on `git checkout`.
   Re-think: either content-hash small files, or drop directory hashing.
-- **`src/container/sidecars.ts`** starts sidecars sequentially. Parallelize —
-  the rollback path added for Must-fix #3 must still clean up all started
-  containers if any concurrent start fails.
+- ✅ **`src/cli/commands/down.ts`** — addressed (partial). The two-inspect
+  loop is replaced by a single `docker ps --format` round-trip that returns
+  id, name, status, and project label in one shot. The actual stop/rm calls
+  are still sequential — `Promise.all`-ing them is a future optimization
+  but is rarely the bottleneck.
+- **`src/container/sidecars.ts:30-44`** starts sidecars sequentially. Parallelize.
 
 ---
 
@@ -260,34 +284,31 @@ now surfaces its exit code). Remaining open items:
 
 - `src/container/sidecars.ts` — no tests for network race or partial-failure
   rollback.
-- `src/update/updater.ts` — no tests for EXDEV / ETXTBSY paths (R7).
+- `src/update/updater.ts` — no tests for EXDEV / ETXTBSY paths.
 - SIGINT handling in headless `ccpod run` — no tests for
   `installSignalForwarding` in `src/cli/commands/run.ts`. The handler is
   fire-and-forget and hard to assert on without spawning a real subprocess;
   consider a child-process integration test.
 - `src/cli/commands/{down,ps}.ts`, `src/cli/commands/state/clear.ts`,
   `src/plugins/*` — no tests.
+- ✅ `interpolateHostEnv` — addressed.
+  `tests/unit/auth/resolver.test.ts` covers empty-string fallback for `:-`
+  (Must-fix #4).
+- ✅ `isNewer` — addressed.
+  `tests/unit/update/checker.test.ts` covers pre-release tags, 2-component
+  versions, and unparseable input (Must-fix #5).
 - `detectSource` — missing `raw.githubusercontent.com` and
-  `github.com/.../{raw,blob}/...` cases (R25).
+  `github.com/.../raw/...` cases.
 
 ---
 
 ## Documentation
 
-- `ProfileConfig.description` is written by the wizard
-  (`src/init/wizard.ts:578`) and documented in profile examples, but **never
-  read** anywhere in `src/` or `tests/`. The annotation comment claims it is
-  "shown in `ccpod profile list`" but `src/cli/commands/profile/list.ts` does
-  not display it. Either wire it into `profile list` (preferred) or remove the
-  field entirely from schema, types, and docs.
-
----
-
-## Verified clean (probed, not skipped)
-
-IPv6 port classifier (`::`, `[::]`, IPv4-mapped, zero-group and zone-ID forms
-all rejected), named-volume regex, git repo/ref option-injection guards, the
-`--file` traversal check, the updater's SHA-256 verify wiring (mismatch
-provably never touches the target), `writeMergedConfig` symlink/uid
-revalidation, and the array-based (shell-free) docker/git argv construction all
-held up under focused probing.
+- ✅ **`ProfileConfig.description` was unused** — addressed.
+  `src/cli/commands/profile/list.ts` now renders a `DESCRIPTION` column
+  (truncated to 60 chars, only shown if any profile has one set), matching
+  the schema annotation.
+- ✅ **Broken contributor instruction** — addressed. The commit checklist in
+  `AGENTS.md` (line 115) now references the harness's built-in code reviewer
+  (`code-reviewer` / `general-purpose`) instead of the unregistered
+  `feature-dev:code-reviewer`.
