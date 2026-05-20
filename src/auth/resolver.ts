@@ -35,7 +35,17 @@ export function resolveAuth(
       return {};
     }
     const home = resolvePath(getCcpodHome());
-    if (realKeyPath !== home && !realKeyPath.startsWith(`${home}/`)) {
+    // Canonicalize the home path too so the prefix check is symmetric. On
+    // macOS, `tmpdir()` (and any user-chosen path under `/var/...`) is itself
+    // a symlink to `/private/var/...`; without realpath here, a legitimate
+    // keyFile inside ~/.ccpod looks "outside" because only one side resolved.
+    let realHome: string;
+    try {
+      realHome = realpathSync(home);
+    } catch {
+      realHome = home;
+    }
+    if (realKeyPath !== realHome && !realKeyPath.startsWith(`${realHome}/`)) {
       throw new Error(
         `auth.keyFile "${auth.keyFile}" resolves to ${realKeyPath}, outside ~/.ccpod. ` +
           'Refusing to read it — symlinks under ~/.ccpod cannot redirect to host paths.',
