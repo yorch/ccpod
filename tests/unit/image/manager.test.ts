@@ -1,4 +1,4 @@
-import { beforeEach, describe, expect, it, mock } from 'bun:test';
+import { afterEach, beforeEach, describe, expect, it, mock } from 'bun:test';
 import { mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
@@ -41,9 +41,9 @@ beforeEach(() => {
   testDir = mkdtempSync(join(tmpdir(), 'ccpod-imgmgr-test-'));
 });
 
-function cleanup() {
+afterEach(() => {
   rmSync(testDir, { force: true, recursive: true });
-}
+});
 
 describe('buildImage', () => {
   it('uses join(contextDir, dockerfile) when file exists there', async () => {
@@ -55,7 +55,6 @@ describe('buildImage', () => {
     const args = (spawnMock.mock.calls[0] as [string[]])[0];
     const fIdx = args.indexOf('-f');
     expect(args[fIdx + 1]).toBe(join(testDir, 'Dockerfile'));
-    cleanup();
   });
 
   it('uses dockerfile as-is when not found in contextDir', async () => {
@@ -67,7 +66,6 @@ describe('buildImage', () => {
     const args = (spawnMock.mock.calls[0] as [string[]])[0];
     const fIdx = args.indexOf('-f');
     expect(args[fIdx + 1]).toBe(absDockerfile);
-    cleanup();
   });
 
   it('passes tag and contextDir correctly', async () => {
@@ -79,7 +77,6 @@ describe('buildImage', () => {
     const args = (spawnMock.mock.calls[0] as [string[]])[0];
     expect(args).toContain('my-image:v1');
     expect(args[args.length - 1]).toBe(testDir);
-    cleanup();
   });
 
   it('throws on non-zero exit code', async () => {
@@ -87,7 +84,6 @@ describe('buildImage', () => {
     await expect(
       buildImage('Dockerfile', 'test:latest', testDir, deps),
     ).rejects.toThrow('docker build failed (exit 2)');
-    cleanup();
   });
 });
 
@@ -102,7 +98,6 @@ describe('ensureLocalImage', () => {
     await ensureLocalImage('my-tag:latest', 'Dockerfile', testDir, false, deps);
 
     expect(spawnMock).not.toHaveBeenCalled();
-    cleanup();
   });
 
   it('builds when image is not found locally', async () => {
@@ -115,7 +110,6 @@ describe('ensureLocalImage', () => {
     await ensureLocalImage('my-tag:latest', 'Dockerfile', testDir, false, deps);
 
     expect(spawnMock).toHaveBeenCalled();
-    cleanup();
   });
 
   it('builds when force=true even if image exists', async () => {
@@ -128,7 +122,6 @@ describe('ensureLocalImage', () => {
     await ensureLocalImage('my-tag:latest', 'Dockerfile', testDir, true, deps);
 
     expect(spawnMock).toHaveBeenCalled();
-    cleanup();
   });
 });
 
@@ -143,7 +136,6 @@ describe('ensureImage', () => {
     await ensureImage('ghcr.io/test:latest', false, deps);
 
     expect(spawnMock).not.toHaveBeenCalled();
-    cleanup();
   });
 
   it('pulls when image is not found locally', async () => {
@@ -158,7 +150,6 @@ describe('ensureImage', () => {
     const args = (spawnMock.mock.calls[0] as [string[]])[0];
     expect(args).toContain('pull');
     expect(args).toContain('ghcr.io/test:latest');
-    cleanup();
   });
 
   it('pulls when force=true even if image exists', async () => {
@@ -171,7 +162,6 @@ describe('ensureImage', () => {
     await ensureImage('ghcr.io/test:latest', true, deps);
 
     expect(spawnMock).toHaveBeenCalled();
-    cleanup();
   });
 
   it('throws when pull fails', async () => {
@@ -180,6 +170,5 @@ describe('ensureImage', () => {
     await expect(
       ensureImage('ghcr.io/test:latest', false, deps),
     ).rejects.toThrow('docker pull failed');
-    cleanup();
   });
 });

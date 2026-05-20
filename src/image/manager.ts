@@ -10,14 +10,12 @@ export interface ImageDeps {
   dockerSpawn: DockerSpawnFn;
 }
 
-function defaultDeps(): ImageDeps {
-  return { dockerExec, dockerSpawn };
-}
+const defaultDeps: ImageDeps = { dockerExec, dockerSpawn };
 
 export async function ensureImage(
   image: string,
   force = false,
-  deps: ImageDeps = defaultDeps(),
+  deps: ImageDeps = defaultDeps,
 ): Promise<void> {
   if (!force) {
     const { exitCode } = await deps.dockerExec(['image', 'inspect', image]);
@@ -32,7 +30,7 @@ export async function buildImage(
   dockerfile: string,
   tag: string,
   contextDir: string,
-  deps: ImageDeps = defaultDeps(),
+  deps: ImageDeps = defaultDeps,
 ): Promise<void> {
   const dockerfilePath = existsSync(join(contextDir, dockerfile))
     ? join(contextDir, dockerfile)
@@ -57,7 +55,7 @@ export async function ensureLocalImage(
   dockerfile: string,
   contextDir: string,
   force = false,
-  deps: ImageDeps = defaultDeps(),
+  deps: ImageDeps = defaultDeps,
 ): Promise<void> {
   if (!force) {
     const { exitCode } = await deps.dockerExec(['image', 'inspect', tag]);
