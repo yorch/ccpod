@@ -86,6 +86,27 @@ describe('detectSource', () => {
     expect(result.type).toBe('url');
   });
 
+  it('classifies raw.githubusercontent.com as url, not git', () => {
+    const result = detectSource(
+      'https://raw.githubusercontent.com/user/repo/main/profile.yml',
+    );
+    expect(result.type).toBe('url');
+  });
+
+  it('classifies github.com/<o>/<r>/raw/... as url, not git', () => {
+    const result = detectSource(
+      'https://github.com/user/repo/raw/main/profile.yml',
+    );
+    expect(result.type).toBe('url');
+  });
+
+  it('classifies github.com/<o>/<r>/blob/... as url, not git', () => {
+    const result = detectSource(
+      'https://github.com/user/repo/blob/main/profile.yml',
+    );
+    expect(result.type).toBe('url');
+  });
+
   it('detects git@ SSH URL as git', () => {
     const src = detectSource('git@github.com:user/repo.git');
     expect(src).toEqual({ type: 'git', url: 'git@github.com:user/repo.git' });
