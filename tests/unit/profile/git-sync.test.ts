@@ -46,10 +46,22 @@ function makeLocalRepo(): { repoDir: string; ref: string } {
   git(['config', 'user.name', 'Test'], repoDir);
   git(['config', 'commit.gpgsign', 'false'], repoDir);
   git(['config', 'tag.gpgsign', 'false'], repoDir);
+  // Allow `git fetch <sha>` against this local repo. Without this, git rejects
+  // SHA fetches by default for security.
+  git(['config', 'uploadpack.allowReachableSHA1InWant', 'true'], repoDir);
   writeFileSync(join(repoDir, 'config.txt'), 'initial content');
   git(['add', '.'], repoDir);
   git(['commit', '-m', 'init'], repoDir);
   return { ref: 'main', repoDir };
+}
+
+function headSha(repoDir: string): string {
+  const result = Bun.spawnSync(['git', 'rev-parse', 'HEAD'], {
+    cwd: repoDir,
+    stderr: 'pipe',
+    stdout: 'pipe',
+  });
+  return result.stdout.toString().trim();
 }
 
 describe('syncGitConfig', () => {
@@ -131,6 +143,31 @@ describe('syncGitConfig', () => {
     await syncGitConfig(profileDir, repoDir, ref, 'pin');
 
     expect(existsSync(join(configDir, 'pinned.txt'))).toBe(false);
+  });
+
+  it('clones and checks out a SHA-shaped ref', async () => {
+    const { repoDir } = makeLocalRepo();
+    const sha = headSha(repoDir);
+    const profileDir = makeTempDir();
+
+    await syncGitConfig(profileDir, repoDir, sha, 'always');
+
+    const configDir = join(profileDir, 'config');
+    expect(existsSync(configDir)).toBe(true);
+    expect(existsSync(join(configDir, 'config.txt'))).toBe(true);
+  });
+
+  it('cleans up half-populated configDir on clone failure', async () => {
+    const profileDir = makeTempDir();
+    const configDir = join(profileDir, 'config');
+
+    await expect(
+      syncGitConfig(profileDir, '/this/repo/does/not/exist', 'main', 'always'),
+    ).rejects.toThrow();
+
+    // configDir must not survive a failed clone, otherwise the next run skips
+    // the clone entirely and the user is stuck with a broken state.
+    expect(existsSync(configDir)).toBe(false);
   });
 
   it('writes sync lock after a successful fetch', async () => {

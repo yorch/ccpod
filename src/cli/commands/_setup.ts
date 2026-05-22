@@ -16,6 +16,7 @@ import { extractHttpMcpPorts, parseMcpJson } from '../../mcp/parser.ts';
 import { syncGitConfig } from '../../profile/git-sync.ts';
 import {
   expandProfilePath,
+  getCredentialsDir,
   getProfileDir,
   profileExists,
 } from '../../profile/manager.ts';
@@ -85,15 +86,28 @@ export async function setupContainer(
 
   const authEnv = resolveAuth(profile.auth);
 
-  if (
-    args.requireAuth &&
-    profile.auth.type === 'api-key' &&
-    Object.keys(authEnv).length === 0
-  ) {
-    console.error(
-      `${chalk.red('error:')} Headless mode requires auth. Set ${profile.auth.keyEnv ?? 'ANTHROPIC_API_KEY'} or configure keyFile.`,
-    );
-    process.exit(1);
+  if (args.requireAuth) {
+    if (profile.auth.type === 'api-key' && Object.keys(authEnv).length === 0) {
+      console.error(
+        `${chalk.red('error:')} Headless mode requires auth. Set ${profile.auth.keyEnv ?? 'ANTHROPIC_API_KEY'} or configure keyFile.`,
+      );
+      process.exit(1);
+    }
+    if (profile.auth.type === 'oauth') {
+      // The entrypoint copies ~/.claude/.credentials.json out of the
+      // credentials bind mount at startup; in headless mode there is no
+      // interactive prompt to recover from a missing one, so fail loudly here.
+      const credPath = join(
+        getCredentialsDir(profileName),
+        '.credentials.json',
+      );
+      if (!existsSync(credPath)) {
+        console.error(
+          `${chalk.red('error:')} Headless mode with auth.type=oauth requires a prior interactive login. Run 'ccpod run' once to sign in, then re-run headlessly.`,
+        );
+        process.exit(1);
+      }
+    }
   }
 
   const env = {

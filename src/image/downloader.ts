@@ -33,20 +33,21 @@ async function fetchWithFallback(
 export async function downloadOfficialDockerfile(
   destDir: string,
 ): Promise<void> {
-  const dockerfileContent = await fetchWithFallback(
-    OFFICIAL_DOCKERFILE_URL,
-    `${DOCKER_FALLBACK_BASE_URL}/Dockerfile`,
-    'Dockerfile',
-  );
+  const [dockerfileContent, entrypointContent] = await Promise.all([
+    fetchWithFallback(
+      OFFICIAL_DOCKERFILE_URL,
+      `${DOCKER_FALLBACK_BASE_URL}/Dockerfile`,
+      'Dockerfile',
+    ),
+    fetchWithFallback(
+      OFFICIAL_ENTRYPOINT_URL,
+      `${DOCKER_FALLBACK_BASE_URL}/entrypoint.sh`,
+      'entrypoint.sh',
+    ),
+  ]);
   writeFileSync(join(destDir, 'Dockerfile'), dockerfileContent, {
     mode: 0o644,
   });
-
-  const entrypointContent = await fetchWithFallback(
-    OFFICIAL_ENTRYPOINT_URL,
-    `${DOCKER_FALLBACK_BASE_URL}/entrypoint.sh`,
-    'entrypoint.sh',
-  );
   writeFileSync(join(destDir, 'entrypoint.sh'), entrypointContent, {
     mode: 0o755,
   });
