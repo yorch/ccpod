@@ -30,7 +30,7 @@ function credentialsBase(): string {
 }
 
 export function ensureCcpodDirs(): void {
-  mkdirSync(profilesDir(), { recursive: true });
+  mkdirSync(profilesDir(), { mode: 0o700, recursive: true });
   mkdirSync(credentialsBase(), { mode: 0o700, recursive: true });
 }
 
@@ -54,7 +54,7 @@ export function getCredentialsDir(profileName: string): string {
 
 export function getStateDir(profileName: string): string {
   const dir = join(baseDir(), 'state', profileName);
-  mkdirSync(dir, { recursive: true });
+  mkdirSync(dir, { mode: 0o700, recursive: true });
   return dir;
 }
 

@@ -1,4 +1,5 @@
 import { createHash } from 'node:crypto';
+import { realpathSync } from 'node:fs';
 import { homedir } from 'node:os';
 import { getCredentialsDir, getStateDir } from '../profile/manager.ts';
 import { detectRuntime } from '../runtime/detector.ts';
@@ -28,7 +29,18 @@ export interface ContainerSpec {
 }
 
 export function computeProjectHash(projectDir: string): string {
-  return createHash('sha256').update(projectDir).digest('hex').slice(0, 16);
+  // realpath canonicalises symlinks and (on case-insensitive filesystems like
+  // APFS) returns the canonical case as stored on disk. Hashing the canonical
+  // form keeps the container name stable across `cd /Users/foo/Project` vs
+  // `cd /users/foo/project`. Fall back to the raw string if the path does not
+  // yet exist (tests, freshly-created project dirs not yet on disk).
+  let resolved = projectDir;
+  try {
+    resolved = realpathSync(projectDir);
+  } catch {
+    // path missing; use raw input
+  }
+  return createHash('sha256').update(resolved).digest('hex').slice(0, 16);
 }
 
 export function buildContainerSpec(

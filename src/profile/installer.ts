@@ -4,6 +4,10 @@ import { join } from 'node:path';
 import simpleGit from 'simple-git';
 
 const GIT_HOSTS = ['github.com', 'gitlab.com', 'bitbucket.org'];
+// Hosts that serve raw file content rather than clonable repositories — must
+// be classified as `url`, not `git`, even though they live under "known git
+// providers".
+const RAW_HOSTS = ['raw.githubusercontent.com', 'gist.githubusercontent.com'];
 
 export type InstallSource =
   | { type: 'git'; url: string }
@@ -11,12 +15,30 @@ export type InstallSource =
   | { type: 'file'; path: string }
   | { type: 'base64'; data: string };
 
-function isGitHost(input: string): boolean {
+function isGitUrl(input: string): boolean {
+  // `.git` suffix is unambiguous regardless of host.
+  if (/^https?:\/\/.+\.git$/.test(input)) {
+    return true;
+  }
+  let url: URL;
   try {
-    return GIT_HOSTS.includes(new URL(input).hostname);
+    url = new URL(input);
   } catch {
     return false;
   }
+  if (RAW_HOSTS.includes(url.hostname)) {
+    return false;
+  }
+  // `github.com/<owner>/<repo>/raw/...` is a raw file URL even though it lives
+  // under github.com. `/blob/...` is similar (it points at the rendered file
+  // view, not a clone target).
+  if (
+    url.hostname === 'github.com' &&
+    /^\/[^/]+\/[^/]+\/(raw|blob)\//.test(url.pathname)
+  ) {
+    return false;
+  }
+  return GIT_HOSTS.includes(url.hostname);
 }
 
 export function describeSource(source: InstallSource): string {
@@ -32,7 +54,7 @@ export function describeSource(source: InstallSource): string {
 }
 
 export function detectSource(input: string): InstallSource {
-  if (/^https?:\/\/.+\.git$/.test(input) || isGitHost(input)) {
+  if (isGitUrl(input)) {
     return { type: 'git', url: input };
   }
   if (/^https?:\/\//.test(input)) {

@@ -27,31 +27,61 @@ export async function startSidecars(
   profileName: string,
   projectHash: string,
 ): Promise<void> {
-  if (Object.keys(services).length === 0) {
+  const entries = Object.entries(services);
+  if (entries.length === 0) {
     return;
   }
 
   await ensureNetwork(networkName);
 
-  for (const [serviceName, svc] of Object.entries(services)) {
-    const containerName = sidecarContainerName(
-      profileName,
-      projectHash,
-      serviceName,
+  // Track containers we actually started (not pre-existing reattachments) so
+  // that a partial failure can roll everything else back.
+  const started: string[] = [];
+  try {
+    const results = await Promise.all(
+      entries.map(async ([serviceName, svc]) => {
+        const containerName = sidecarContainerName(
+          profileName,
+          projectHash,
+          serviceName,
+        );
+        const wasStarted = await startSidecar(
+          containerName,
+          svc,
+          networkName,
+          profileName,
+          projectHash,
+          serviceName,
+        );
+        return { containerName, wasStarted };
+      }),
     );
-    await startSidecar(
-      containerName,
-      svc,
-      networkName,
-      profileName,
-      projectHash,
-      serviceName,
-    );
+    for (const r of results) {
+      if (r.wasStarted) {
+        started.push(r.containerName);
+      }
+    }
+  } catch (err) {
+    // Roll back containers we started during this invocation. Best-effort —
+    // surface the original error, log secondary failures but don't shadow it.
+    for (const name of started) {
+      const stop = await dockerExec(['stop', '-t', '2', name]);
+      if (stop.exitCode !== 0 && !/no such container/i.test(stop.stderr)) {
+        console.warn(
+          `  Failed to roll back sidecar ${name}: ${stop.stderr.trim()}`,
+        );
+      }
+      await dockerExec(['rm', '-f', name]);
+    }
+    throw err;
   }
 }
 
-export async function removeSidecarNetwork(networkName: string): Promise<void> {
-  await dockerExec(['network', 'rm', networkName]);
+export async function removeSidecarNetwork(
+  networkName: string,
+): Promise<{ ok: boolean; stderr: string }> {
+  const { exitCode, stderr } = await dockerExec(['network', 'rm', networkName]);
+  return { ok: exitCode === 0, stderr };
 }
 
 async function ensureNetwork(name: string): Promise<void> {
@@ -64,9 +94,20 @@ async function ensureNetwork(name: string): Promise<void> {
     'create',
     name,
   ]);
-  if (createCode !== 0) {
-    throw new Error(`Failed to create network ${name}: ${stderr}`);
+  if (createCode === 0) {
+    return;
   }
+  // A concurrent `ccpod run` may have created the network between our inspect
+  // and create. Docker reports this as "already exists" — accept it. Otherwise
+  // confirm by re-inspecting (covers races where the error wording differs).
+  if (/already exists/i.test(stderr)) {
+    return;
+  }
+  const recheck = await dockerExec(['network', 'inspect', name]);
+  if (recheck.exitCode === 0) {
+    return;
+  }
+  throw new Error(`Failed to create network ${name}: ${stderr}`);
 }
 
 async function startSidecar(
@@ -76,7 +117,7 @@ async function startSidecar(
   profileName: string,
   projectHash: string,
   serviceName: string,
-): Promise<void> {
+): Promise<boolean> {
   const { exitCode, stdout } = await dockerExec([
     'inspect',
     '--format',
@@ -87,9 +128,14 @@ async function startSidecar(
   if (exitCode === 0) {
     if (stdout === 'running') {
       console.log(`  Sidecar already running: ${chalk.cyan(serviceName)}`);
-      return;
+      return false;
     }
-    await dockerExec(['rm', containerName]);
+    const rm = await dockerExec(['rm', containerName]);
+    if (rm.exitCode !== 0 && !/no such container/i.test(rm.stderr)) {
+      throw new Error(
+        `Failed to remove stale sidecar '${serviceName}': ${rm.stderr}`,
+      );
+    }
   }
 
   const args = [
@@ -129,4 +175,5 @@ async function startSidecar(
   }
 
   console.log(`  Started sidecar: ${chalk.cyan(serviceName)}`);
+  return true;
 }

@@ -60,6 +60,21 @@ function classifyIpv6(ip: string): Ipv6Kind {
   return 'other';
 }
 
+// Deep-merge per service: if a key exists in both layers, merge their fields
+// (env keys union with project winning on conflict, ports/volumes concatenated)
+// rather than letting project replace the whole service config wholesale.
+function mergeServices(
+  profileServices: Record<string, ServiceConfig>,
+  projectServices: Record<string, ServiceConfig>,
+): Record<string, ServiceConfig> {
+  const out: Record<string, ServiceConfig> = { ...profileServices };
+  for (const [name, svc] of Object.entries(projectServices)) {
+    const existing = out[name];
+    out[name] = existing ? (deepmerge(existing, svc) as ServiceConfig) : svc;
+  }
+  return out;
+}
+
 function sanitizeProjectServices(
   services: Record<string, ServiceConfig>,
 ): Record<string, ServiceConfig> {
@@ -149,10 +164,16 @@ export function mergeConfigs(
     allow: [],
     policy: 'full',
   };
-  const network =
+  const networkRaw =
     strategy === 'override' && project?.network
       ? { ...NETWORK_DEFAULTS, ...project.network }
       : deepmerge(profile.network, project?.network ?? {});
+  // deepmerge concatenates arrays — dedupe the allow list so the same host
+  // declared in both layers doesn't yield duplicate iptables rules.
+  const network: ProfileConfig['network'] = {
+    ...networkRaw,
+    allow: [...new Set(networkRaw.allow ?? [])],
+  };
 
   const ports = {
     autoDetectMcp: project?.ports?.autoDetectMcp ?? profile.ports.autoDetectMcp,
@@ -165,7 +186,7 @@ export function mergeConfigs(
   const services =
     strategy === 'override' && project?.services
       ? projectServices
-      : { ...profile.services, ...projectServices };
+      : mergeServices(profile.services, projectServices);
 
   const claudeArgs =
     strategy === 'override'

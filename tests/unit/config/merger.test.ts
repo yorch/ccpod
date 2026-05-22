@@ -346,6 +346,44 @@ describe('mergeConfigs', () => {
     ).toThrow(/binds to 0:0:0:0:0::0:0:0:1/);
   });
 
+  it('deduplicates network.allow when profile and project list the same host', () => {
+    const profile = makeProfile({
+      network: { allow: ['github.com', 'npmjs.com'], policy: 'restricted' },
+    });
+    const result = mergeConfigs(profile, {
+      merge: 'deep',
+      network: { allow: ['github.com', 'pypi.org'] },
+    });
+    // github.com should appear once, not twice
+    expect(result.network.allow.filter((h) => h === 'github.com')).toHaveLength(
+      1,
+    );
+    expect(result.network.allow).toContain('npmjs.com');
+    expect(result.network.allow).toContain('pypi.org');
+  });
+
+  it('deep merge: per-service fields merge instead of replacing wholesale', () => {
+    const profile = makeProfile({
+      services: {
+        db: {
+          env: { POSTGRES_PASSWORD: 'fromprofile', POSTGRES_USER: 'admin' },
+          image: 'postgres:17',
+        },
+      },
+    });
+    const result = mergeConfigs(profile, {
+      services: {
+        db: { env: { POSTGRES_DB: 'app' }, image: 'postgres:17' },
+      },
+    });
+    // Project's POSTGRES_DB added; profile's POSTGRES_USER preserved.
+    expect(result.services.db?.env).toEqual({
+      POSTGRES_DB: 'app',
+      POSTGRES_PASSWORD: 'fromprofile',
+      POSTGRES_USER: 'admin',
+    });
+  });
+
   it('isolated profile: CLI state override still honoured', () => {
     const result = mergeConfigs(
       makeProfile({ isolation: true, state: 'persistent' }),

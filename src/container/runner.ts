@@ -26,7 +26,10 @@ export async function runContainer(
 
   if (state === 'stopped') {
     const { exitCode, stderr } = await deps.dockerExec(['rm', spec.name]);
-    if (exitCode !== 0) {
+    // Treat concurrent removal as success — another `ccpod down` (or ps -rm)
+    // may have raced us between inspect and rm. We only care that the name
+    // is free after this returns.
+    if (exitCode !== 0 && !/no such container/i.test(stderr)) {
       throw new Error(
         `Failed to remove stopped container '${spec.name}': ${stderr}`,
       );
@@ -57,7 +60,10 @@ export async function shellContainer(
 
   if (state === 'stopped') {
     const { exitCode, stderr } = await deps.dockerExec(['rm', spec.name]);
-    if (exitCode !== 0) {
+    // Treat concurrent removal as success — another `ccpod down` (or ps -rm)
+    // may have raced us between inspect and rm. We only care that the name
+    // is free after this returns.
+    if (exitCode !== 0 && !/no such container/i.test(stderr)) {
       throw new Error(
         `Failed to remove stopped container '${spec.name}': ${stderr}`,
       );
