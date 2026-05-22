@@ -110,6 +110,25 @@ describe('runContainer', () => {
     expect(spawnMock).not.toHaveBeenCalled();
   });
 
+  it('treats "no such container" rm error as concurrent removal', async () => {
+    // Another `ccpod down` may have removed the container between our inspect
+    // and rm. The rm error should not be fatal — proceed to start fresh.
+    const { deps, spawnMock } = makeDeps([
+      { exitCode: 0, stderr: '', stdout: 'exited' },
+      {
+        exitCode: 1,
+        stderr: 'Error: No such container: ccpod-default-abc123',
+        stdout: '',
+      },
+    ]);
+
+    await runContainer(makeSpec(), deps);
+
+    expect(spawnMock).toHaveBeenCalledTimes(1);
+    const spawnArgs = (spawnMock.mock.calls[0] as [string[]])[0];
+    expect(spawnArgs[0]).toBe('run');
+  });
+
   it('passes --name, -w, and image to docker run args', async () => {
     const { deps, spawnMock } = makeDeps([
       { exitCode: 1, stderr: '', stdout: '' },

@@ -69,6 +69,11 @@ function copyAssets(srcDir: string, destDir: string): void {
   }
 }
 
+// Sentinel file written last (just before the atomic rename) so concurrent
+// readers can distinguish a fully-populated outDir from a half-written tree
+// left behind by a crashed run.
+const READY_SENTINEL = '.ccpod-ready';
+
 export function writeMergedConfig(
   profileConfigDir: string,
   mergedClaudeMd: string,
@@ -87,10 +92,15 @@ export function writeMergedConfig(
   const outDir = join(tmpdir(), `ccpod-${hash}`);
 
   // On multi-user hosts another user must not be able to pre-seed the
-  // deterministic path; require it to be a regular directory owned by us.
+  // deterministic path; require it to be a regular directory owned by us
+  // AND fully populated (sentinel present).
   if (validateOwnedDir(outDir)) {
     return outDir;
   }
+
+  // If outDir exists but lacks the sentinel, it's a half-written tree from a
+  // crashed run. Removing it lets renameSync proceed; refuse if it isn't ours.
+  clearBrokenOutDir(outDir);
 
   const tmpOut = mkdtempSync(join(tmpdir(), 'ccpod-tmp-'));
   try {
@@ -118,6 +128,13 @@ export function writeMergedConfig(
       });
     }
 
+    // Sentinel last — its presence inside the renamed directory is what
+    // signals "fully populated" to any concurrent reader.
+    writeFileSync(join(tmpOut, READY_SENTINEL), '', {
+      encoding: 'utf8',
+      mode: 0o600,
+    });
+
     renameSync(tmpOut, outDir);
   } catch (err) {
     rmSync(tmpOut, { force: true, recursive: true });
@@ -132,10 +149,26 @@ export function writeMergedConfig(
   return outDir;
 }
 
-// Single-syscall existence + ownership check. Returns true if outDir is a
-// regular directory owned by the current uid; false if it does not exist;
-// throws if the path exists but fails the safety checks.
+// Returns true if outDir is a regular directory owned by the current uid AND
+// contains the ready-sentinel; false if it does not exist or is missing the
+// sentinel (treat as "not yet present"); throws if the path exists but fails
+// the structural / ownership checks.
 function validateOwnedDir(outDir: string): boolean {
+  if (!isOwnedDir(outDir)) {
+    return false;
+  }
+  try {
+    lstatSync(join(outDir, READY_SENTINEL));
+    return true;
+  } catch (err) {
+    if ((err as NodeJS.ErrnoException).code === 'ENOENT') {
+      return false;
+    }
+    throw err;
+  }
+}
+
+function isOwnedDir(outDir: string): boolean {
   let existing: ReturnType<typeof lstatSync>;
   try {
     existing = lstatSync(outDir);
@@ -157,4 +190,14 @@ function validateOwnedDir(outDir: string): boolean {
     );
   }
   return true;
+}
+
+function clearBrokenOutDir(outDir: string): void {
+  // isOwnedDir validates ownership and structure; only proceed if it's ours.
+  // If it doesn't exist, nothing to clear. If it exists and is not ours,
+  // isOwnedDir already threw.
+  if (!isOwnedDir(outDir)) {
+    return;
+  }
+  rmSync(outDir, { force: true, recursive: true });
 }

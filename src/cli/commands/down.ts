@@ -111,9 +111,16 @@ export default defineCommand({
         `label=${LABEL_PROJECT}=${projectHash}`,
       ]);
       if (remaining.trim() === '') {
-        await removeSidecarNetwork(sidecarNetworkName(projectHash)).catch(
-          () => {},
-        );
+        const networkName = sidecarNetworkName(projectHash);
+        const result = await removeSidecarNetwork(networkName);
+        // "no such network" is fine — already cleaned up by another run.
+        // Anything else is worth surfacing so silent failures don't accumulate
+        // orphan networks across `ccpod down --all` invocations.
+        if (!result.ok && !/no such network/i.test(result.stderr)) {
+          console.warn(
+            `Warning: failed to remove network ${networkName}: ${result.stderr.trim()}`,
+          );
+        }
       }
     }
   },

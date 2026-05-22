@@ -247,6 +247,22 @@ describe('writeMergedConfig', () => {
     );
   });
 
+  it('writes a ready sentinel on success', () => {
+    const out = run(makeTempDir(), 'sentinel-test', { v: 1 });
+    expect(existsSync(join(out, '.ccpod-ready'))).toBe(true);
+  });
+
+  it('treats a sentinel-less outDir as stale and rewrites', () => {
+    const profileDir = makeTempDir();
+    const first = run(profileDir, 'sentinel-stale', { v: 1 });
+    // Simulate a crashed prior run by removing the sentinel.
+    rmSync(join(first, '.ccpod-ready'));
+    const second = run(profileDir, 'sentinel-stale', { v: 1 });
+    expect(second).toBe(first);
+    // Sentinel is back after the rewrite.
+    expect(existsSync(join(second, '.ccpod-ready'))).toBe(true);
+  });
+
   it('skips nested symlinks inside subdirectories', () => {
     const profileDir = makeTempDir();
     const skillsDir = join(profileDir, 'skills');

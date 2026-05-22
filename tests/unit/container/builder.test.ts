@@ -1,8 +1,12 @@
 import { afterAll, beforeAll, describe, expect, it } from 'bun:test';
 import { createHash } from 'node:crypto';
-import { mkdtempSync, rmSync } from 'node:fs';
+import { mkdirSync, mkdtempSync, rmSync, symlinkSync } from 'node:fs';
 import { tmpdir } from 'node:os';
-import { buildContainerSpec } from '../../../src/container/builder.ts';
+import { join } from 'node:path';
+import {
+  buildContainerSpec,
+  computeProjectHash,
+} from '../../../src/container/builder.ts';
 import type { ResolvedConfig } from '../../../src/types/index.ts';
 
 function makeConfig(overrides: Partial<ResolvedConfig> = {}): ResolvedConfig {
@@ -165,5 +169,33 @@ describe('buildContainerSpec', () => {
       '--model',
       'claude-opus-4-5',
     ]);
+  });
+});
+
+describe('computeProjectHash', () => {
+  it('falls back to raw path when the directory does not exist', () => {
+    // Existing call sites rely on this so freshly-typed paths still produce a
+    // container name. Hash must match a plain sha256 of the raw input.
+    const expected = createHash('sha256')
+      .update('/totally/missing/dir')
+      .digest('hex')
+      .slice(0, 16);
+    expect(computeProjectHash('/totally/missing/dir')).toBe(expected);
+  });
+
+  it('canonicalises through symlinks so the same project produces one hash', () => {
+    const tmp = mkdtempSync(`${tmpdir()}/ccpod-hash-test-`);
+    try {
+      const real = join(tmp, 'real');
+      mkdirSync(real);
+      const link = join(tmp, 'link');
+      symlinkSync(real, link);
+
+      const viaReal = computeProjectHash(real);
+      const viaLink = computeProjectHash(link);
+      expect(viaLink).toBe(viaReal);
+    } finally {
+      rmSync(tmp, { force: true, recursive: true });
+    }
   });
 });
