@@ -14,45 +14,31 @@ review. Numbering is left stable (with gaps) so cross-references stay valid.
 
 Highest-leverage open items, in suggested order:
 
-1. **Must-fix #9** — `writeMergedConfig` rename race / sentinel marker.
-2. **R8 / R9 / R10** — Remaining security hardening: API key in `docker run`
-   cmdline, fail-open iptables, `install.sh` checksum verification.
-3. **M5** — `removeSidecarNetwork` swallows exit codes (residual after R22).
-4. **Container/runtime correctness backlog** — R12–R24, R27 (image tag case,
-   port-binding collisions, `mountSshDir` path, config-show masking, …).
+1. **Container/runtime correctness backlog** — R12, R13, R16, R17, R19-adjacent
+   (image tag case, port-binding collisions, image build-context, `down --all`
+   filter, …).
+2. **Config/CLI correctness** — R5 (`run --` passthrough), R18 (config-show
+   masking), R20, R21, R23, R24, R27.
+3. **DRY / maintainability and test-coverage** backlogs (see below).
 
 > **Addressed:** the trust-boundary trio (**R1–R3**) and dead-`claudeArgs`
-> (**R4**); the container-lifecycle cluster **Must-fix #3 / #7 / #8**,
-> **R6**, **R15**, **R19**, **R28**, and the R22 sidecar-container portion.
-> See the "Security invariants" section of `AGENTS.md` and git history.
+> (**R4**); the container-lifecycle cluster **Must-fix #3 / #7 / #8**, **R6**,
+> **R15**, **R19**, **R28**, R22; and the security-hardening batch
+> **Must-fix #9** (per-uid config dir), **R8** (secrets off the cmdline),
+> **R9** (fail-closed restricted network), **R10** (`install.sh` checksum),
+> **M5** (`removeSidecarNetwork` exit code). See the "Security invariants"
+> section of `AGENTS.md` and git history.
 
 ---
 
 ## Security
 
 Untrusted project `.ccpod.yml` (and `.mcp.json`) can escalate past the trust
-boundary documented in `AGENTS.md`. The R1–R3 escapes below were closed
-(network is now profile-owned, project `env` denylists redirect/TLS keys, and
-main-container project/`.mcp.json` ports are pinned to loopback); the remaining
-items are open.
-
-- **R8. API key visible in `docker run` cmdline.** `src/container/builder.ts:68`
-  → `src/container/runner.ts:96` emit `-e ANTHROPIC_API_KEY=sk-...`, readable
-  via `ps`/`/proc/*/cmdline` for the whole TTY session — contradicts the
-  project's multi-user threat model (writer.ts uid checks). Fix: `-e KEY`
-  (inherit from spawn env) or `--env-file`.
-
-- **R9. Restricted network is fail-open.** `docker/entrypoint.sh`. Every
-  iptables rule including the final `DROP` ends in `|| true`, so if iptables
-  is missing/fails the container runs fully open while printing "restricted
-  network active". Also IPv4-only (no `ip6tables` — IPv6 egress unfiltered)
-  and port 53 is allowed to any destination (DNS-tunnel exfil). Fix: fail
-  closed (exit if the DROP rule can't be installed); filter IPv6; scope DNS.
-
-- **R10. `install.sh` skips checksum verification.** The in-app updater
-  verifies SHA-256 against `SHASUMS256.txt`, but the curl-pipe installer
-  downloads and `chmod +x` with no verification despite the release publishing
-  that asset. Fix: fetch `SHASUMS256.txt` and verify before `mv`.
+boundary documented in `AGENTS.md`. The R1–R3 escapes were closed (network is
+profile-owned, project `env` denylists redirect/TLS keys, main-container
+project/`.mcp.json` ports pinned to loopback), and the hardening batch **R8**
+(secrets off the `docker run` cmdline), **R9** (fail-closed restricted network),
+and **R10** (`install.sh` checksum) landed. Remaining items:
 
 - **R11. CLI profile names bypass `NAME_RE`; `profile delete` does recursive
   deletes on unvalidated joined paths.** `src/profile/manager.ts:42,72-83`
@@ -119,26 +105,15 @@ items are open.
 ### Container / runtime state handling
 
 The container-lifecycle cluster (**Must-fix #3 / #7 / #8**, **R15**, **R19**,
-**R28**) was addressed: `runContainer`/`shellContainer` now stop-then-rm
-paused/restarting containers, tolerate a concurrently-removed container, and
-refuse to attach a headless run to a live interactive session; sidecar startup
-rolls back on partial failure and `ensureNetwork` re-checks on a create race;
-`computeProjectHash` normalizes via `realpathSync` + darwin case-folding; and
-`syncGitConfig` clones through a temp dir + atomic rename (removing the clone
-race and partial-corrupt-configDir path). Remaining open items:
-
-- **Must-fix #9. `writeMergedConfig` rename race.** `src/config/writer.ts:88-119`.
-  Two concurrent runs can race on rename; a reader may see a half-populated
-  mount. Also the cache short-circuit returns without verifying contents, so a
-  same-uid attacker could pre-seed the deterministic path. Fix: write a
-  sentinel marker file last and poll for it on rename failure, or use a per-pid
-  temp dir.
-
-- **M5. `removeSidecarNetwork` swallows its exit code**
-  (`src/container/sidecars.ts`). The R22 sidecar-*container* removal is now
-  handled (stale sidecars are `rm -f`'d and rolled back on failure), but the
-  network teardown still discards its result. Fix: check the exit code and
-  surface a failure.
+**R28**) was addressed: `runContainer`/`shellContainer` now `rm -f`
+paused/restarting/dead containers, tolerate a concurrently-removed container,
+and refuse to attach a headless run to a live interactive session; sidecar
+startup rolls back on partial failure and `ensureNetwork` re-checks on a create
+race; `computeProjectHash` normalizes via `realpathSync` + darwin case-folding;
+and `syncGitConfig` clones through a temp dir + atomic rename. **Must-fix #9**
+(config-writer) is also addressed — output lives under a private per-uid `0700`
+parent and is atomically renamed into place — and **M5** (`removeSidecarNetwork`
+now surfaces its exit code). Remaining open items:
 
 - **R13. `portBindings` keyed by container port drops colliding mappings.**
   `src/container/builder.ts:63-66`. Colliding container ports overwrite

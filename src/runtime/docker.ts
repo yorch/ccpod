@@ -26,11 +26,20 @@ export async function dockerExec(
   return { exitCode, stderr: stderr.trim(), stdout: stdout.trim() };
 }
 
-/** Run a docker command with inherited stdio. Returns container exit code. */
-export async function dockerSpawn(args: string[]): Promise<number> {
+/**
+ * Run a docker command with inherited stdio. Returns container exit code.
+ *
+ * `extraEnv` is merged into the docker CLI's own environment (not the argv), so
+ * secret values referenced by bare `-e KEY` flags reach the container without
+ * ever appearing in the process command line (`ps` / `/proc/<pid>/cmdline`).
+ */
+export async function dockerSpawn(
+  args: string[],
+  extraEnv?: Record<string, string>,
+): Promise<number> {
   const { binary, env } = runtimeContext();
   const proc = Bun.spawn([binary, ...args], {
-    env,
+    env: extraEnv ? { ...env, ...extraEnv } : env,
     stderr: 'inherit',
     stdin: 'inherit',
     stdout: 'inherit',

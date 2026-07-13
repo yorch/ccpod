@@ -36,7 +36,7 @@ export async function runContainer(
   }
 
   await removeForFreshRun(spec.name, state, deps);
-  return deps.dockerSpawn(buildRunArgs(spec));
+  return deps.dockerSpawn(buildRunArgs(spec), spec.secretEnv);
 }
 
 export async function execContainer(
@@ -59,7 +59,7 @@ export async function shellContainer(
   }
 
   await removeForFreshRun(spec.name, state, deps);
-  return deps.dockerSpawn(buildRunArgs(spec));
+  return deps.dockerSpawn(buildRunArgs(spec), spec.secretEnv);
 }
 
 // Lifecycle status from `docker inspect`. 'not_found' when the container does
@@ -125,6 +125,11 @@ function buildRunArgs(spec: ContainerSpec): string[] {
 
   for (const e of spec.env) {
     args.push('-e', e);
+  }
+  // Bare `-e KEY` — docker reads the value from its own environment (injected
+  // via dockerSpawn's extraEnv), keeping secrets out of the command line.
+  for (const key of Object.keys(spec.secretEnv)) {
+    args.push('-e', key);
   }
   for (const b of spec.binds) {
     args.push('-v', b);

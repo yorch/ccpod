@@ -299,6 +299,8 @@ To opt out, the profile may set `allowProjectHostMounts: true` (for sidecar volu
 
 `ccpod update` requires each release to publish a `SHASUMS256.txt` asset alongside the binaries. The updater fetches `SHASUMS256.txt` and the platform asset in parallel, then streams the response body through `createHash('sha256')` into a write pipeline (`node:stream/promises#pipeline`). The hash is computed as bytes arrive, so the 50–80 MB binary is never buffered twice in memory; it is compared to the entry for the platform asset before the temp file is moved into place. A missing `SHASUMS256.txt`, a missing entry, or a mismatch all refuse the install with a clear error and leave nothing on disk.
 
+The `install.sh` bootstrap performs the same verification: after downloading the binary it fetches `SHASUMS256.txt`, computes the digest with `sha256sum` (or `shasum -a 256`), and aborts on mismatch. It only warns-and-proceeds when the checksum asset is absent (a release predating it) or no sha256 tool is available — never on an actual mismatch.
+
 ## Startup sequence
 
 ```

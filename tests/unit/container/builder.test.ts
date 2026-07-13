@@ -127,14 +127,19 @@ describe('buildContainerSpec', () => {
     expect(spec.env).toContain('CCPOD_STATE=ephemeral');
   });
 
-  it('env includes resolved key=value pairs', () => {
+  it('routes resolved env into secretEnv, not the plain -e list', () => {
     const spec = buildContainerSpec(
       makeConfig({ env: { ANTHROPIC_API_KEY: 'sk-abc', FOO: 'bar' } }),
       PROJECT_DIR,
       true,
     );
-    expect(spec.env).toContain('ANTHROPIC_API_KEY=sk-abc');
-    expect(spec.env).toContain('FOO=bar');
+    // Secrets are carried in secretEnv (injected via docker's env at run time)
+    // so their values never reach the process command line.
+    expect(spec.secretEnv).toEqual({ ANTHROPIC_API_KEY: 'sk-abc', FOO: 'bar' });
+    expect(spec.env).not.toContain('ANTHROPIC_API_KEY=sk-abc');
+    expect(spec.env).not.toContain('FOO=bar');
+    // ccpod's own control vars stay as plain flags.
+    expect(spec.env).toContain('CCPOD_STATE=ephemeral');
   });
 
   it('labels include all required keys', () => {

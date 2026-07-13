@@ -23,6 +23,10 @@ export interface ContainerSpec {
   networkMode: string;
   openStdin: boolean;
   portBindings: Record<string, Array<{ HostPort: string; HostIp?: string }>>;
+  // Secret env vars (resolved credential + user-forwarded values). Passed to
+  // the container as bare `-e KEY` flags and supplied to docker via its own
+  // environment, so the values never land in the run command line.
+  secretEnv: Record<string, string>;
   tmpfs?: Record<string, string>;
   tty: boolean;
   workingDir: string;
@@ -87,7 +91,12 @@ export function buildContainerSpec(
     ];
   }
 
-  const env = Object.entries(config.env).map(([k, v]) => `${k}=${v}`);
+  // Resolved credential + forwarded env are secrets — carried in secretEnv and
+  // injected via docker's own environment (see ContainerSpec.secretEnv), never
+  // as `-e KEY=VALUE` argv. ccpod's own control vars below are not secret and
+  // stay as plain flags.
+  const secretEnv: Record<string, string> = { ...config.env };
+  const env: string[] = [];
   env.push(`CCPOD_STATE=${config.state}`);
 
   if (config.plugins.length > 0) {
@@ -132,6 +141,7 @@ export function buildContainerSpec(
     networkMode: networkName ?? 'bridge',
     openStdin: tty,
     portBindings,
+    secretEnv,
     tty,
     workingDir: '/workspace',
     ...(Object.keys(tmpfs).length > 0 ? { tmpfs } : {}),

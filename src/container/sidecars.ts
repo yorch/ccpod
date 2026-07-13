@@ -68,7 +68,12 @@ export async function startSidecars(
 }
 
 export async function removeSidecarNetwork(networkName: string): Promise<void> {
-  await dockerExec(['network', 'rm', networkName]);
+  const { exitCode, stderr } = await dockerExec(['network', 'rm', networkName]);
+  // A network that is already gone is fine; anything else (e.g. still-attached
+  // endpoints) is worth surfacing rather than swallowing silently.
+  if (exitCode !== 0 && !/no such network/i.test(stderr)) {
+    console.warn(`Warning: failed to remove network ${networkName}: ${stderr}`);
+  }
 }
 
 async function ensureNetwork(name: string): Promise<void> {
