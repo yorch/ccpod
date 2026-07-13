@@ -76,18 +76,23 @@ if [ "${CCPOD_NETWORK_POLICY}" = "restricted" ]; then
     HAVE_IP6=1
   fi
 
-  # Pick the right table for an address by family (IPv6 literals contain ':').
-  ipt_for() { case "$1" in *:*) echo ip6tables ;; *) echo iptables ;; esac; }
-  # Add an ACCEPT rule in the correct table; IPv6 rules are no-ops when the
-  # kernel has no IPv6. ACCEPTs are fail-safe, so failures are tolerated.
+  # Resolve the iptables binary for an address by family, or empty when that
+  # family isn't being filtered (IPv6 literals contain ':'; IPv6 is skipped when
+  # the kernel has no IPv6). `return 0` keeps `_ipt=$(ipt_bin …)` from tripping
+  # `set -e` on the no-match case. ACCEPTs below are fail-safe, so tolerated.
+  ipt_bin() {
+    case "$1" in
+      *:*) [ "$HAVE_IP6" = "1" ] && echo ip6tables ;;
+      *) echo iptables ;;
+    esac
+    return 0
+  }
   allow_dst() {
-    _ipt=$(ipt_for "$1")
-    [ "$_ipt" = "ip6tables" ] && [ "$HAVE_IP6" = "0" ] && return 0
+    _ipt=$(ipt_bin "$1"); [ -n "$_ipt" ] || return 0
     "$_ipt" -A OUTPUT -d "$1" -j ACCEPT 2>/dev/null || true
   }
   allow_dns() {
-    _ipt=$(ipt_for "$1")
-    [ "$_ipt" = "ip6tables" ] && [ "$HAVE_IP6" = "0" ] && return 0
+    _ipt=$(ipt_bin "$1"); [ -n "$_ipt" ] || return 0
     "$_ipt" -A OUTPUT -p udp -d "$1" --dport 53 -j ACCEPT 2>/dev/null || true
     "$_ipt" -A OUTPUT -p tcp -d "$1" --dport 53 -j ACCEPT 2>/dev/null || true
   }

@@ -29,15 +29,9 @@ function secureParentDir(): string {
   }
   const dir = join(base, `ccpod-u${uid}`);
   mkdirSync(dir, { mode: 0o700, recursive: true });
-  const st = lstatSync(dir);
-  if (st.isSymbolicLink() || !st.isDirectory()) {
-    throw new Error(`Refusing to use ${dir}: not a regular directory.`);
-  }
-  if (st.uid !== uid) {
-    throw new Error(
-      `Refusing to use ${dir}: owned by uid ${st.uid}, not ${uid}.`,
-    );
-  }
+  // Reuse the same not-a-symlink / is-a-directory / owned-by-us checks the
+  // deterministic outDir gets; the dir exists post-mkdir so this only throws.
+  validateOwnedDir(dir);
   // Enforce 0700 even if the directory pre-existed with looser permissions.
   chmodSync(dir, 0o700);
   return dir;

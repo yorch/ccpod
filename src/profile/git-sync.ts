@@ -20,18 +20,19 @@ export async function syncGitConfig(
     // (2) resolves the race between concurrent first-runs of the same profile —
     // whoever renames first wins; the loser discards its clone and reuses it.
     const tmpDir = `${configDir}.tmp-${process.pid}`;
-    rmSync(tmpDir, { force: true, recursive: true });
+    const rmTmp = () => rmSync(tmpDir, { force: true, recursive: true });
+    rmTmp();
     const git = simpleGit();
     try {
       await git.clone(repo, tmpDir, ['--depth', '1', '--branch', ref]);
     } catch (err) {
-      rmSync(tmpDir, { force: true, recursive: true });
+      rmTmp();
       throw err;
     }
     try {
       renameSync(tmpDir, configDir);
     } catch (err) {
-      rmSync(tmpDir, { force: true, recursive: true });
+      rmTmp();
       // Benign only if another process populated configDir first (lost race).
       // If configDir still isn't there, the rename failed for a real reason
       // (e.g. a permission error or a file squatting the path) — surface it
