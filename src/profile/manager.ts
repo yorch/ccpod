@@ -9,6 +9,7 @@ import {
 import { homedir } from 'node:os';
 import { join } from 'node:path';
 import { parseDocument } from 'yaml';
+import type { ProfileConfig } from '../types/index.ts';
 
 // Re-evaluated at each call so CCPOD_TEST_DIR env override works in tests.
 // Other modules (auth/resolver.ts, global/config.ts, update/checker.ts) import
@@ -44,6 +45,15 @@ export function getProfileDir(name: string): string {
 
 export function expandProfilePath(path: string, profileName: string): string {
   return path.replaceAll('{{profile_dir}}', getProfileDir(profileName));
+}
+
+export function getConfigSourceDir(
+  profile: ProfileConfig,
+  profileDir: string,
+): string {
+  return profile.config.source === 'local'
+    ? (profile.config.path ?? profileDir)
+    : join(profileDir, 'config');
 }
 
 export function getCredentialsDir(profileName: string): string {

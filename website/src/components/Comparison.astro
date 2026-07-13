@@ -1,13 +1,14 @@
 ---
 const rows = [
-  [
-    'Portable config across machines',
-    'Per-machine ~/.claude only',
-    'Built into profile',
-  ],
-  ['Versioned via git', 'Manual sync', 'config: source: git'],
-  ['Reproducible base image', 'Drift between teammates', 'Pinned image tag'],
+  ['Filesystem isolation', 'Full host access', 'Only /workspace mounted'],
   ['Network policy', 'Trusts host network', 'full or restricted allow-list'],
+  ['Reproducible base image', 'Drift between teammates', 'Pinned image tag'],
+  ['Versioned via git', 'Manual sync', 'config: source: git'],
+  [
+    'Portable across machines',
+    'Per-machine ~/.claude only',
+    'Profile travels with you',
+  ],
   [
     'Sidecar services (DBs, queues)',
     'docker compose alongside',

@@ -1,9 +1,9 @@
 ---
 title: ccpod
-description: ccpod runs Claude Code inside a Docker container with portable, versioned profiles. Share, reproduce, and pin your Claude AI development environment across machines and teams.
+description: ccpod runs Claude Code inside a sandboxed Docker container with versioned, shareable profiles. Isolate the agent from your host, reproduce a known-good Claude setup, and share one config across a team or open-source project.
 template: splash
 hero:
-  tagline: Run Claude Code in Docker. Portable, composable profiles for your Claude environment.
+  tagline: Sandbox Claude Code in a container. Reproduce and share your setup with versioned profiles.
   image:
     file: ../../assets/logo.svg
   actions:
@@ -23,7 +23,7 @@ import Asciinema from '../../components/Asciinema.astro';
 
 ## What is ccpod?
 
-Your Claude environment — settings, plugins, skills, `CLAUDE.md`, MCP servers — is usually pinned to one machine. **ccpod** wraps it in a *profile*: a versioned, portable config that travels with you, your team, or your open-source project. Every `ccpod run` drops you into a clean, reproducible Claude session inside a container.
+Claude Code is a powerful agent — but by default it runs on your host with your shell, your network, and your `~/.claude` directory. **ccpod** runs it inside a container instead, with the entire environment described by a *profile*: a versioned YAML file that pins the image, settings, plugins, `CLAUDE.md`, and MCP servers. The agent stays sandboxed, the setup stays reproducible, and the same profile can be shared across machines, teammates, or contributors to an open-source repo.
 
 <HeroFeatures />
 

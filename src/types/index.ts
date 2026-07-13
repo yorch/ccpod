@@ -26,6 +26,7 @@ export interface ProfileConfig {
     repo?: string;
     sync?: SyncStrategy;
     ref?: string;
+    overlay: boolean;
   };
   description?: string;
   env: string[];

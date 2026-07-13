@@ -74,6 +74,7 @@ services:
 | `repo` | string | Required when `source: git`. HTTPS or SSH URL. |
 | `sync` | `always` \| `daily` \| `pin` | When to refresh the clone. `pin` never re-pulls. |
 | `ref` | string | Branch, tag, or commit to check out. Defaults to remote HEAD. |
+| `overlay` | boolean | Default `true`. If a `ccpod-overlay.yml` exists at the root of the synced config dir, its fields merge into the local profile. See [Shared Team Profile](../team/) for the full merge rules. Set to `false` to ignore. |
 
 ### `image` *(required)*
 
