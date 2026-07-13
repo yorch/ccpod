@@ -75,6 +75,10 @@ export interface ServiceConfig {
 interface PortMapping {
   container: number;
   host: number;
+  // Host interface to bind the published port to. Undefined means Docker's
+  // default (0.0.0.0). Ports sourced from untrusted project config are pinned
+  // to '127.0.0.1' so a cloned repo cannot expose the container to the LAN.
+  hostIp?: string;
 }
 
 export interface ResolvedConfig {

@@ -19,6 +19,7 @@ function makeSpec(overrides: Partial<ContainerSpec> = {}): ContainerSpec {
     networkMode: 'bridge',
     openStdin: true,
     portBindings: {},
+    secretEnv: {},
     tty: true,
     workingDir: '/workspace',
     ...overrides,
@@ -105,7 +106,60 @@ describe('runContainer', () => {
     ]);
 
     await expect(runContainer(makeSpec(), deps)).rejects.toThrow(
-      'Failed to remove stopped container',
+      'Failed to remove container',
+    );
+    expect(spawnMock).not.toHaveBeenCalled();
+  });
+
+  it('tolerates a container that vanished before rm (concurrent down)', async () => {
+    const { deps, spawnMock } = makeDeps([
+      { exitCode: 0, stderr: '', stdout: 'exited' },
+      { exitCode: 1, stderr: 'Error: No such container: x', stdout: '' },
+    ]);
+
+    await runContainer(makeSpec(), deps);
+
+    const spawnArgs = (spawnMock.mock.calls[0] as [string[]])[0];
+    expect(spawnArgs[0]).toBe('run');
+  });
+
+  it('force-removes a paused container before starting fresh', async () => {
+    const { deps, spawnMock, execMock } = makeDeps([
+      { exitCode: 0, stderr: '', stdout: 'paused' },
+      { exitCode: 0, stderr: '', stdout: '' }, // rm -f
+    ]);
+
+    await runContainer(makeSpec(), deps);
+
+    const execArgs = (execMock.mock.calls as [string[]][]).map((c) => c[0]);
+    expect(execArgs.some((a) => a[0] === 'rm' && a.includes('-f'))).toBe(true);
+    const spawnArgs = (spawnMock.mock.calls[0] as [string[]])[0];
+    expect(spawnArgs[0]).toBe('run');
+  });
+
+  it('tolerates a container whose removal is already in progress', async () => {
+    const { deps, spawnMock } = makeDeps([
+      { exitCode: 0, stderr: '', stdout: 'removing' },
+      {
+        exitCode: 1,
+        stderr: 'Error: removal of container x is already in progress',
+        stdout: '',
+      },
+    ]);
+
+    await runContainer(makeSpec(), deps);
+
+    const spawnArgs = (spawnMock.mock.calls[0] as [string[]])[0];
+    expect(spawnArgs[0]).toBe('run');
+  });
+
+  it('headless run refuses to attach to a running container', async () => {
+    const { deps, spawnMock } = makeDeps([
+      { exitCode: 0, stderr: '', stdout: 'running' },
+    ]);
+
+    await expect(runContainer(makeSpec({ tty: false }), deps)).rejects.toThrow(
+      'already running',
     );
     expect(spawnMock).not.toHaveBeenCalled();
   });
@@ -138,6 +192,30 @@ describe('runContainer', () => {
     const spawnArgs = (spawnMock.mock.calls[0] as [string[]])[0];
     expect(spawnArgs[0]).toBe('run');
     expect(spawnArgs[spawnArgs.length - 1]).toBe('/bin/bash');
+  });
+
+  it('passes secrets via bare -e flags and docker env, not the cmdline', async () => {
+    const { deps, spawnMock } = makeDeps([
+      { exitCode: 1, stderr: '', stdout: '' },
+    ]);
+
+    await runContainer(
+      makeSpec({ secretEnv: { ANTHROPIC_API_KEY: 'sk-secret' } }),
+      deps,
+    );
+
+    const [spawnArgs, extraEnv] = spawnMock.mock.calls[0] as [
+      string[],
+      Record<string, string> | undefined,
+    ];
+    // The value must never appear in argv...
+    expect(spawnArgs.join(' ')).not.toContain('sk-secret');
+    // ...only the bare key, with the value injected into docker's env.
+    const eIdx = spawnArgs.findIndex(
+      (a, i) => a === '-e' && spawnArgs[i + 1] === 'ANTHROPIC_API_KEY',
+    );
+    expect(eIdx).toBeGreaterThanOrEqual(0);
+    expect(extraEnv?.ANTHROPIC_API_KEY).toBe('sk-secret');
   });
 });
 

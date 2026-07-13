@@ -1,4 +1,5 @@
 import { createHash } from 'node:crypto';
+import { realpathSync } from 'node:fs';
 import { homedir } from 'node:os';
 import { getCredentialsDir, getStateDir } from '../profile/manager.ts';
 import { detectRuntime } from '../runtime/detector.ts';
@@ -21,14 +22,32 @@ export interface ContainerSpec {
   name: string;
   networkMode: string;
   openStdin: boolean;
-  portBindings: Record<string, Array<{ HostPort: string }>>;
+  portBindings: Record<string, Array<{ HostPort: string; HostIp?: string }>>;
+  // Secret env vars (resolved credential + user-forwarded values). Passed to
+  // the container as bare `-e KEY` flags and supplied to docker via its own
+  // environment, so the values never land in the run command line.
+  secretEnv: Record<string, string>;
   tmpfs?: Record<string, string>;
   tty: boolean;
   workingDir: string;
 }
 
 export function computeProjectHash(projectDir: string): string {
-  return createHash('sha256').update(projectDir).digest('hex').slice(0, 16);
+  // Normalize before hashing so the same project always maps to the same
+  // container name: resolve symlinks (realpath) and fold case on macOS, whose
+  // default filesystem is case-insensitive. Without this, `/Users/me/Proj` and
+  // `/users/me/proj`, or a path reached through a symlink, would hash
+  // differently and spawn duplicate containers for one project.
+  let normalized = projectDir;
+  try {
+    normalized = realpathSync(projectDir);
+  } catch {
+    // Path may not exist yet (or be inaccessible); fall back to the raw string.
+  }
+  if (process.platform === 'darwin') {
+    normalized = normalized.toLowerCase();
+  }
+  return createHash('sha256').update(normalized).digest('hex').slice(0, 16);
 }
 
 export function buildContainerSpec(
@@ -60,12 +79,24 @@ export function buildContainerSpec(
     tmpfs['/ccpod/state'] = 'rw,noexec,nosuid,size=256m';
   }
 
-  const portBindings: Record<string, Array<{ HostPort: string }>> = {};
-  for (const { host, container } of config.ports) {
-    portBindings[`${container}/tcp`] = [{ HostPort: String(host) }];
+  const portBindings: Record<
+    string,
+    Array<{ HostPort: string; HostIp?: string }>
+  > = {};
+  for (const { host, container, hostIp } of config.ports) {
+    portBindings[`${container}/tcp`] = [
+      hostIp
+        ? { HostIp: hostIp, HostPort: String(host) }
+        : { HostPort: String(host) },
+    ];
   }
 
-  const env = Object.entries(config.env).map(([k, v]) => `${k}=${v}`);
+  // Resolved credential + forwarded env are secrets — carried in secretEnv and
+  // injected via docker's own environment (see ContainerSpec.secretEnv), never
+  // as `-e KEY=VALUE` argv. ccpod's own control vars below are not secret and
+  // stay as plain flags.
+  const secretEnv: Record<string, string> = { ...config.env };
+  const env: string[] = [];
   env.push(`CCPOD_STATE=${config.state}`);
 
   if (config.plugins.length > 0) {
@@ -110,6 +141,7 @@ export function buildContainerSpec(
     networkMode: networkName ?? 'bridge',
     openStdin: tty,
     portBindings,
+    secretEnv,
     tty,
     workingDir: '/workspace',
     ...(Object.keys(tmpfs).length > 0 ? { tmpfs } : {}),

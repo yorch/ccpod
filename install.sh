@@ -72,6 +72,55 @@ else
   exit 1
 fi
 
+# ── Checksum verification ─────────────────────────────────────────────────────
+# Verify the download against SHASUMS256.txt from the same release (matches the
+# in-app updater). Returns: 0 verified/skipped, 1 checksum unavailable, 2 mismatch.
+verify_checksum() {
+  sums_url="https://github.com/${REPO}/releases/download/${TAG}/SHASUMS256.txt"
+  sums_file="${TMP_PATH}.sums"
+
+  if command -v curl >/dev/null 2>&1; then
+    curl -fsSL "$sums_url" -o "$sums_file" 2>/dev/null || { rm -f "$sums_file"; return 1; }
+  else
+    wget -qO "$sums_file" "$sums_url" 2>/dev/null || { rm -f "$sums_file"; return 1; }
+  fi
+
+  expected=$(grep " ${ASSET}\$" "$sums_file" | awk '{print $1}' | head -n1)
+  rm -f "$sums_file"
+  [ -n "$expected" ] || return 1
+
+  if command -v sha256sum >/dev/null 2>&1; then
+    actual=$(sha256sum "$TMP_PATH" | awk '{print $1}')
+  elif command -v shasum >/dev/null 2>&1; then
+    actual=$(shasum -a 256 "$TMP_PATH" | awk '{print $1}')
+  else
+    echo "warning: no sha256 tool found; skipping checksum verification" >&2
+    return 0
+  fi
+
+  if [ "$expected" != "$actual" ]; then
+    echo "  expected: $expected" >&2
+    echo "  actual:   $actual" >&2
+    return 2
+  fi
+  echo "✓ checksum verified"
+  return 0
+}
+
+# Capture the status without `set -e` aborting on the non-zero "unavailable"
+# (1) and "mismatch" (2) returns — both are handled explicitly below.
+set +e
+verify_checksum
+VERIFY_RC=$?
+set -e
+if [ "$VERIFY_RC" = "2" ]; then
+  rm -f "$TMP_PATH"
+  echo "error: checksum mismatch for ${ASSET}; refusing to install" >&2
+  exit 1
+elif [ "$VERIFY_RC" = "1" ]; then
+  echo "warning: could not verify checksum for ${TAG} (no SHASUMS256.txt); proceeding" >&2
+fi
+
 chmod +x "$TMP_PATH"
 
 if ! mv "$TMP_PATH" "$INSTALL_PATH" 2>/dev/null; then

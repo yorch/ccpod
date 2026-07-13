@@ -33,25 +33,47 @@ export async function startSidecars(
 
   await ensureNetwork(networkName);
 
-  for (const [serviceName, svc] of Object.entries(services)) {
-    const containerName = sidecarContainerName(
-      profileName,
-      projectHash,
-      serviceName,
-    );
-    await startSidecar(
-      containerName,
-      svc,
-      networkName,
-      profileName,
-      projectHash,
-      serviceName,
-    );
+  // Roll back the sidecars this call started if a later one fails, so a partial
+  // failure doesn't leave orphaned containers behind (already-running sidecars
+  // from a previous run are left untouched).
+  const startedThisCall: string[] = [];
+  try {
+    for (const [serviceName, svc] of Object.entries(services)) {
+      const containerName = sidecarContainerName(
+        profileName,
+        projectHash,
+        serviceName,
+      );
+      const started = await startSidecar(
+        containerName,
+        svc,
+        networkName,
+        profileName,
+        projectHash,
+        serviceName,
+      );
+      if (started) {
+        startedThisCall.push(containerName);
+      }
+    }
+  } catch (err) {
+    for (const containerName of startedThisCall.reverse()) {
+      await dockerExec(['rm', '-f', containerName]).catch(() => {});
+    }
+    // The shared network is intentionally left in place: it is idempotent,
+    // adopted by the next run's ensureNetwork, and removed by `ccpod down` once
+    // no containers reference it. Removing it here could disrupt a sibling run.
+    throw err;
   }
 }
 
 export async function removeSidecarNetwork(networkName: string): Promise<void> {
-  await dockerExec(['network', 'rm', networkName]);
+  const { exitCode, stderr } = await dockerExec(['network', 'rm', networkName]);
+  // A network that is already gone is fine; anything else (e.g. still-attached
+  // endpoints) is worth surfacing rather than swallowing silently.
+  if (exitCode !== 0 && !/no such network/i.test(stderr)) {
+    console.warn(`Warning: failed to remove network ${networkName}: ${stderr}`);
+  }
 }
 
 async function ensureNetwork(name: string): Promise<void> {
@@ -64,11 +86,21 @@ async function ensureNetwork(name: string): Promise<void> {
     'create',
     name,
   ]);
-  if (createCode !== 0) {
-    throw new Error(`Failed to create network ${name}: ${stderr}`);
+  if (createCode === 0) {
+    return;
   }
+  // A concurrent `ccpod run` in the same project may have created the network
+  // between our inspect and create (docker returns a name/id conflict). Re-check
+  // before failing so the race resolves to success rather than aborting a run.
+  const { exitCode: recheck } = await dockerExec(['network', 'inspect', name]);
+  if (recheck === 0) {
+    return;
+  }
+  throw new Error(`Failed to create network ${name}: ${stderr}`);
 }
 
+// Returns true if this call started a new container (so the caller can roll it
+// back on a later failure), false if an already-running sidecar was reused.
 async function startSidecar(
   containerName: string,
   svc: ServiceConfig,
@@ -76,7 +108,7 @@ async function startSidecar(
   profileName: string,
   projectHash: string,
   serviceName: string,
-): Promise<void> {
+): Promise<boolean> {
   const { exitCode, stdout } = await dockerExec([
     'inspect',
     '--format',
@@ -85,11 +117,13 @@ async function startSidecar(
   ]);
 
   if (exitCode === 0) {
-    if (stdout === 'running') {
+    if (stdout.trim() === 'running') {
       console.log(`  Sidecar already running: ${chalk.cyan(serviceName)}`);
-      return;
+      return false;
     }
-    await dockerExec(['rm', containerName]);
+    // Replace a stale sidecar (exited/paused/restarting). `-f` handles the
+    // paused/restarting states that a plain `rm` would reject.
+    await dockerExec(['rm', '-f', containerName]);
   }
 
   const args = [
@@ -129,4 +163,5 @@ async function startSidecar(
   }
 
   console.log(`  Started sidecar: ${chalk.cyan(serviceName)}`);
+  return true;
 }

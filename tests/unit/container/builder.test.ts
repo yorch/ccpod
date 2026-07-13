@@ -109,19 +109,37 @@ describe('buildContainerSpec', () => {
     expect(spec.portBindings['3001/tcp']).toEqual([{ HostPort: '3000' }]);
   });
 
+  it('carries HostIp when a port is pinned to loopback', () => {
+    const spec = buildContainerSpec(
+      makeConfig({
+        ports: [{ container: 3001, host: 3000, hostIp: '127.0.0.1' }],
+      }),
+      PROJECT_DIR,
+      true,
+    );
+    expect(spec.portBindings['3001/tcp']).toEqual([
+      { HostIp: '127.0.0.1', HostPort: '3000' },
+    ]);
+  });
+
   it('env always contains CCPOD_STATE', () => {
     const spec = buildContainerSpec(makeConfig(), PROJECT_DIR, true);
     expect(spec.env).toContain('CCPOD_STATE=ephemeral');
   });
 
-  it('env includes resolved key=value pairs', () => {
+  it('routes resolved env into secretEnv, not the plain -e list', () => {
     const spec = buildContainerSpec(
       makeConfig({ env: { ANTHROPIC_API_KEY: 'sk-abc', FOO: 'bar' } }),
       PROJECT_DIR,
       true,
     );
-    expect(spec.env).toContain('ANTHROPIC_API_KEY=sk-abc');
-    expect(spec.env).toContain('FOO=bar');
+    // Secrets are carried in secretEnv (injected via docker's env at run time)
+    // so their values never reach the process command line.
+    expect(spec.secretEnv).toEqual({ ANTHROPIC_API_KEY: 'sk-abc', FOO: 'bar' });
+    expect(spec.env).not.toContain('ANTHROPIC_API_KEY=sk-abc');
+    expect(spec.env).not.toContain('FOO=bar');
+    // ccpod's own control vars stay as plain flags.
+    expect(spec.env).toContain('CCPOD_STATE=ephemeral');
   });
 
   it('labels include all required keys', () => {

@@ -56,31 +56,90 @@ fi
 
 # 7. Network restriction — apply iptables rules before launching claude (requires root)
 if [ "${CCPOD_NETWORK_POLICY}" = "restricted" ]; then
-  # Allow loopback and established connections
-  iptables -A OUTPUT -o lo -j ACCEPT 2>/dev/null || true
+  # Fail CLOSED: a restricted profile must never silently run wide open. If the
+  # firewall cannot be enforced, abort rather than expose the credential-bearing
+  # container to unrestricted egress.
+  fail_closed() {
+    echo "ccpod: FATAL: restricted network requested but could not be enforced ($1)." >&2
+    echo "ccpod: refusing to start with unrestricted egress." >&2
+    exit 1
+  }
+
+  command -v iptables >/dev/null 2>&1 || fail_closed "iptables not available"
+
+  # Is IPv6 filtering in play? Only when the kernel has IPv6; then ip6tables is
+  # mandatory (fail closed if missing, or IPv6 egress would leak past IPv4-only
+  # rules).
+  HAVE_IP6=0
+  if [ -d /proc/sys/net/ipv6 ]; then
+    command -v ip6tables >/dev/null 2>&1 || fail_closed "ip6tables not available"
+    HAVE_IP6=1
+  fi
+
+  # Resolve the iptables binary for an address by family, or empty when that
+  # family isn't being filtered (IPv6 literals contain ':'; IPv6 is skipped when
+  # the kernel has no IPv6). `return 0` keeps `_ipt=$(ipt_bin …)` from tripping
+  # `set -e` on the no-match case. ACCEPTs below are fail-safe, so tolerated.
+  ipt_bin() {
+    case "$1" in
+      *:*) [ "$HAVE_IP6" = "1" ] && echo ip6tables ;;
+      *) echo iptables ;;
+    esac
+    return 0
+  }
+  allow_dst() {
+    _ipt=$(ipt_bin "$1"); [ -n "$_ipt" ] || return 0
+    "$_ipt" -A OUTPUT -d "$1" -j ACCEPT 2>/dev/null || true
+  }
+  allow_dns() {
+    _ipt=$(ipt_bin "$1"); [ -n "$_ipt" ] || return 0
+    "$_ipt" -A OUTPUT -p udp -d "$1" --dport 53 -j ACCEPT 2>/dev/null || true
+    "$_ipt" -A OUTPUT -p tcp -d "$1" --dport 53 -j ACCEPT 2>/dev/null || true
+  }
+
+  # Allow loopback and established connections (both families).
+  iptables -A OUTPUT -o lo -j ACCEPT || fail_closed "loopback rule"
   iptables -A OUTPUT -m conntrack --ctstate ESTABLISHED,RELATED -j ACCEPT 2>/dev/null || \
-    iptables -A OUTPUT -m state --state ESTABLISHED,RELATED -j ACCEPT 2>/dev/null || true
-  # Allow DNS so hostname resolution works
-  iptables -A OUTPUT -p udp --dport 53 -j ACCEPT 2>/dev/null || true
-  iptables -A OUTPUT -p tcp --dport 53 -j ACCEPT 2>/dev/null || true
-  # Allow declared hosts (resolve domains to IPs at startup)
+    iptables -A OUTPUT -m state --state ESTABLISHED,RELATED -j ACCEPT || \
+    fail_closed "established/related rule"
+  if [ "$HAVE_IP6" = "1" ]; then
+    ip6tables -A OUTPUT -o lo -j ACCEPT || fail_closed "IPv6 loopback rule"
+    ip6tables -A OUTPUT -m conntrack --ctstate ESTABLISHED,RELATED -j ACCEPT 2>/dev/null || \
+      ip6tables -A OUTPUT -m state --state ESTABLISHED,RELATED -j ACCEPT || \
+      fail_closed "IPv6 established/related rule"
+  fi
+
+  # Allow DNS only to the container's configured resolvers, not to any host —
+  # an open :53 to the world is a ready-made exfiltration channel.
+  for ns in $(awk '/^nameserver/ {print $2}' /etc/resolv.conf 2>/dev/null); do
+    allow_dns "$ns"
+  done
+
+  # Allow declared hosts (resolve domains to IPs at startup), dispatching each
+  # resolved address to the matching IPv4/IPv6 table.
   for host in $(printf '%s' "${CCPOD_ALLOWED_HOSTS:-}" | tr ',' '\n'); do
     [ -z "$host" ] && continue
     case "$host" in
       *.*.*.*|*:*|*/*)
         # IP address or CIDR — use directly
-        iptables -A OUTPUT -d "$host" -j ACCEPT 2>/dev/null || true
+        allow_dst "$host"
         ;;
       *)
-        # Hostname — resolve to IPs
+        # Hostname — resolve to IPs (may return both A and AAAA)
         for ip in $(getent hosts "$host" 2>/dev/null | awk '{print $1}'); do
-          iptables -A OUTPUT -d "$ip" -j ACCEPT 2>/dev/null || true
+          allow_dst "$ip"
         done
         ;;
     esac
   done
-  # Drop all other outbound
-  iptables -A OUTPUT -j DROP 2>/dev/null || true
+
+  # Drop all other outbound — the load-bearing rules; if they do not install,
+  # we are not actually restricted.
+  iptables -A OUTPUT -j DROP || fail_closed "default-deny rule"
+  if [ "$HAVE_IP6" = "1" ]; then
+    ip6tables -A OUTPUT -j DROP || fail_closed "IPv6 default-deny rule"
+  fi
+
   echo "ccpod: restricted network active (allowed: ${CCPOD_ALLOWED_HOSTS:-none})"
 fi
 

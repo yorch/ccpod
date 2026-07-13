@@ -1,4 +1,3 @@
-import deepmerge from 'deepmerge';
 import type {
   ProfileConfig,
   ProjectConfig,
@@ -143,21 +142,26 @@ export function mergeConfigs(
 
   const strategy = project?.merge ?? 'deep';
 
-  // override: project replaces the section using schema defaults for omitted keys,
-  // NOT profile values — spreading from profile would leak profile's allow list.
-  const NETWORK_DEFAULTS: ProfileConfig['network'] = {
-    allow: [],
-    policy: 'full',
-  };
-  const network =
-    strategy === 'override' && project?.network
-      ? { ...NETWORK_DEFAULTS, ...project.network }
-      : deepmerge(profile.network, project?.network ?? {});
+  // network is a profile-owned sandbox control: the policy and allow-list come
+  // from the profile only, regardless of merge strategy. Honoring project
+  // .ccpod.yml here would let an untrusted repo downgrade `restricted` to
+  // `full` or widen the allow-list — the same trust class as init/host mounts.
+  if (project?.network && Object.keys(project.network).length > 0) {
+    console.warn(
+      'Warning: project .ccpod.yml declares network settings, but network ' +
+        'policy is controlled by the profile only — ignoring them.',
+    );
+  }
+  const network = profile.network;
 
-  const ports = {
-    autoDetectMcp: project?.ports?.autoDetectMcp ?? profile.ports.autoDetectMcp,
-    list: [...(profile.ports.list ?? []), ...(project?.ports?.list ?? [])],
-  };
+  const autoDetectMcp =
+    project?.ports?.autoDetectMcp ?? profile.ports.autoDetectMcp;
+  // Profile ports keep Docker's default bind (0.0.0.0 — the profile owner's
+  // choice); project ports are pinned to loopback, matching sidecar ports.
+  const ports = [
+    ...parsePorts(profile.ports.list ?? []),
+    ...parsePorts(project?.ports?.list ?? [], '127.0.0.1'),
+  ];
 
   const projectServices = profile.allowProjectHostMounts
     ? (project?.services ?? {})
@@ -184,7 +188,7 @@ export function mergeConfigs(
 
   return {
     auth: profile.auth,
-    autoDetectMcp: ports.autoDetectMcp,
+    autoDetectMcp,
     claudeArgs,
     dockerfile: profile.image.dockerfile,
     env: {},
@@ -192,7 +196,7 @@ export function mergeConfigs(
     init,
     network,
     plugins: profile.plugins,
-    ports: parsePorts(ports.list),
+    ports,
     profileName: profile.name,
     services,
     ssh: profile.ssh,
@@ -202,7 +206,8 @@ export function mergeConfigs(
 
 function parsePorts(
   list: string[],
-): Array<{ host: number; container: number }> {
+  hostIp?: string,
+): Array<{ host: number; container: number; hostIp?: string }> {
   return list.map((entry) => {
     const [hostStr = entry, containerStr = entry] = entry.split(':');
     const host = Number(hostStr);
@@ -217,7 +222,7 @@ function parsePorts(
         `Invalid port mapping "${entry}": expected "host:container" with positive integers`,
       );
     }
-    return { container, host };
+    return hostIp ? { container, host, hostIp } : { container, host };
   });
 }
 

@@ -40,7 +40,7 @@ describe('mergeConfigs', () => {
     expect(result.state).toBe('ephemeral');
   });
 
-  it('deep merge: project network.allow appended to profile allow', () => {
+  it('network is profile-owned: project network.allow is ignored (deep)', () => {
     const profile = makeProfile({
       network: { allow: ['github.com'], policy: 'restricted' },
     });
@@ -48,11 +48,12 @@ describe('mergeConfigs', () => {
       merge: 'deep',
       network: { allow: ['npmjs.com'] },
     });
-    expect(result.network.allow).toContain('github.com');
-    expect(result.network.allow).toContain('npmjs.com');
+    expect(result.network.allow).toEqual(['github.com']);
+    expect(result.network.allow).not.toContain('npmjs.com');
+    expect(result.network.policy).toBe('restricted');
   });
 
-  it('override strategy: project network fully replaces profile network', () => {
+  it('network is profile-owned: project cannot downgrade policy (override)', () => {
     const profile = makeProfile({
       network: { allow: ['github.com'], policy: 'restricted' },
     });
@@ -60,18 +61,24 @@ describe('mergeConfigs', () => {
       merge: 'override',
       network: { policy: 'full' },
     });
-    expect(result.network.policy).toBe('full');
-    expect(result.network.allow).not.toContain('github.com');
+    expect(result.network.policy).toBe('restricted');
+    expect(result.network.allow).toEqual(['github.com']);
   });
 
-  it('port lists concatenate across profile and project', () => {
+  it('port lists concatenate; project ports are pinned to loopback', () => {
     const profile = makeProfile({
       ports: { autoDetectMcp: true, list: ['3000:3000'] },
     });
     const result = mergeConfigs(profile, { ports: { list: ['4000:4000'] } });
     expect(result.ports).toHaveLength(2);
+    // Profile port keeps Docker's default bind (no hostIp).
     expect(result.ports[0]).toEqual({ container: 3000, host: 3000 });
-    expect(result.ports[1]).toEqual({ container: 4000, host: 4000 });
+    // Project port is pinned to 127.0.0.1.
+    expect(result.ports[1]).toEqual({
+      container: 4000,
+      host: 4000,
+      hostIp: '127.0.0.1',
+    });
   });
 
   it('project autoDetectMcp overrides profile', () => {

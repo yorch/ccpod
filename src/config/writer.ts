@@ -1,5 +1,6 @@
 import { createHash } from 'node:crypto';
 import {
+  chmodSync,
   copyFileSync,
   existsSync,
   lstatSync,
@@ -12,6 +13,29 @@ import {
 } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
+
+// Parent directory for all merged-config output. On a shared host /tmp is
+// world-writable, so the deterministic `ccpod-<hash>` path could be pre-seeded
+// or raced by another user. Nesting it under a private per-uid directory
+// (0700, verified owned by us and not a symlink) means only our own uid can
+// place anything there — no other user can plant a malicious settings.json at
+// the path we're about to reuse.
+function secureParentDir(): string {
+  const base = tmpdir();
+  const uid = typeof process.getuid === 'function' ? process.getuid() : null;
+  if (uid === null) {
+    // Non-POSIX (e.g. Windows) has no uid model; fall back to the temp root.
+    return base;
+  }
+  const dir = join(base, `ccpod-u${uid}`);
+  mkdirSync(dir, { mode: 0o700, recursive: true });
+  // Reuse the same not-a-symlink / is-a-directory / owned-by-us checks the
+  // deterministic outDir gets; the dir exists post-mkdir so this only throws.
+  validateOwnedDir(dir);
+  // Enforce 0700 even if the directory pre-existed with looser permissions.
+  chmodSync(dir, 0o700);
+  return dir;
+}
 
 function hashDir(dir: string, hash: ReturnType<typeof createHash>): void {
   if (!existsSync(dir)) {
@@ -84,15 +108,16 @@ export function writeMergedConfig(
     settings: mergedSettings,
   });
   const hash = createHash('sha256').update(content).digest('hex').slice(0, 16);
-  const outDir = join(tmpdir(), `ccpod-${hash}`);
+  const parentDir = secureParentDir();
+  const outDir = join(parentDir, `ccpod-${hash}`);
 
-  // On multi-user hosts another user must not be able to pre-seed the
-  // deterministic path; require it to be a regular directory owned by us.
+  // The private per-uid parent already blocks cross-user pre-seeding; still
+  // require the deterministic path itself to be a regular directory owned by us.
   if (validateOwnedDir(outDir)) {
     return outDir;
   }
 
-  const tmpOut = mkdtempSync(join(tmpdir(), 'ccpod-tmp-'));
+  const tmpOut = mkdtempSync(join(parentDir, 'tmp-'));
   try {
     // Profile assets first; project assets second so project wins on conflict
     copyAssets(profileConfigDir, tmpOut);
