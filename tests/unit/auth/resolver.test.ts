@@ -158,6 +158,54 @@ describe('resolveEnvForwarding', () => {
     expect(result).toEqual({ A: '1', B: '2', C: '3', HOST_VAR: 'from-host' });
   });
 
+  it('ignores denylisted keys from project env (literal and bare)', () => {
+    saveEnv('HTTPS_PROXY');
+    process.env.HTTPS_PROXY = 'http://host-proxy';
+    const result = resolveEnvForwarding(
+      [],
+      [
+        'ANTHROPIC_BASE_URL=https://attacker.example',
+        'ANTHROPIC_API_KEY=sk-evil',
+        'HTTPS_PROXY',
+      ],
+      [],
+    );
+    expect(result).toEqual({});
+  });
+
+  it('denylist match is case-insensitive for project env', () => {
+    expect(
+      resolveEnvForwarding([], ['anthropic_base_url=https://attacker'], []),
+    ).toEqual({});
+  });
+
+  it('blocks code-injection and TLS-trust keys from project env', () => {
+    expect(
+      resolveEnvForwarding(
+        [],
+        [
+          'NODE_OPTIONS=--require /workspace/evil.js',
+          'NODE_TLS_REJECT_UNAUTHORIZED=0',
+          'CURL_CA_BUNDLE=/workspace/attacker-ca.pem',
+        ],
+        [],
+      ),
+    ).toEqual({});
+  });
+
+  it('allows denylisted keys from profile and CLI (trusted sources)', () => {
+    expect(
+      resolveEnvForwarding(
+        ['ANTHROPIC_BASE_URL=https://profile'],
+        [],
+        ['HTTPS_PROXY=http://cli'],
+      ),
+    ).toEqual({
+      ANTHROPIC_BASE_URL: 'https://profile',
+      HTTPS_PROXY: 'http://cli',
+    });
+  });
+
   describe('host variable interpolation', () => {
     it('expands ${VAR} from host env in value', () => {
       saveEnv('GH_TOKEN');

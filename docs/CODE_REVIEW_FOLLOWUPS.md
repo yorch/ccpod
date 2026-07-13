@@ -14,61 +14,28 @@ review. Numbering is left stable (with gaps) so cross-references stay valid.
 
 Highest-leverage open items, in suggested order:
 
-1. **R1–R3** — Untrusted-project trust-boundary escapes: network-policy
-   downgrade, `env` API-key redirection, main-container `0.0.0.0` port
-   publishing.
-2. **R4** — Profile/project `claudeArgs` never reach the container (dead config
-   option on `run`/`shell`).
-3. **Must-fix #3 / R28** — Sidecar startup atomicity, `ensureNetwork` TOCTOU,
+1. **Must-fix #3 / R28** — Sidecar startup atomicity, `ensureNetwork` TOCTOU,
    and the git-profile clone race.
-4. **Must-fix #7 / R15 / R19** — `runContainer` container-state handling
+2. **Must-fix #7 / R15 / R19** — `runContainer` container-state handling
    (no-such-container race, headless-attach, paused/restarting).
-5. **Must-fix #8** — `computeProjectHash` platform stability (`realpathSync`,
+3. **Must-fix #8** — `computeProjectHash` platform stability (`realpathSync`,
    darwin case-folding).
-6. **Must-fix #9** — `writeMergedConfig` rename race / sentinel marker.
+4. **Must-fix #9** — `writeMergedConfig` rename race / sentinel marker.
+5. **R8 / R9 / R10** — Remaining security hardening: API key in `docker run`
+   cmdline, fail-open iptables, `install.sh` checksum verification.
+
+> The 2026-07 trust-boundary trio (**R1–R3**) and the dead-`claudeArgs` fix
+> (**R4**) were addressed — see the "Security invariants" section of `AGENTS.md`.
 
 ---
 
 ## Security
 
 Untrusted project `.ccpod.yml` (and `.mcp.json`) can escalate past the trust
-boundary documented in `AGENTS.md`, which currently gates only `services`,
-`env` interpolation, host mounts, and `init`. Only `isolation: true` profiles
-are unaffected by R1–R3.
-
-- **R1. Project config can disable the profile's `restricted` network
-  sandbox.** `src/config/merger.ts:152-155`. `network = deepmerge(profile.network,
-  project.network)` (default strategy) lets a repo's `.ccpod.yml` set
-  `network: {policy: full}` overriding a profile's `restricted`, or append
-  hosts to `allow` (deepmerge concatenates arrays). The `override` branch
-  (`NETWORK_DEFAULTS.policy = 'full'`) has the same hole. `builder.ts:76`
-  then skips `NET_ADMIN`/`CCPOD_NETWORK_POLICY` entirely, so the iptables
-  lockdown never applies. Fix: take `network.policy`/`allow` from the profile
-  only, or gate project `network` behind a profile opt-in flag as `init`/host
-  mounts are. (See also the array-concat dedup item under DRY.)
-
-- **R2. Project `env` can redirect the API key to an attacker.**
-  `src/auth/resolver.ts:103-107`, wired at `src/cli/commands/_setup.ts:99-106`.
-  Project `env` entries pass through as literal `KEY=value` with no key-name
-  filter (only `${VAR}` interpolation is blocked). `authEnv` only ever sets
-  `ANTHROPIC_API_KEY`, so a repo shipping `env: [ANTHROPIC_BASE_URL=https://attacker]`
-  (or `HTTPS_PROXY=...`) lands it in the container and Claude sends the
-  profile's key to the attacker. Defeats the keyFile hardening, since the key
-  leaks after resolution. For oauth profiles the repo can even inject its own
-  `ANTHROPIC_API_KEY`. Fix: denylist auth/proxy-redirecting keys
-  (`ANTHROPIC_BASE_URL`, `ANTHROPIC_API_KEY`, `HTTPS_PROXY`, `HTTP_PROXY`,
-  `NO_PROXY`, …) for project-sourced env.
-
-- **R3. Main-container ports publish on `0.0.0.0`, including untrusted ports.**
-  `src/config/merger.ts:157-161` + `parsePorts`, `src/cli/commands/_setup.ts:79,185`,
-  `src/container/builder.ts:63-66`, `runner.ts:106-110`. Sidecar ports are
-  forced to `127.0.0.1`, but the main container's ports go through `parsePorts`
-  (integers only, no host IP) and emit bare `-p host:container` → all
-  interfaces. Two untrusted inputs feed it: project `ports.list` and `.mcp.json`
-  auto-detected HTTP ports. A malicious repo exposes the Claude container
-  (workspace + mounted credentials) to the LAN. `parsePorts` also rejects any
-  IP prefix, so nobody can opt into loopback. Fix: apply the same `127.0.0.1:`
-  localization to main-container project ports.
+boundary documented in `AGENTS.md`. The R1–R3 escapes below were closed
+(network is now profile-owned, project `env` denylists redirect/TLS keys, and
+main-container project/`.mcp.json` ports are pinned to loopback); the remaining
+items are open.
 
 - **R8. API key visible in `docker run` cmdline.** `src/container/builder.ts:68`
   → `src/container/runner.ts:96` emit `-e ANTHROPIC_API_KEY=sk-...`, readable
@@ -114,14 +81,6 @@ are unaffected by R1–R3.
 ## Correctness
 
 ### Config / CLI wiring
-
-- **R4. Profile/project `claudeArgs` are discarded on every run** (verified
-  against source). `src/cli/commands/_setup.ts:181` —
-  `claudeArgs: args.claudeArgs ?? partial.claudeArgs`. `run.ts` and `shell.ts`
-  always pass a (possibly empty) array, and `[] ?? x === []`, so the merged
-  profile+project `claudeArgs` (`merger.ts:170-173`, with tests) never reach
-  the container — including the wizard's own `["--model", ...]` example. Fix:
-  `[...partial.claudeArgs, ...(args.claudeArgs ?? [])]`.
 
 - **R5. `ccpod run -- <flags>` passthrough is double-parsed** (verified: citty
   0.2.2 yields `{prompt:"--verbose"}` for `rawArgs:['--','--verbose']`).
@@ -299,9 +258,10 @@ are unaffected by R1–R3.
   `src/cli/commands/_setup.ts:209`, `src/mcp/parser.ts:20`,
   `src/update/checker.ts:26`, `src/update/updater.ts:34-37`. Define Zod
   schemas for each.
-- **`mergeConfigs` array concat duplicates** in `network.allow` and similar
-  (`src/config/merger.ts:43`). Dedupe arrays in `customMerge`. (Also reduces
-  the R1 allow-list widening surface.)
+- **Array-valued config fields can accumulate duplicates** where profile and
+  project lists concatenate (e.g. `claudeArgs`, `init`, `ports.list`). Dedupe
+  where a duplicate is meaningless. (`network.allow` no longer takes project
+  input after R1, so it is no longer a concern here.)
 - **`init/wizard.ts` is 751 lines.** Split into `src/init/steps/auth.ts`,
   `src/init/steps/image.ts`, etc. The auth detection logic belongs in
   `src/auth/detector.ts`, not init.

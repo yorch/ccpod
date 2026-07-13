@@ -104,8 +104,14 @@ function buildRunArgs(spec: ContainerSpec): string[] {
   }
 
   for (const [containerPort, bindings] of Object.entries(spec.portBindings)) {
+    const port = containerPort.replace('/tcp', '');
     for (const hb of bindings) {
-      args.push('-p', `${hb.HostPort}:${containerPort.replace('/tcp', '')}`);
+      args.push(
+        '-p',
+        hb.HostIp
+          ? `${hb.HostIp}:${hb.HostPort}:${port}`
+          : `${hb.HostPort}:${port}`,
+      );
     }
   }
 

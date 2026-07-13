@@ -77,6 +77,36 @@ function interpolateHostEnv(
   });
 }
 
+// Env vars an untrusted project .ccpod.yml may not set (compared
+// case-insensitively). These can redirect API traffic away from Anthropic —
+// exfiltrating the profile's resolved credential — inject code into the
+// credential-bearing Node process, or weaken TLS trust. The profile owner and
+// --env can still set them; only project-sourced entries are blocked. (Egress
+// is separately constrained by a `restricted` network policy; this list closes
+// the in-process redirect/injection path.)
+const PROJECT_ENV_DENYLIST = new Set([
+  // Anthropic credential + endpoint redirection
+  'ANTHROPIC_API_KEY',
+  'ANTHROPIC_AUTH_TOKEN',
+  'ANTHROPIC_BASE_URL',
+  'ANTHROPIC_BEDROCK_BASE_URL',
+  'ANTHROPIC_VERTEX_BASE_URL',
+  // Proxy redirection (Node honors upper- and lower-case; matched via toUpperCase)
+  'HTTP_PROXY',
+  'HTTPS_PROXY',
+  'ALL_PROXY',
+  'NO_PROXY',
+  // Code injection into the Node process
+  'NODE_OPTIONS',
+  // TLS-trust weakening (Node + non-Node MCP servers)
+  'NODE_EXTRA_CA_CERTS',
+  'NODE_TLS_REJECT_UNAUTHORIZED',
+  'SSL_CERT_FILE',
+  'SSL_CERT_DIR',
+  'CURL_CA_BUNDLE',
+  'REQUESTS_CA_BUNDLE',
+]);
+
 export function resolveEnvForwarding(
   profileKeys: string[],
   projectKeys: string[],
@@ -92,8 +122,16 @@ export function resolveEnvForwarding(
   ) => {
     for (const entry of entries) {
       const eqIdx = entry.indexOf('=');
+      const name = eqIdx !== -1 ? entry.slice(0, eqIdx) : entry;
+      // Only project entries are untrusted; profile/CLI use interpolation.
+      if (!allowInterpolation && PROJECT_ENV_DENYLIST.has(name.toUpperCase())) {
+        console.warn(
+          `Warning: project .ccpod.yml env entry '${name}' is not allowed ` +
+            '(it could redirect API traffic or weaken TLS) — ignoring it.',
+        );
+        continue;
+      }
       if (eqIdx !== -1) {
-        const name = entry.slice(0, eqIdx);
         const rawValue = entry.slice(eqIdx + 1);
         if (!allowInterpolation && /\$\{[A-Za-z_]/.test(rawValue)) {
           throw new Error(

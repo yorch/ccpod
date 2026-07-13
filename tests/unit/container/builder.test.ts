@@ -109,6 +109,19 @@ describe('buildContainerSpec', () => {
     expect(spec.portBindings['3001/tcp']).toEqual([{ HostPort: '3000' }]);
   });
 
+  it('carries HostIp when a port is pinned to loopback', () => {
+    const spec = buildContainerSpec(
+      makeConfig({
+        ports: [{ container: 3001, host: 3000, hostIp: '127.0.0.1' }],
+      }),
+      PROJECT_DIR,
+      true,
+    );
+    expect(spec.portBindings['3001/tcp']).toEqual([
+      { HostIp: '127.0.0.1', HostPort: '3000' },
+    ]);
+  });
+
   it('env always contains CCPOD_STATE', () => {
     const spec = buildContainerSpec(makeConfig(), PROJECT_DIR, true);
     expect(spec.env).toContain('CCPOD_STATE=ephemeral');

@@ -76,10 +76,13 @@ export async function setupContainer(
 
   const mcpJson =
     partial.autoDetectMcp && !profile.isolation ? parseMcpJson(cwd) : null;
+  // .mcp.json comes from the (untrusted) project checkout, so its auto-detected
+  // ports are pinned to loopback — same treatment as project .ccpod.yml ports.
   const mcpPorts = mcpJson
     ? extractHttpMcpPorts(mcpJson).map((port) => ({
         container: port,
         host: port,
+        hostIp: '127.0.0.1',
       }))
     : [];
 
@@ -178,7 +181,7 @@ export async function setupContainer(
 
   const config: ResolvedConfig = {
     ...partial,
-    claudeArgs: args.claudeArgs ?? partial.claudeArgs,
+    claudeArgs: [...partial.claudeArgs, ...(args.claudeArgs ?? [])],
     env,
     image,
     mergedConfigDir,

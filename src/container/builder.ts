@@ -21,7 +21,7 @@ export interface ContainerSpec {
   name: string;
   networkMode: string;
   openStdin: boolean;
-  portBindings: Record<string, Array<{ HostPort: string }>>;
+  portBindings: Record<string, Array<{ HostPort: string; HostIp?: string }>>;
   tmpfs?: Record<string, string>;
   tty: boolean;
   workingDir: string;
@@ -60,9 +60,16 @@ export function buildContainerSpec(
     tmpfs['/ccpod/state'] = 'rw,noexec,nosuid,size=256m';
   }
 
-  const portBindings: Record<string, Array<{ HostPort: string }>> = {};
-  for (const { host, container } of config.ports) {
-    portBindings[`${container}/tcp`] = [{ HostPort: String(host) }];
+  const portBindings: Record<
+    string,
+    Array<{ HostPort: string; HostIp?: string }>
+  > = {};
+  for (const { host, container, hostIp } of config.ports) {
+    portBindings[`${container}/tcp`] = [
+      hostIp
+        ? { HostIp: hostIp, HostPort: String(host) }
+        : { HostPort: String(host) },
+    ];
   }
 
   const env = Object.entries(config.env).map(([k, v]) => `${k}=${v}`);
