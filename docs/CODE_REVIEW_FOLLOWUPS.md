@@ -14,12 +14,14 @@ review. Numbering is left stable (with gaps) so cross-references stay valid.
 
 Highest-leverage open items, in suggested order:
 
-1. **Container/runtime correctness backlog** — R12, R13, R16, R17, R19-adjacent
-   (image tag case, port-binding collisions, image build-context, `down --all`
-   filter, …).
-2. **Config/CLI correctness** — R5 (`run --` passthrough), R18 (config-show
-   masking), R20, R21, R23, R24, R27.
-3. **DRY / maintainability and test-coverage** backlogs (see below).
+1. **Security hardening** — M2 (dir perms `0700` for profile/state), M3
+   (`.mcp.json` Zod validation + port bounds), R11 (CLI profile-name validation).
+2. **Container/runtime correctness** — R12 (image tag case), R13 (port-binding
+   collisions), R14 (`mountSshDir` path), R16 (image build-context), R17
+   (`down --all --profile` filter).
+3. **Config/CLI & auth correctness** — R5 (`run --` passthrough), R7 (updater
+   `ETXTBSY`), R18 (config-show masking), R20, R21, R23, R24, R27.
+4. **DRY / maintainability, performance, and test-coverage** backlogs (below).
 
 > **Addressed:** the trust-boundary trio (**R1–R3**) and dead-`claudeArgs`
 > (**R4**); the container-lifecycle cluster **Must-fix #3 / #7 / #8**, **R6**,
