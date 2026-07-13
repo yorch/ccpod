@@ -20,19 +20,22 @@ export async function runContainer(
   const state = await containerState(spec.name, deps.dockerExec);
 
   if (state === 'running') {
+    // A headless run (tty=false) must not `docker attach` to a live
+    // interactive session: attach would hijack its stdio and the caller's
+    // signal forwarding could then stop the user's session. Only an
+    // interactive run reattaches to resume the session.
+    if (!spec.tty) {
+      throw new Error(
+        `A container for this project is already running (${spec.name}). ` +
+          "Stop it with 'ccpod down' before starting a headless run, or omit " +
+          '--file to attach to the interactive session.',
+      );
+    }
     console.log(`Reattaching to running container: ${spec.name}`);
     return deps.dockerSpawn(['attach', spec.name]);
   }
 
-  if (state === 'stopped') {
-    const { exitCode, stderr } = await deps.dockerExec(['rm', spec.name]);
-    if (exitCode !== 0) {
-      throw new Error(
-        `Failed to remove stopped container '${spec.name}': ${stderr}`,
-      );
-    }
-  }
-
+  await removeForFreshRun(spec.name, state, deps);
   return deps.dockerSpawn(buildRunArgs(spec));
 }
 
@@ -55,22 +58,26 @@ export async function shellContainer(
     return deps.dockerSpawn(['exec', '-it', spec.name, ...cmd]);
   }
 
-  if (state === 'stopped') {
-    const { exitCode, stderr } = await deps.dockerExec(['rm', spec.name]);
-    if (exitCode !== 0) {
-      throw new Error(
-        `Failed to remove stopped container '${spec.name}': ${stderr}`,
-      );
-    }
-  }
-
+  await removeForFreshRun(spec.name, state, deps);
   return deps.dockerSpawn(buildRunArgs(spec));
 }
+
+// Lifecycle status from `docker inspect`. 'not_found' when the container does
+// not exist. All other values map directly to Docker's `.State.Status`.
+export type ContainerLifecycle =
+  | 'created'
+  | 'restarting'
+  | 'running'
+  | 'paused'
+  | 'exited'
+  | 'dead'
+  | 'removing'
+  | 'not_found';
 
 export async function containerState(
   name: string,
   dockerExecFn: DockerExecFn,
-): Promise<'running' | 'stopped' | 'not_found'> {
+): Promise<ContainerLifecycle> {
   const { exitCode, stdout } = await dockerExecFn([
     'inspect',
     '--format',
@@ -80,7 +87,31 @@ export async function containerState(
   if (exitCode !== 0) {
     return 'not_found';
   }
-  return stdout === 'running' ? 'running' : 'stopped';
+  return (stdout.trim() || 'not_found') as ContainerLifecycle;
+}
+
+// Clear the way for a fresh `docker run` under this name. `rm -f` handles every
+// removable state in one call — including paused, restarting, and dead, which a
+// plain `rm` rejects. Two concurrent-lifecycle outcomes are tolerated rather
+// than fatal: the container already vanished (`ccpod down` won the race), or its
+// removal is still in progress. ccpod containers carry no restart policy, so the
+// implicit SIGKILL from `rm -f` is safe here.
+async function removeForFreshRun(
+  name: string,
+  state: ContainerLifecycle,
+  deps: RunnerDeps,
+): Promise<void> {
+  if (state === 'not_found') {
+    return;
+  }
+  const { exitCode, stderr } = await deps.dockerExec(['rm', '-f', name]);
+  if (
+    exitCode !== 0 &&
+    !/no such container/i.test(stderr) &&
+    !/removal .* already in progress/i.test(stderr)
+  ) {
+    throw new Error(`Failed to remove container '${name}': ${stderr}`);
+  }
 }
 
 function buildRunArgs(spec: ContainerSpec): string[] {

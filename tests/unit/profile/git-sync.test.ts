@@ -114,6 +114,28 @@ describe('syncGitConfig', () => {
     );
   });
 
+  it('syncs a tag ref (reset uses FETCH_HEAD, not origin/<ref>)', async () => {
+    const { repoDir } = makeLocalRepo();
+    // Tag the initial commit and clone that tag.
+    git(['tag', 'v1'], repoDir);
+    const profileDir = makeTempDir();
+    const configDir = join(profileDir, 'config');
+
+    await syncGitConfig(profileDir, repoDir, 'v1', 'always');
+    expect(existsSync(join(configDir, 'config.txt'))).toBe(true);
+
+    // Move the tag forward on the remote to a new commit.
+    writeFileSync(join(repoDir, 'tagged.txt'), 'tagged content');
+    git(['add', '.'], repoDir);
+    git(['commit', '-m', 'update'], repoDir);
+    git(['tag', '-f', 'v1'], repoDir);
+
+    // A shallow single-branch clone has no `origin/v1` ref, so the old
+    // `reset --hard origin/v1` threw; FETCH_HEAD resolves the tag correctly.
+    await syncGitConfig(profileDir, repoDir, 'v1', 'always');
+    expect(existsSync(join(configDir, 'tagged.txt'))).toBe(true);
+  });
+
   it('skips when strategy=pin regardless of lock state', async () => {
     const { repoDir, ref } = makeLocalRepo();
     const profileDir = makeTempDir();

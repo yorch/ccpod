@@ -14,18 +14,17 @@ review. Numbering is left stable (with gaps) so cross-references stay valid.
 
 Highest-leverage open items, in suggested order:
 
-1. **Must-fix #3 / R28** — Sidecar startup atomicity, `ensureNetwork` TOCTOU,
-   and the git-profile clone race.
-2. **Must-fix #7 / R15 / R19** — `runContainer` container-state handling
-   (no-such-container race, headless-attach, paused/restarting).
-3. **Must-fix #8** — `computeProjectHash` platform stability (`realpathSync`,
-   darwin case-folding).
-4. **Must-fix #9** — `writeMergedConfig` rename race / sentinel marker.
-5. **R8 / R9 / R10** — Remaining security hardening: API key in `docker run`
+1. **Must-fix #9** — `writeMergedConfig` rename race / sentinel marker.
+2. **R8 / R9 / R10** — Remaining security hardening: API key in `docker run`
    cmdline, fail-open iptables, `install.sh` checksum verification.
+3. **M5** — `removeSidecarNetwork` swallows exit codes (residual after R22).
+4. **Container/runtime correctness backlog** — R12–R24, R27 (image tag case,
+   port-binding collisions, `mountSshDir` path, config-show masking, …).
 
-> The 2026-07 trust-boundary trio (**R1–R3**) and the dead-`claudeArgs` fix
-> (**R4**) were addressed — see the "Security invariants" section of `AGENTS.md`.
+> **Addressed:** the trust-boundary trio (**R1–R3**) and dead-`claudeArgs`
+> (**R4**); the container-lifecycle cluster **Must-fix #3 / #7 / #8**,
+> **R6**, **R15**, **R19**, **R28**, and the R22 sidecar-container portion.
+> See the "Security invariants" section of `AGENTS.md` and git history.
 
 ---
 
@@ -119,34 +118,14 @@ items are open.
 
 ### Container / runtime state handling
 
-- **Must-fix #3 + R28. Startup atomicity and clone races.**
-  Sidecar startup is not atomic (`src/container/sidecars.ts:30-44`): partial
-  failure leaves containers running and the network in place, and
-  `ensureNetwork` has a TOCTOU race for concurrent `ccpod run`. Fix: treat
-  "already exists" as success; on per-service failure, tear down services
-  started so far. Separately, `profile/lock.ts` is a last-sync timestamp, not a
-  mutex, so concurrent first-runs of the same git profile race on `git clone`
-  into the same dir (loser dies "destination path already exists"); pair this
-  with the corrupt-configDir cleanup in the git-sync group below.
-
-- **Must-fix #7 + R15 + R19. `runContainer` container-state handling.**
-  `src/container/runner.ts`. (a) `docker rm` "no such container" is fatal when
-  a container is removed concurrently (`runner.ts:27-34`, same in
-  `shellContainer`) — treat that stderr as success. (b) A headless
-  `ccpod run --file …` against an already-running interactive container
-  silently `docker attach`es (`runner.ts:22-24`), discarding the new
-  spec/prompt, and its signal forwarding can then `docker stop` the user's live
-  session — in headless mode, don't attach to a pre-existing interactive
-  container. (c) `containerState` maps anything not `running` to `stopped`
-  (`runner.ts:83`); paused/restarting containers then fail `docker rm` (no
-  `-f`) and `run` throws a misleading error — handle paused/restarting as
-  `down.ts` does.
-
-- **Must-fix #8. `computeProjectHash` is not platform-stable.**
-  `src/container/builder.ts:24-26`. Case-insensitive macOS HFS+, symlinks, and
-  realpath variations produce different hashes for the same dir, yielding
-  duplicate stopped containers. Fix: `realpathSync(projectDir)`; normalize case
-  on darwin.
+The container-lifecycle cluster (**Must-fix #3 / #7 / #8**, **R15**, **R19**,
+**R28**) was addressed: `runContainer`/`shellContainer` now stop-then-rm
+paused/restarting containers, tolerate a concurrently-removed container, and
+refuse to attach a headless run to a live interactive session; sidecar startup
+rolls back on partial failure and `ensureNetwork` re-checks on a create race;
+`computeProjectHash` normalizes via `realpathSync` + darwin case-folding; and
+`syncGitConfig` clones through a temp dir + atomic rename (removing the clone
+race and partial-corrupt-configDir path). Remaining open items:
 
 - **Must-fix #9. `writeMergedConfig` rename race.** `src/config/writer.ts:88-119`.
   Two concurrent runs can race on rename; a reader may see a half-populated
@@ -155,11 +134,11 @@ items are open.
   sentinel marker file last and poll for it on rename failure, or use a per-pid
   temp dir.
 
-- **M5 + R22. Sidecar exec results are ignored.**
-  `removeSidecarNetwork` swallows exit codes (`src/container/sidecars.ts:47-49`),
-  and the sidecar `rm` at `sidecars.ts:92` ignores its result — a
-  paused/restarting sidecar fails `rm` silently and the next `run` fails with a
-  name conflict. Fix: check exit codes and surface/handle failures.
+- **M5. `removeSidecarNetwork` swallows its exit code**
+  (`src/container/sidecars.ts`). The R22 sidecar-*container* removal is now
+  handled (stale sidecars are `rm -f`'d and rolled back on failure), but the
+  network teardown still discards its result. Fix: check the exit code and
+  surface a failure.
 
 - **R13. `portBindings` keyed by container port drops colliding mappings.**
   `src/container/builder.ts:63-66`. Colliding container ports overwrite
@@ -208,19 +187,13 @@ items are open.
 
 ### Git-sync / installer
 
-- **R6. Profile git-sync breaks for tags or changed refs** (verified: exit 128,
-  `unknown revision`). `src/profile/git-sync.ts:29-30`. After a shallow
-  single-branch clone, a later `fetch origin <tag>` only updates `FETCH_HEAD`,
-  so `git reset --hard origin/<tag>` (or a since-edited `ref`) fails and aborts
-  `ccpod run` on every sync. Fix: `reset --hard FETCH_HEAD`.
+> **R6** (tag/changed-ref sync) and the partial-corrupt-configDir case were
+> addressed: `syncGitConfig` resets to `FETCH_HEAD` and clones via a temp dir +
+> atomic rename. The SHA-ref clone below is still open.
 
 - **Git ref as commit SHA fails** — `git clone --depth 1 --branch <sha>` is
-  invalid (`src/profile/git-sync.ts:18`). Detect SHA-shaped refs and fall back
+  invalid (`src/profile/git-sync.ts`). Detect SHA-shaped refs and fall back
   to clone-then-checkout.
-
-- **Partial clone leaves corrupt configDir** — next run sees `existsSync` and
-  skips, then fetch fails. Fix: `rmSync(configDir, {recursive, force})` on clone
-  failure.
 
 - **R25 + `detectSource` URL misclassification.** `src/profile/installer.ts:35`
   classifies `github.com/.../blob/...` and `github.com/.../raw/...` file URLs
@@ -300,8 +273,9 @@ items are open.
 - **`src/config/writer.ts:hashProfileDir` (~line 35)** walks the entire profile
   config dir including `mtimeMs` on every run. Caches break on `git checkout`.
   Re-think: either content-hash small files, or drop directory hashing.
-- **`src/container/sidecars.ts:30-44`** starts sidecars sequentially. Parallelize
-  (coordinate with the Must-fix #3 atomicity work).
+- **`src/container/sidecars.ts`** starts sidecars sequentially. Parallelize —
+  the rollback path added for Must-fix #3 must still clean up all started
+  containers if any concurrent start fails.
 
 ---
 

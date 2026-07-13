@@ -1,4 +1,5 @@
 import { createHash } from 'node:crypto';
+import { realpathSync } from 'node:fs';
 import { homedir } from 'node:os';
 import { getCredentialsDir, getStateDir } from '../profile/manager.ts';
 import { detectRuntime } from '../runtime/detector.ts';
@@ -28,7 +29,21 @@ export interface ContainerSpec {
 }
 
 export function computeProjectHash(projectDir: string): string {
-  return createHash('sha256').update(projectDir).digest('hex').slice(0, 16);
+  // Normalize before hashing so the same project always maps to the same
+  // container name: resolve symlinks (realpath) and fold case on macOS, whose
+  // default filesystem is case-insensitive. Without this, `/Users/me/Proj` and
+  // `/users/me/proj`, or a path reached through a symlink, would hash
+  // differently and spawn duplicate containers for one project.
+  let normalized = projectDir;
+  try {
+    normalized = realpathSync(projectDir);
+  } catch {
+    // Path may not exist yet (or be inaccessible); fall back to the raw string.
+  }
+  if (process.platform === 'darwin') {
+    normalized = normalized.toLowerCase();
+  }
+  return createHash('sha256').update(normalized).digest('hex').slice(0, 16);
 }
 
 export function buildContainerSpec(

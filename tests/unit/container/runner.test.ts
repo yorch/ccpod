@@ -105,7 +105,60 @@ describe('runContainer', () => {
     ]);
 
     await expect(runContainer(makeSpec(), deps)).rejects.toThrow(
-      'Failed to remove stopped container',
+      'Failed to remove container',
+    );
+    expect(spawnMock).not.toHaveBeenCalled();
+  });
+
+  it('tolerates a container that vanished before rm (concurrent down)', async () => {
+    const { deps, spawnMock } = makeDeps([
+      { exitCode: 0, stderr: '', stdout: 'exited' },
+      { exitCode: 1, stderr: 'Error: No such container: x', stdout: '' },
+    ]);
+
+    await runContainer(makeSpec(), deps);
+
+    const spawnArgs = (spawnMock.mock.calls[0] as [string[]])[0];
+    expect(spawnArgs[0]).toBe('run');
+  });
+
+  it('force-removes a paused container before starting fresh', async () => {
+    const { deps, spawnMock, execMock } = makeDeps([
+      { exitCode: 0, stderr: '', stdout: 'paused' },
+      { exitCode: 0, stderr: '', stdout: '' }, // rm -f
+    ]);
+
+    await runContainer(makeSpec(), deps);
+
+    const execArgs = (execMock.mock.calls as [string[]][]).map((c) => c[0]);
+    expect(execArgs.some((a) => a[0] === 'rm' && a.includes('-f'))).toBe(true);
+    const spawnArgs = (spawnMock.mock.calls[0] as [string[]])[0];
+    expect(spawnArgs[0]).toBe('run');
+  });
+
+  it('tolerates a container whose removal is already in progress', async () => {
+    const { deps, spawnMock } = makeDeps([
+      { exitCode: 0, stderr: '', stdout: 'removing' },
+      {
+        exitCode: 1,
+        stderr: 'Error: removal of container x is already in progress',
+        stdout: '',
+      },
+    ]);
+
+    await runContainer(makeSpec(), deps);
+
+    const spawnArgs = (spawnMock.mock.calls[0] as [string[]])[0];
+    expect(spawnArgs[0]).toBe('run');
+  });
+
+  it('headless run refuses to attach to a running container', async () => {
+    const { deps, spawnMock } = makeDeps([
+      { exitCode: 0, stderr: '', stdout: 'running' },
+    ]);
+
+    await expect(runContainer(makeSpec({ tty: false }), deps)).rejects.toThrow(
+      'already running',
     );
     expect(spawnMock).not.toHaveBeenCalled();
   });
