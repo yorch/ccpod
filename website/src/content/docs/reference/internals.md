@@ -240,6 +240,8 @@ exit $STATUS
 | `.credentials.json` | `$CLAUDE_CONFIG_DIR/.credentials.json` | OAuth access/refresh tokens |
 | `.claude.json` | `$HOME/.claude.json` (ignores `CLAUDE_CONFIG_DIR`) | Account metadata, migration flags |
 
+**Sharing host OAuth credentials is a one-time copy, not a live link.** `ccpod init` can seed a profile from the macOS Keychain entry `Claude Code-credentials`, or from another profile's `.credentials.json` (`src/init/wizard.ts`). Anthropic's OAuth refresh tokens rotate on use — each refresh invalidates the previous refresh token — so after that initial copy, the profile's stored token and its source (the host's native `claude`, or the other profile) evolve independently. If both get used, whichever refreshes first silently invalidates the other's stored refresh token, logging it out with no obvious cause. The wizard requires an explicit confirmation before creating this kind of copy, and recommends a fresh `OAuth (browser login)` per profile instead, which has no shared token to collide.
+
 ## Config merging pipeline
 
 ```
