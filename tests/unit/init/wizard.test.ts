@@ -1,7 +1,17 @@
-import { describe, expect, it } from 'bun:test';
+import { afterEach, describe, expect, it, mock } from 'bun:test';
 import { parse as yamlParse } from 'yaml';
 import type { ProfileConfigInput } from '../../../src/config/schema.ts';
-import { buildAnnotatedProfileYaml, q } from '../../../src/init/wizard.ts';
+
+const confirmMock = mock(async (_opts: unknown): Promise<boolean> => true);
+mock.module('@inquirer/prompts', () => ({
+  confirm: confirmMock,
+  input: mock(async () => ''),
+  select: mock(async () => ''),
+}));
+
+const { buildAnnotatedProfileYaml, confirmSharedOAuthRisk, q } = await import(
+  '../../../src/init/wizard.ts'
+);
 
 const baseProfile: ProfileConfigInput = {
   auth: { keyEnv: 'ANTHROPIC_API_KEY', type: 'api-key' },
@@ -20,6 +30,48 @@ const baseProfile: ProfileConfigInput = {
   ssh: { agentForward: true, mountSshDir: false },
   state: 'ephemeral',
 };
+
+describe('confirmSharedOAuthRisk()', () => {
+  afterEach(() => {
+    confirmMock.mockReset();
+    confirmMock.mockImplementation(async () => true);
+  });
+
+  it('does not prompt for non-shared auth methods', async () => {
+    for (const method of [
+      'env',
+      'file',
+      'oauth',
+      'detected:ANTHROPIC_API_KEY',
+    ]) {
+      expect(await confirmSharedOAuthRisk(method, [])).toBe(true);
+    }
+    expect(confirmMock).not.toHaveBeenCalled();
+  });
+
+  it('prompts and returns the user answer for host-keychain', async () => {
+    confirmMock.mockImplementation(async () => false);
+    expect(await confirmSharedOAuthRisk('host-keychain', [])).toBe(false);
+    expect(confirmMock).toHaveBeenCalledTimes(1);
+  });
+
+  it('prompts when copying from an existing oauth profile', async () => {
+    confirmMock.mockImplementation(async () => true);
+    const result = await confirmSharedOAuthRisk('profile:work', [
+      { auth: { type: 'oauth' }, name: 'work' },
+    ]);
+    expect(result).toBe(true);
+    expect(confirmMock).toHaveBeenCalledTimes(1);
+  });
+
+  it('does not prompt when copying from an api-key profile', async () => {
+    const result = await confirmSharedOAuthRisk('profile:work', [
+      { auth: { keyEnv: 'ANTHROPIC_API_KEY', type: 'api-key' }, name: 'work' },
+    ]);
+    expect(result).toBe(true);
+    expect(confirmMock).not.toHaveBeenCalled();
+  });
+});
 
 describe('q()', () => {
   it('passes plain strings through unchanged', () => {

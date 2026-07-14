@@ -33,6 +33,66 @@ type DetectedAuth = {
   profiles: Array<{ name: string; auth: ProfileConfigInput['auth'] }>;
 };
 
+// Anthropic OAuth refresh tokens rotate on use: each refresh call invalidates
+// the previous refresh token server-side. Sharing 'host-keychain' or an
+// existing oauth profile's credentials only copies the token once — the copy
+// and its source then age independently. Whichever side refreshes first
+// (the host's native `claude`, this new container, or another profile
+// sharing the same source) silently invalidates the other's stored refresh
+// token, logging it out with no clear cause. Surface that risk before the
+// copy happens rather than after a confusing logout.
+export async function confirmSharedOAuthRisk(
+  authMethod: string,
+  existingProfiles: DetectedAuth['profiles'],
+): Promise<boolean> {
+  let sharedWith: string | undefined;
+  if (authMethod === 'host-keychain') {
+    sharedWith = 'your host Claude Code login';
+  } else if (authMethod.startsWith('profile:')) {
+    const sourceName = authMethod.slice('profile:'.length);
+    if (
+      existingProfiles.find((p) => p.name === sourceName)?.auth?.type ===
+      'oauth'
+    ) {
+      sharedWith = `profile '${sourceName}'`;
+    }
+  }
+  if (!sharedWith) {
+    return true;
+  }
+
+  console.log();
+  console.log(
+    chalk.yellow(
+      `     ⚠ This copies the OAuth session from ${sharedWith} once, right now.`,
+    ),
+  );
+  console.log(
+    chalk.yellow(
+      "     Claude's OAuth refresh tokens rotate on use, so the copy and the",
+    ),
+  );
+  console.log(
+    chalk.yellow(
+      '     original will drift apart. If both are used, whichever refreshes',
+    ),
+  );
+  console.log(
+    chalk.yellow(
+      '     first will silently log the other one out. For an independent',
+    ),
+  );
+  console.log(
+    chalk.yellow(
+      "     session that won't collide, choose 'OAuth (browser login)'.",
+    ),
+  );
+  return confirm({
+    default: false,
+    message: '     Continue with the shared copy?',
+  });
+}
+
 function detectAuth(currentProfile: string): DetectedAuth {
   const envKey = process.env.ANTHROPIC_API_KEY
     ? 'ANTHROPIC_API_KEY'
@@ -166,10 +226,16 @@ export async function runWizard(profileName = 'default'): Promise<void> {
     { name: 'OAuth (browser login via claude)', value: 'oauth' },
   );
 
-  const authMethod = await select({
-    choices: authChoices,
-    message: `[2/${totalSteps}] Auth method`,
-  });
+  let authMethod: string;
+  for (;;) {
+    authMethod = await select({
+      choices: authChoices,
+      message: `[2/${totalSteps}] Auth method`,
+    });
+    if (await confirmSharedOAuthRisk(authMethod, existingProfiles)) {
+      break;
+    }
+  }
 
   let authConfig: ProfileConfigInput['auth'];
   let credentialSourceProfile: string | undefined;
