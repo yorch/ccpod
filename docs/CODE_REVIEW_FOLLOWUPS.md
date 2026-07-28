@@ -19,7 +19,7 @@ Highest-leverage open items, in suggested order:
    collisions), R14 (`mountSshDir` path), R16 (image build-context), R17
    (`down --all --profile` filter).
 3. **Config/CLI & auth correctness** — R5 (`run --` passthrough), R7 (updater
-   `ETXTBSY`), R18 (config-show masking), R20, R21, R23, R24, R27.
+   `ETXTBSY`), R18 (config-show masking), R21, R23, R24, R27.
 4. **DRY / maintainability, performance, and test-coverage** backlogs (below).
 
 > **Addressed:** the trust-boundary trio (**R1–R3**) and dead-`claudeArgs`
@@ -143,11 +143,6 @@ now surfaces its exit code). Remaining open items:
   complete and `update.ts` surfaces a raw stack. Fix: copy to
   `${targetPath}.new` in the target dir, then `renameSync` over it (atomic,
   same filesystem).
-
-- **R20.** `auth.keyFile` is always rejected when `~/.ccpod` is itself a
-  symlink (`src/auth/resolver.ts:37-43` compares `realpathSync(keyPath)`
-  against a non-realpath'd home). Fails closed. Fix: `realpathSync` the home
-  dir before comparing.
 
 - **R24.** `ccpod update` run via `bun run dev` replaces the user's `bun`
   binary (`src/cli/commands/update.ts:45` uses `process.execPath`). Guard:
