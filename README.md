@@ -172,6 +172,8 @@ ccpod image pull [--profile <name>]       Pull latest base or declared image
 ccpod ps                         List running ccpod containers
 ccpod ps --all                   Include stopped containers
 ccpod down                       Stop Claude container + sidecars for $PWD
+ccpod down --all                 Stop every ccpod container on this machine
+ccpod down --profile <name>      Limit teardown to a specific profile
 
 ccpod state clear [--profile <name>]      Delete state directory (resets projects/todos)
 

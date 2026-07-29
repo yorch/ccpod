@@ -213,6 +213,10 @@ ports:
     - "3000:3000"
   autoDetectMcp: true                 # default true; expose ports from .mcp.json HTTP/SSE entries
 
+plugins: []                         # plugin slugs delta-installed into ccpod-plugins-<profile>
+# plugins:
+#   - mcp-server-brave-search
+
 services:
   postgres:
     image: postgres:17
@@ -274,8 +278,11 @@ ccpod image build [profile]
 ccpod image init [profile]
 ccpod image pull [profile]
 
-ccpod down                          Stop container + sidecars (--all clears across host)
+ccpod down                          Stop container + sidecars for $PWD
+ccpod down --all                    Stop every ccpod container on this machine
+ccpod down --profile <name>         Limit teardown to a specific profile
 ccpod ps                            Show running ccpod containers
+ccpod ps --all                      Include stopped containers
 
 ccpod state clear [profile]         Delete state volume (reset history/memory)
 

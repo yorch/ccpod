@@ -34,7 +34,18 @@ export function resolveAuth(
       );
       return {};
     }
-    const home = resolvePath(getCcpodHome());
+    // Resolve symlinks on the home dir too so the containment check is
+    // symmetric with realKeyPath (R20). Otherwise a symlinked ~/.ccpod — e.g.
+    // a macOS temp dir under /var/folders, where /var → /private/var — makes
+    // realpathSync(keyPath) diverge from a merely-normalized home and every
+    // valid keyFile is rejected as "outside ~/.ccpod". Fall back to the
+    // normalized path if the home dir cannot be realpath'd.
+    let home: string;
+    try {
+      home = realpathSync(getCcpodHome());
+    } catch {
+      home = resolvePath(getCcpodHome());
+    }
     if (realKeyPath !== home && !realKeyPath.startsWith(`${home}/`)) {
       throw new Error(
         `auth.keyFile "${auth.keyFile}" resolves to ${realKeyPath}, outside ~/.ccpod. ` +

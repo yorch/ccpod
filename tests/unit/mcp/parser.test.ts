@@ -44,6 +44,55 @@ describe('parseMcpJson', () => {
     expect(result).not.toBeNull();
     expect(result?.mcpServers).toBeUndefined();
   });
+
+  it('returns null and warns on malformed JSON', () => {
+    const dir = makeTempDir();
+    writeFileSync(join(dir, '.mcp.json'), '{ not valid json');
+    const warnings: string[] = [];
+    const original = console.warn;
+    console.warn = (msg: string) => warnings.push(msg);
+    try {
+      expect(parseMcpJson(dir)).toBeNull();
+    } finally {
+      console.warn = original;
+    }
+    expect(warnings.some((w) => /failed to parse .mcp.json/.test(w))).toBe(
+      true,
+    );
+  });
+
+  it('returns null and warns on schema-invalid contents', () => {
+    const dir = makeTempDir();
+    writeFileSync(
+      join(dir, '.mcp.json'),
+      JSON.stringify({ mcpServers: { foo: { type: 'invalid-type' } } }),
+    );
+    const warnings: string[] = [];
+    const original = console.warn;
+    console.warn = (msg: string) => warnings.push(msg);
+    try {
+      expect(parseMcpJson(dir)).toBeNull();
+    } finally {
+      console.warn = original;
+    }
+    expect(warnings.some((w) => /schema validation/.test(w))).toBe(true);
+  });
+
+  it('rejects more than 64 server entries', () => {
+    const dir = makeTempDir();
+    const mcpServers: Record<string, { type: string }> = {};
+    for (let i = 0; i < 65; i++) {
+      mcpServers[`s${i}`] = { type: 'stdio' };
+    }
+    writeFileSync(join(dir, '.mcp.json'), JSON.stringify({ mcpServers }));
+    const original = console.warn;
+    console.warn = () => {};
+    try {
+      expect(parseMcpJson(dir)).toBeNull();
+    } finally {
+      console.warn = original;
+    }
+  });
 });
 
 describe('extractHttpMcpPorts', () => {
@@ -101,5 +150,25 @@ describe('extractHttpMcpPorts', () => {
 
   it('returns empty array when mcpServers absent', () => {
     expect(extractHttpMcpPorts({})).toEqual([]);
+  });
+
+  it('rejects out-of-range ports and warns', () => {
+    // Node's URL parser already rejects ports > 65535; this guards the lower
+    // bound (port "0"), which URL.port surfaces as "0" rather than rejecting.
+    const warnings: string[] = [];
+    const original = console.warn;
+    console.warn = (msg: string) => warnings.push(msg);
+    try {
+      const ports = extractHttpMcpPorts({
+        mcpServers: {
+          bad: { type: 'http', url: 'http://localhost:0' },
+          ok: { type: 'http', url: 'http://localhost:3000' },
+        },
+      });
+      expect(ports).toEqual([3000]);
+    } finally {
+      console.warn = original;
+    }
+    expect(warnings.some((w) => /out of valid range/.test(w))).toBe(true);
   });
 });

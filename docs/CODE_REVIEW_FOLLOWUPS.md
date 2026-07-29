@@ -14,22 +14,25 @@ review. Numbering is left stable (with gaps) so cross-references stay valid.
 
 Highest-leverage open items, in suggested order:
 
-1. **Security hardening** — M2 (dir perms `0700` for profile/state), M3
-   (`.mcp.json` Zod validation + port bounds), R11 (CLI profile-name validation).
+1. **Security hardening** — R11 (CLI profile-name validation).
 2. **Container/runtime correctness** — R12 (image tag case), R13 (port-binding
    collisions), R14 (`mountSshDir` path), R16 (image build-context), R17
    (`down --all --profile` filter).
 3. **Config/CLI & auth correctness** — R5 (`run --` passthrough), R7 (updater
-   `ETXTBSY`), R18 (config-show masking), R20, R21, R23, R24, R27.
+   `ETXTBSY`), R18 (config-show masking), R21, R23, R24, R27.
 4. **DRY / maintainability, performance, and test-coverage** backlogs (below).
 
 > **Addressed:** the trust-boundary trio (**R1–R3**) and dead-`claudeArgs`
 > (**R4**); the container-lifecycle cluster **Must-fix #3 / #7 / #8**, **R6**,
-> **R15**, **R19**, **R28**, R22; and the security-hardening batch
+> **R15**, **R19**, **R28**, R22; the security-hardening batch
 > **Must-fix #9** (per-uid config dir), **R8** (secrets off the cmdline),
 > **R9** (fail-closed restricted network), **R10** (`install.sh` checksum),
-> **M5** (`removeSidecarNetwork` exit code). See the "Security invariants"
-> section of `AGENTS.md` and git history.
+> **M5** (`removeSidecarNetwork` exit code); and the follow-up batch
+> **M2 + R26** (`0o700` on `profilesDir`/`getStateDir`), **M3** (`.mcp.json`
+> Zod validation, server cap, port bounds, parse-error logging), **R25** +
+> `detectSource` raw-URL classification, and the `image/downloader.ts`
+> parallel fetch. See the "Security invariants" section of `AGENTS.md` and
+> git history.
 
 ---
 
@@ -50,18 +53,6 @@ and **R10** (`install.sh` checksum) landed. Remaining items:
   traversed path (gated only by a `profile.yml` existing there). Self-inflicted
   but contradicts the "enforced at parse time" invariant. Fix: apply `NAME_RE`
   in `getProfileDir`/`deleteProfile` or at each CLI entry.
-
-- **M2 + R26. Directory permissions are inconsistent.**
-  `credentialsBase()` uses `mode: 0o700` (`src/profile/manager.ts:34`), but
-  `profilesDir()` (line 25) and `getStateDir()` (line 56) create with default
-  (0755) modes, so profile config and Claude conversation state are readable by
-  other local users. Fix: apply `0o700` to both.
-
-- **M3. `.mcp.json` is parsed without validation or port bounds.**
-  `src/mcp/parser.ts:14-24,33`. No Zod validation of structure and no port
-  range/count cap; a malicious `.mcp.json` could conflict with privileged host
-  ports. Fix: validate via Zod; cap servers and require port in 1024–65535.
-  (Range-validation and the silent JSON-error swallow below are part of this.)
 
 ---
 
@@ -153,11 +144,6 @@ now surfaces its exit code). Remaining open items:
   `${targetPath}.new` in the target dir, then `renameSync` over it (atomic,
   same filesystem).
 
-- **R20.** `auth.keyFile` is always rejected when `~/.ccpod` is itself a
-  symlink (`src/auth/resolver.ts:37-43` compares `realpathSync(keyPath)`
-  against a non-realpath'd home). Fails closed. Fix: `realpathSync` the home
-  dir before comparing.
-
 - **R24.** `ccpod update` run via `bun run dev` replaces the user's `bun`
   binary (`src/cli/commands/update.ts:45` uses `process.execPath`). Guard:
   refuse when not a compiled `ccpod` build.
@@ -171,14 +157,6 @@ now surfaces its exit code). Remaining open items:
 - **Git ref as commit SHA fails** — `git clone --depth 1 --branch <sha>` is
   invalid (`src/profile/git-sync.ts`). Detect SHA-shaped refs and fall back
   to clone-then-checkout.
-
-- **R25 + `detectSource` URL misclassification.** `src/profile/installer.ts:35`
-  classifies `github.com/.../blob/...` and `github.com/.../raw/...` file URLs
-  as git clones. Fix: prefer `.git` suffix; `raw.githubusercontent.com` and
-  `blob`/`raw` paths should be `url`.
-
-- **`parseMcpJson` silently swallows JSON errors** (`src/mcp/parser.ts:19-23`).
-  Log a warning. (Part of the M3 hardening.)
 
 ---
 
@@ -245,8 +223,6 @@ now surfaces its exit code). Remaining open items:
 
 ## Performance
 
-- **`src/image/downloader.ts:36-52`** fetches Dockerfile + entrypoint
-  sequentially. `Promise.all` them.
 - **`src/config/writer.ts:hashProfileDir` (~line 35)** walks the entire profile
   config dir including `mtimeMs` on every run. Caches break on `git checkout`.
   Re-think: either content-hash small files, or drop directory hashing.
@@ -267,19 +243,6 @@ now surfaces its exit code). Remaining open items:
   consider a child-process integration test.
 - `src/cli/commands/{down,ps}.ts`, `src/cli/commands/state/clear.ts`,
   `src/plugins/*` — no tests.
-- `detectSource` — missing `raw.githubusercontent.com` and
-  `github.com/.../{raw,blob}/...` cases (R25).
-
----
-
-## Documentation
-
-- `ProfileConfig.description` is written by the wizard
-  (`src/init/wizard.ts:578`) and documented in profile examples, but **never
-  read** anywhere in `src/` or `tests/`. The annotation comment claims it is
-  "shown in `ccpod profile list`" but `src/cli/commands/profile/list.ts` does
-  not display it. Either wire it into `profile list` (preferred) or remove the
-  field entirely from schema, types, and docs.
 
 ---
 
