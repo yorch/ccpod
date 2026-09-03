@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it } from 'bun:test';
-import { mkdirSync, rmSync } from 'node:fs';
+import { mkdirSync, rmSync, statSync } from 'node:fs';
 import { join } from 'node:path';
 
 describe('loadGlobalConfig()', () => {
@@ -38,5 +38,12 @@ describe('loadGlobalConfig()', () => {
     const { loadGlobalConfig } = await import('../../../src/global/config.ts');
     const cfg = loadGlobalConfig();
     expect(cfg.autoCheckUpdates).toBe(true);
+  });
+
+  it('creates ~/.ccpod base dir with 0o700 on save', async () => {
+    const { saveGlobalConfig } = await import('../../../src/global/config.ts');
+    saveGlobalConfig({ autoCheckUpdates: true });
+    const mode = statSync(tmpDir).mode & 0o777;
+    expect(mode).toBe(0o700);
   });
 });

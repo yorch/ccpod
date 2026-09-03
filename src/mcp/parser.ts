@@ -1,4 +1,4 @@
-import { existsSync, readFileSync } from 'node:fs';
+import { existsSync, lstatSync, readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { z } from 'zod';
 
@@ -29,6 +29,21 @@ export type McpConfig = z.infer<typeof mcpConfigSchema>;
 export function parseMcpJson(projectDir: string): McpConfig | null {
   const mcpPath = join(projectDir, '.mcp.json');
   if (!existsSync(mcpPath)) {
+    return null;
+  }
+  // Reject symlinks — an untrusted project could point .mcp.json at an
+  // arbitrary host file (e.g. /etc/shadow) to probe readability or exfiltrate
+  // contents through parse-error messages.
+  let stat: ReturnType<typeof lstatSync>;
+  try {
+    stat = lstatSync(mcpPath);
+  } catch {
+    return null;
+  }
+  if (stat.isSymbolicLink() || !stat.isFile()) {
+    console.warn(
+      'Warning: .mcp.json is a symlink or non-regular file; ignoring.',
+    );
     return null;
   }
   let raw: unknown;

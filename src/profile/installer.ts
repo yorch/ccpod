@@ -68,8 +68,13 @@ export function detectSource(input: string): InstallSource {
   ) {
     return { path: input.replace(/^~(?=\/|$)/, homedir()), type: 'file' };
   }
-  // Detect SSH and git-protocol URLs before treating as base64
+  // Detect SSH, git-protocol, and scp-style URLs before treating as base64.
+  // scp-style: user@host:path (no slashes before the colon) — same pattern
+  // accepted by gitRepoSchema in config/schema.ts.
   if (/^(git@|git:\/\/|ssh:\/\/)/.test(input)) {
+    return { type: 'git', url: input };
+  }
+  if (/^[a-zA-Z0-9_.-]+@[a-zA-Z0-9.-]+:/.test(input)) {
     return { type: 'git', url: input };
   }
   return { data: input, type: 'base64' };

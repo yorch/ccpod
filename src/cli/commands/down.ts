@@ -1,5 +1,6 @@
 import chalk from 'chalk';
 import { defineCommand } from 'citty';
+import { PROFILE_NAME_REGEX } from '../../config/schema.ts';
 import {
   computeProjectHash,
   LABEL_PROFILE,
@@ -25,6 +26,13 @@ export default defineCommand({
   },
   async run({ args }) {
     const currentProjectHash = computeProjectHash(process.cwd());
+
+    if (args.profile && !PROFILE_NAME_REGEX.test(args.profile)) {
+      console.error(
+        `${chalk.red('error:')} Invalid profile name '${args.profile}'. Profile names may only contain letters, digits, hyphens, and underscores (max 64 chars).`,
+      );
+      process.exit(1);
+    }
 
     const filterArgs: string[] = args.all
       ? ['--filter', `label=${LABEL_PROFILE}`]

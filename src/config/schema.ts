@@ -1,6 +1,8 @@
 import { z } from 'zod';
 import { OFFICIAL_IMAGE } from '../constants.ts';
 
+export const PROFILE_NAME_REGEX = /^[a-zA-Z0-9_-]{1,64}$/;
+
 const portsConfigSchema = z
   .object({
     autoDetectMcp: z.boolean().default(true),
@@ -150,7 +152,7 @@ export const projectConfigSchema = z.object({
   profile: z
     .string()
     .regex(
-      /^[a-zA-Z0-9_-]{1,64}$/,
+      PROFILE_NAME_REGEX,
       'Profile name may only contain letters, digits, hyphens, and underscores (max 64 chars)',
     )
     .optional(),

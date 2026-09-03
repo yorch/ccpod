@@ -1,11 +1,7 @@
 import { describe, expect, it, mock } from 'bun:test';
 import type { ContainerSpec } from '../../../src/container/builder.ts';
 import type { RunnerDeps } from '../../../src/container/runner.ts';
-import {
-  execContainer,
-  runContainer,
-  shellContainer,
-} from '../../../src/container/runner.ts';
+import { runContainer, shellContainer } from '../../../src/container/runner.ts';
 
 type ExecResult = { exitCode: number; stdout: string; stderr: string };
 
@@ -235,27 +231,6 @@ describe('runContainer', () => {
     );
     expect(eIdx).toBeGreaterThanOrEqual(0);
     expect(extraEnv?.ANTHROPIC_API_KEY).toBe('sk-secret');
-  });
-});
-
-describe('execContainer', () => {
-  it('calls docker exec with -it, container name, and cmd', async () => {
-    const { deps, spawnMock } = makeDeps();
-
-    const code = await execContainer(
-      'ccpod-default-abc123',
-      ['/bin/bash'],
-      deps,
-    );
-
-    expect(code).toBe(0);
-    const spawnArgs = (spawnMock.mock.calls[0] as [string[]])[0];
-    expect(spawnArgs).toEqual([
-      'exec',
-      '-it',
-      'ccpod-default-abc123',
-      '/bin/bash',
-    ]);
   });
 });
 

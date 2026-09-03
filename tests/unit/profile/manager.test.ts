@@ -1,10 +1,12 @@
 import { afterEach, beforeEach, describe, expect, it } from 'bun:test';
 import {
+  chmodSync,
   existsSync,
   mkdirSync,
   mkdtempSync,
   readFileSync,
   rmSync,
+  statSync,
   writeFileSync,
 } from 'node:fs';
 import { tmpdir } from 'node:os';
@@ -129,6 +131,22 @@ describe('ensureCcpodDirs', () => {
   it('does not throw if dirs already exist', () => {
     ensureCcpodDirs();
     expect(() => ensureCcpodDirs()).not.toThrow();
+  });
+
+  it('creates base dir with 0o700 permissions', () => {
+    ensureCcpodDirs();
+    const mode = statSync(testBase).mode & 0o777;
+    expect(mode).toBe(0o700);
+  });
+
+  it('tightens pre-existing base dir to 0o700', () => {
+    // Simulate a pre-existing base dir created with looser perms (e.g. by
+    // a prior version of ccpod that relied on umask).
+    mkdirSync(testBase, { mode: 0o755, recursive: true });
+    chmodSync(testBase, 0o755);
+    ensureCcpodDirs();
+    const mode = statSync(testBase).mode & 0o777;
+    expect(mode).toBe(0o700);
   });
 });
 
