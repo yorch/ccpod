@@ -88,6 +88,7 @@ export interface ProfileConfig {
   env: string[];
   allowProjectHostMounts: boolean;
   allowProjectInit: boolean;
+  allowProjectServices: boolean;
 }
 
 export interface ProjectConfig {
@@ -280,20 +281,23 @@ Interpolation is governed by `INTERPOLATION_RE = /\$\{([A-Za-z_][A-Za-z0-9_]*)(?
 
 **Project entries cannot set redirect/injection/TLS keys.** Project-sourced entries whose key (matched case-insensitively) is on `PROJECT_ENV_DENYLIST` are ignored with a warning. The list groups into: Anthropic credential/endpoint (`ANTHROPIC_API_KEY`, `ANTHROPIC_AUTH_TOKEN`, `ANTHROPIC_BASE_URL` / `ANTHROPIC_BEDROCK_BASE_URL` / `ANTHROPIC_VERTEX_BASE_URL`), proxy (`HTTP_PROXY` / `HTTPS_PROXY` / `ALL_PROXY` / `NO_PROXY`), code injection (`NODE_OPTIONS`), and TLS trust (`NODE_EXTRA_CA_CERTS`, `NODE_TLS_REJECT_UNAUTHORIZED`, `SSL_CERT_FILE`, `SSL_CERT_DIR`, `CURL_CA_BUNDLE`, `REQUESTS_CA_BUNDLE`). Otherwise a repo could redirect API traffic to exfiltrate the profile's resolved credential, inject code into the credential-bearing Node process, or disable TLS verification. Profile and CLI entries are trusted and may set them.
 
+**Project entries cannot set `CCPOD_*` or `DOCKER_*` keys.** Project-sourced entries whose key starts (case-insensitively) with `CCPOD_` or `DOCKER_` are ignored with a warning. `CCPOD_*` could override ccpod's own control vars (e.g. `CCPOD_NETWORK_POLICY=full` to bypass the profile's restricted network), and `DOCKER_*` (e.g. `DOCKER_HOST=tcp://attacker:2375`) could redirect the docker CLI itself to an attacker-controlled daemon. `builder.ts` additionally strips `CCPOD_*` and `DOCKER_*` from `secretEnv` as defense-in-depth, so even a profile-sourced value cannot reach the container as a `-e` flag that would override ccpod's constructed control vars.
+
 Source precedence: profile → project → CLI override (later wins).
 
 ### Project config trust boundary
 
 A repo's `.ccpod.yml` ships with the codebase being run inside the sandbox, so it is treated as untrusted by default. `mergeConfigs` enforces:
 
+- `services` from project are ignored entirely unless the profile sets `allowProjectServices: true`. A cloned repo could otherwise start arbitrary container images on the same bridge network as the credential-bearing main container. When opted in, the volume and port sanitization below still applies (unless `allowProjectHostMounts` is also set).
 - `services[].volumes` from project must be named volumes (`<name>:<path>[:opts]`). Host-path mounts (`/foo`, `./foo`, `~/foo`) are rejected.
 - `services[].ports` from project may bind only to `127.0.0.1` / `localhost` / `::1`. Two-part `host:container` entries are auto-rewritten to `127.0.0.1:host:container`. Bracketed IPv6 is parsed explicitly so `[::1]:host:container` loopback is accepted and every `::`-expanding wildcard (`[::]`, `[0::]`, `[::0:0]`, `[0:0:0:0:0:0:0:0]`, …) is rejected with an "all IPv6 interfaces" error.
 - top-level `ports.list` (main container) and auto-detected `.mcp.json` ports from project are published on `127.0.0.1` only. `parsePorts` tags project-sourced mappings with `hostIp: '127.0.0.1'`, which the runner renders as `-p 127.0.0.1:<host>:<container>`; profile-sourced ports carry no `hostIp` and keep Docker's default `0.0.0.0` bind.
-- `env` from project may not use `${VAR}` interpolation (see above) or set a `PROJECT_ENV_DENYLIST` key (see above).
+- `env` from project may not use `${VAR}` interpolation (see above) or set a `PROJECT_ENV_DENYLIST` key (see above). `CCPOD_*` and `DOCKER_*` prefix keys are also blocked (see above).
 - `network:` (`policy` / `allow`) is profile-owned. Project `network` keys are ignored with a warning regardless of `merge` strategy, so a repo cannot downgrade a `restricted` profile to `full` or extend its allow-list.
 - `init:` from project is dropped (with a one-line `console.warn`).
 
-To opt out, the profile may set `allowProjectHostMounts: true` (for sidecar volumes/ports) or `allowProjectInit: true` (for init commands). Both default to `false`. There is no opt-out for the network or main-container port controls — they are always profile-owned.
+To opt out, the profile may set `allowProjectHostMounts: true` (for sidecar volumes/ports), `allowProjectInit: true` (for init commands), or `allowProjectServices: true` (for project-declared sidecar services). All three default to `false`. There is no opt-out for the network or main-container port controls — they are always profile-owned.
 
 ### Updater integrity
 
@@ -346,6 +350,7 @@ ccpod run [-- claude-args]
 ├─ 8. Start sidecars (if services: declared)
 │     create network: ccpod-net-<sha256($PWD)>
 │     docker run -d --network <network> per service
+│     env values via bare -e KEY + docker extraEnv (not in argv)
 │     labels: ccpod.profile, ccpod.project, ccpod.type=<service-name>
 │
 ├─ 9. Build ContainerSpec

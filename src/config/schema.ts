@@ -62,6 +62,7 @@ const keyFileSchema = z
 export const profileConfigSchema = z.object({
   allowProjectHostMounts: z.boolean().default(false),
   allowProjectInit: z.boolean().default(false),
+  allowProjectServices: z.boolean().default(false),
   auth: z
     .object({
       keyEnv: z.string().default('ANTHROPIC_API_KEY'),

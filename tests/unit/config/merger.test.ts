@@ -6,6 +6,7 @@ function makeProfile(overrides: Partial<ProfileConfig> = {}): ProfileConfig {
   return {
     allowProjectHostMounts: false,
     allowProjectInit: false,
+    allowProjectServices: false,
     auth: { keyEnv: 'ANTHROPIC_API_KEY', type: 'api-key' },
     claudeArgs: [],
     config: { path: '/tmp/cfg', source: 'local', sync: 'daily' },
@@ -242,7 +243,7 @@ describe('mergeConfigs', () => {
   });
 
   it('rejects project service host-path volume mount', () => {
-    const profile = makeProfile();
+    const profile = makeProfile({ allowProjectServices: true });
     expect(() =>
       mergeConfigs(profile, {
         services: { evil: { image: 'alpine', volumes: ['/:/host:rw'] } },
@@ -251,7 +252,10 @@ describe('mergeConfigs', () => {
   });
 
   it('allows project service host-path mount with profile opt-in', () => {
-    const profile = makeProfile({ allowProjectHostMounts: true });
+    const profile = makeProfile({
+      allowProjectHostMounts: true,
+      allowProjectServices: true,
+    });
     const result = mergeConfigs(profile, {
       services: { svc: { image: 'alpine', volumes: ['/tmp/x:/x'] } },
     });
@@ -259,7 +263,7 @@ describe('mergeConfigs', () => {
   });
 
   it('rejects project service port bound to non-localhost IP', () => {
-    const profile = makeProfile();
+    const profile = makeProfile({ allowProjectServices: true });
     expect(() =>
       mergeConfigs(profile, {
         services: {
@@ -270,7 +274,7 @@ describe('mergeConfigs', () => {
   });
 
   it('localizes project service two-part port to 127.0.0.1', () => {
-    const profile = makeProfile();
+    const profile = makeProfile({ allowProjectServices: true });
     const result = mergeConfigs(profile, {
       services: { db: { image: 'postgres', ports: ['5432:5432'] } },
     });
@@ -278,7 +282,7 @@ describe('mergeConfigs', () => {
   });
 
   it('rejects project service single-part port (would publish on 0.0.0.0)', () => {
-    const profile = makeProfile();
+    const profile = makeProfile({ allowProjectServices: true });
     expect(() =>
       mergeConfigs(profile, {
         services: { db: { image: 'postgres', ports: ['5432'] } },
@@ -287,7 +291,7 @@ describe('mergeConfigs', () => {
   });
 
   it('accepts project service named-volume mount', () => {
-    const profile = makeProfile();
+    const profile = makeProfile({ allowProjectServices: true });
     const result = mergeConfigs(profile, {
       services: { db: { image: 'postgres', volumes: ['dbdata:/var/lib/db'] } },
     });
@@ -295,7 +299,7 @@ describe('mergeConfigs', () => {
   });
 
   it('accepts bracketed IPv6 loopback [::1] in project service ports', () => {
-    const profile = makeProfile();
+    const profile = makeProfile({ allowProjectServices: true });
     const result = mergeConfigs(profile, {
       services: {
         db: { image: 'postgres', ports: ['[::1]:5432:5432'] },
@@ -305,7 +309,7 @@ describe('mergeConfigs', () => {
   });
 
   it('rejects bracketed IPv6 wildcard [::] in project service ports', () => {
-    const profile = makeProfile();
+    const profile = makeProfile({ allowProjectServices: true });
     expect(() =>
       mergeConfigs(profile, {
         services: { db: { image: 'postgres', ports: ['[::]:5432:5432'] } },
@@ -314,7 +318,7 @@ describe('mergeConfigs', () => {
   });
 
   it('rejects expanded IPv6 wildcard variants (e.g. [0::0])', () => {
-    const profile = makeProfile();
+    const profile = makeProfile({ allowProjectServices: true });
     for (const ip of ['[0::]', '[::0]', '[0::0]', '[0:0:0:0:0:0:0:0]']) {
       expect(() =>
         mergeConfigs(profile, {
@@ -327,7 +331,7 @@ describe('mergeConfigs', () => {
   });
 
   it('rejects non-loopback bracketed IPv6 in project service ports', () => {
-    const profile = makeProfile();
+    const profile = makeProfile({ allowProjectServices: true });
     expect(() =>
       mergeConfigs(profile, {
         services: {
@@ -340,7 +344,7 @@ describe('mergeConfigs', () => {
   it('rejects syntactically invalid IPv6 with too many groups', () => {
     // 9 explicit groups around `::` is structurally invalid; must not be
     // silently accepted as loopback or wildcard.
-    const profile = makeProfile();
+    const profile = makeProfile({ allowProjectServices: true });
     expect(() =>
       mergeConfigs(profile, {
         services: {
@@ -351,6 +355,79 @@ describe('mergeConfigs', () => {
         },
       }),
     ).toThrow(/binds to 0:0:0:0:0::0:0:0:1/);
+  });
+
+  it('ignores project services without allowProjectServices opt-in', () => {
+    const profile = makeProfile();
+    const result = mergeConfigs(profile, {
+      services: { evil: { image: 'attacker/exfil', ports: ['9999:9999'] } },
+    });
+    expect(Object.keys(result.services)).toHaveLength(0);
+  });
+
+  it('allows project services with allowProjectServices opt-in', () => {
+    const profile = makeProfile({ allowProjectServices: true });
+    const result = mergeConfigs(profile, {
+      services: { db: { image: 'postgres', volumes: ['dbdata:/var/lib/db'] } },
+    });
+    expect(result.services.db?.image).toBe('postgres');
+  });
+
+  it('allowProjectServices still applies volume/port sanitization', () => {
+    const profile = makeProfile({ allowProjectServices: true });
+    expect(() =>
+      mergeConfigs(profile, {
+        services: { evil: { image: 'alpine', volumes: ['/:/host:rw'] } },
+      }),
+    ).toThrow(/not a named volume/);
+  });
+
+  it('allowProjectServices + allowProjectHostMounts skips sanitization', () => {
+    const profile = makeProfile({
+      allowProjectHostMounts: true,
+      allowProjectServices: true,
+    });
+    const result = mergeConfigs(profile, {
+      services: { svc: { image: 'alpine', volumes: ['/tmp/x:/x'] } },
+    });
+    expect(result.services.svc?.volumes).toEqual(['/tmp/x:/x']);
+  });
+
+  it('override + allowProjectServices=false preserves profile services', () => {
+    // A project with merge: override and services: should NOT discard
+    // profile-declared services when allowProjectServices is false — the
+    // project services are untrusted and ignored, so the profile's own
+    // services survive.
+    const profile = makeProfile({
+      services: { db: { image: 'postgres:16' } },
+    });
+    const result = mergeConfigs(profile, {
+      merge: 'override',
+      services: { evil: { image: 'attacker/exfil' } },
+    });
+    expect(result.services.db?.image).toBe('postgres:16');
+    expect(result.services.evil).toBeUndefined();
+  });
+
+  it('override + allowProjectServices=true replaces profile services', () => {
+    const profile = makeProfile({
+      allowProjectServices: true,
+      services: { db: { image: 'postgres:16' } },
+    });
+    const result = mergeConfigs(profile, {
+      merge: 'override',
+      services: { redis: { image: 'redis:7' } },
+    });
+    expect(result.services.redis?.image).toBe('redis:7');
+    expect(result.services.db).toBeUndefined();
+  });
+
+  it('override + allowProjectServices=false + no project services keeps profile', () => {
+    const profile = makeProfile({
+      services: { db: { image: 'postgres:16' } },
+    });
+    const result = mergeConfigs(profile, { merge: 'override' });
+    expect(result.services.db?.image).toBe('postgres:16');
   });
 
   it('isolated profile: CLI state override still honoured', () => {

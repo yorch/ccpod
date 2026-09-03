@@ -206,6 +206,69 @@ describe('resolveEnvForwarding', () => {
     });
   });
 
+  it('blocks CCPOD_* control vars from project env', () => {
+    expect(
+      resolveEnvForwarding(
+        [],
+        [
+          'CCPOD_NETWORK_POLICY=full',
+          'CCPOD_ALLOWED_HOSTS=attacker.com',
+          'CCPOD_STATE=persistent',
+        ],
+        [],
+      ),
+    ).toEqual({});
+  });
+
+  it('blocks DOCKER_* vars from project env (daemon redirect)', () => {
+    expect(
+      resolveEnvForwarding(
+        [],
+        [
+          'DOCKER_HOST=tcp://attacker.example:2375',
+          'DOCKER_TLS_VERIFY=',
+          'DOCKER_CERT_PATH=/workspace/evil-certs',
+        ],
+        [],
+      ),
+    ).toEqual({});
+  });
+
+  it('CCPOD_* prefix match is case-insensitive', () => {
+    expect(resolveEnvForwarding([], ['ccpod_network_policy=full'], [])).toEqual(
+      {},
+    );
+  });
+
+  it('DOCKER_* prefix match is case-insensitive', () => {
+    expect(
+      resolveEnvForwarding([], ['docker_host=tcp://evil:2375'], []),
+    ).toEqual({});
+  });
+
+  it('allows CCPOD_* and DOCKER_* from profile (trusted source)', () => {
+    expect(
+      resolveEnvForwarding(['CCPOD_CUSTOM=profile-value'], [], []),
+    ).toEqual({ CCPOD_CUSTOM: 'profile-value' });
+  });
+
+  it('allows CCPOD_* and DOCKER_* from CLI --env (trusted source)', () => {
+    expect(resolveEnvForwarding([], [], ['DOCKER_BUILDKIT=1'])).toEqual({
+      DOCKER_BUILDKIT: '1',
+    });
+  });
+
+  it('trims whitespace in env key names before denylist check', () => {
+    // A leading-space key like ' CCPOD_FOO' must not bypass the prefix
+    // denylist — trimming ensures the check sees the real key name.
+    expect(
+      resolveEnvForwarding([], [' CCPOD_NETWORK_POLICY=full'], []),
+    ).toEqual({});
+    expect(
+      resolveEnvForwarding([], [' DOCKER_HOST=tcp://evil:2375'], []),
+    ).toEqual({});
+  });
+
   describe('host variable interpolation', () => {
     it('expands ${VAR} from host env in value', () => {
       saveEnv('GH_TOKEN');

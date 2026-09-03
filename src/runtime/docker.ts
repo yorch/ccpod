@@ -8,13 +8,19 @@ function runtimeContext(): { binary: string; env: NodeJS.ProcessEnv } {
   };
 }
 
-/** Run a docker command, capture stdout/stderr. Never throws on non-zero exit. */
+/** Run a docker command, capture stdout/stderr. Never throws on non-zero exit.
+ *
+ * `extraEnv` is merged into the docker CLI's own environment (not the argv),
+ * matching dockerSpawn's pattern — so secret values referenced by bare `-e KEY`
+ * flags reach the container without appearing in the process command line.
+ */
 export async function dockerExec(
   args: string[],
+  extraEnv?: Record<string, string>,
 ): Promise<{ stdout: string; stderr: string; exitCode: number }> {
   const { binary, env } = runtimeContext();
   const proc = Bun.spawn([binary, ...args], {
-    env,
+    env: extraEnv ? { ...env, ...extraEnv } : env,
     stderr: 'pipe',
     stdout: 'pipe',
   });

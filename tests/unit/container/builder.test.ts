@@ -146,6 +146,47 @@ describe('buildContainerSpec', () => {
     expect(spec.env).toContain('CCPOD_STATE=ephemeral');
   });
 
+  it('strips CCPOD_* from secretEnv (defense-in-depth against control-var override)', () => {
+    const spec = buildContainerSpec(
+      makeConfig({
+        env: {
+          ANTHROPIC_API_KEY: 'sk-abc',
+          CCPOD_NETWORK_POLICY: 'full',
+          CCPOD_STATE: 'persistent',
+        },
+      }),
+      PROJECT_DIR,
+      true,
+    );
+    // CCPOD_* must not appear in secretEnv — they could override the control
+    // vars builder.ts constructs (docker's last -e wins).
+    expect(spec.secretEnv).not.toHaveProperty('CCPOD_NETWORK_POLICY');
+    expect(spec.secretEnv).not.toHaveProperty('CCPOD_STATE');
+    // Legitimate secrets still pass through.
+    expect(spec.secretEnv.ANTHROPIC_API_KEY).toBe('sk-abc');
+    // Builder's own CCPOD_STATE is in the plain env list.
+    expect(spec.env).toContain('CCPOD_STATE=ephemeral');
+  });
+
+  it('strips DOCKER_* from secretEnv (defense-in-depth against daemon redirect)', () => {
+    const spec = buildContainerSpec(
+      makeConfig({
+        env: {
+          ANTHROPIC_API_KEY: 'sk-abc',
+          DOCKER_HOST: 'tcp://attacker:2375',
+          DOCKER_TLS_VERIFY: '',
+        },
+      }),
+      PROJECT_DIR,
+      true,
+    );
+    // DOCKER_* must not appear in secretEnv — they would be merged into the
+    // docker CLI's env by dockerSpawn, redirecting ccpod's own docker calls.
+    expect(spec.secretEnv).not.toHaveProperty('DOCKER_HOST');
+    expect(spec.secretEnv).not.toHaveProperty('DOCKER_TLS_VERIFY');
+    expect(spec.secretEnv.ANTHROPIC_API_KEY).toBe('sk-abc');
+  });
+
   it('labels include all required keys', () => {
     const spec = buildContainerSpec(makeConfig(), PROJECT_DIR, true);
     expect(spec.labels['ccpod.profile']).toBe('testprof');

@@ -143,8 +143,34 @@ async function startSidecar(
     `${LABEL_VERSION}=${VERSION}`,
   ];
 
-  for (const [k, v] of Object.entries(svc.env ?? {})) {
-    args.push('-e', `${k}=${v}`);
+  // Sidecar env values are passed as bare `-e KEY` flags with the values
+  // injected into docker's own environment via extraEnv — matching the
+  // main-container pattern so secrets don't appear in `ps` / cmdline.
+  // Keys are validated and filtered: a key containing `=` would turn the bare
+  // `-e KEY` into a literal `-e KEY=VALUE` in argv (leaking the value), and
+  // CCPOD_*/DOCKER_* keys could override ccpod control vars or redirect the
+  // docker CLI itself via extraEnv.
+  const sidecarEnv: Record<string, string> = {};
+  for (const [rawK, v] of Object.entries(svc.env ?? {})) {
+    const k = rawK.trim();
+    if (!/^[A-Za-z_][A-Za-z0-9_]*$/.test(k)) {
+      console.warn(
+        `Warning: sidecar '${serviceName}' env key '${rawK}' is not a valid ` +
+          'identifier — ignoring it.',
+      );
+      continue;
+    }
+    const upper = k.toUpperCase();
+    if (upper.startsWith('CCPOD_') || upper.startsWith('DOCKER_')) {
+      console.warn(
+        `Warning: sidecar '${serviceName}' env key '${k}' is not allowed ` +
+          '(would affect ccpod controls or redirect the docker client) ' +
+          '— ignoring it.',
+      );
+      continue;
+    }
+    args.push('-e', k);
+    sidecarEnv[k] = v;
   }
   for (const vol of svc.volumes ?? []) {
     args.push('-v', vol);
@@ -155,7 +181,7 @@ async function startSidecar(
 
   args.push(svc.image);
 
-  const { exitCode: runCode, stderr } = await dockerExec(args);
+  const { exitCode: runCode, stderr } = await dockerExec(args, sidecarEnv);
   if (runCode !== 0) {
     throw new Error(
       `Failed to start sidecar '${serviceName}': ${stderr || `exit ${runCode}`}`,
