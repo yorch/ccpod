@@ -81,7 +81,11 @@ export function buildContainerSpec(
 
   binds.push(`ccpod-plugins-${config.profileName}:/ccpod/plugins`);
   if (config.state === 'persistent') {
-    binds.push(`${getStateDir(config.profileName)}:/ccpod/state:rw`);
+    const projectHash =
+      config.stateIsolation === 'per-project' ? hash : undefined;
+    binds.push(
+      `${getStateDir(config.profileName, projectHash)}:/ccpod/state:rw`,
+    );
   }
 
   const tmpfs: Record<string, string> = {};

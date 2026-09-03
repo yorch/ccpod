@@ -39,15 +39,32 @@ Settings, plugins, skills, `CLAUDE.md`, and credentials are *not* in this volume
 To wipe the state directory for a profile:
 
 ```sh
-ccpod state clear              # current profile
+ccpod state clear              # current profile (current project only if per-project isolation)
 ccpod state clear team         # specific profile
+ccpod state clear --all        # all projects for the profile (per-project isolation)
 ```
 
-This deletes `~/.ccpod/state/<profile>/`. The next `ccpod run` recreates it empty.
+This deletes the relevant state directory. The next `ccpod run` recreates it empty.
+
+## Per-project isolation
+
+By default, all projects using the same profile share a single state directory (`~/.ccpod/state/<profile>/`). This means conversation history, todos, and project metadata are visible across projects.
+
+When this is undesirable — for example, using the same profile for both trusted and untrusted repos — enable per-project isolation:
+
+```yaml
+state: persistent
+stateIsolation: per-project
+```
+
+Each project gets its own state directory at `~/.ccpod/state/<profile>/<projectHash>/`, where `<projectHash>` is derived from the project path. State from one project is not visible to another.
+
+Orphaned per-project state dirs (projects with no remaining containers) can be cleaned with `ccpod prune`.
 
 ## When to choose which
 
 - **Ephemeral** is the right default. Sessions are reproducible from the merged config alone.
 - **Persistent** when you want long-running memory: continued sessions across days, accumulated todos, or session resume across restarts.
+- **Per-project isolation** when using the same profile across projects with different trust levels, to prevent cross-project state leakage.
 
 For shared / open-source profiles, prefer ephemeral so contributors aren't surprised by stale state.

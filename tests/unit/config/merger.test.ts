@@ -21,6 +21,7 @@ function makeProfile(overrides: Partial<ProfileConfig> = {}): ProfileConfig {
     services: {},
     ssh: { agentForward: true, mountSshDir: false },
     state: 'ephemeral',
+    stateIsolation: 'per-profile',
     ...overrides,
   };
 }
@@ -30,8 +31,17 @@ describe('mergeConfigs', () => {
     const result = mergeConfigs(makeProfile(), null);
     expect(result.profileName).toBe('base');
     expect(result.state).toBe('ephemeral');
+    expect(result.stateIsolation).toBe('per-profile');
     expect(result.network.policy).toBe('full');
     expect(result.autoDetectMcp).toBe(true);
+  });
+
+  it('stateIsolation passes through from profile', () => {
+    const result = mergeConfigs(
+      makeProfile({ stateIsolation: 'per-project' }),
+      null,
+    );
+    expect(result.stateIsolation).toBe('per-project');
   });
 
   it('state override takes precedence over profile', () => {

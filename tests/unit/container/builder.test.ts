@@ -24,6 +24,7 @@ function makeConfig(overrides: Partial<ResolvedConfig> = {}): ResolvedConfig {
     services: {},
     ssh: { agentForward: false, mountSshDir: false },
     state: 'ephemeral',
+    stateIsolation: 'per-profile',
     ...overrides,
   };
 }
@@ -86,6 +87,33 @@ describe('buildContainerSpec', () => {
       spec.binds.some((b) => b.endsWith('/state/testprof:/ccpod/state:rw')),
     ).toBe(true);
     expect(spec.tmpfs?.['/ccpod/state']).toBeUndefined();
+  });
+
+  it('per-project state isolation: bind includes project hash', () => {
+    const spec = buildContainerSpec(
+      makeConfig({ state: 'persistent', stateIsolation: 'per-project' }),
+      PROJECT_DIR,
+      true,
+    );
+    expect(
+      spec.binds.some((b) =>
+        b.endsWith(`/state/testprof/${PROJECT_HASH}:/ccpod/state:rw`),
+      ),
+    ).toBe(true);
+  });
+
+  it('per-profile state isolation: bind does not include project hash', () => {
+    const spec = buildContainerSpec(
+      makeConfig({ state: 'persistent', stateIsolation: 'per-profile' }),
+      PROJECT_DIR,
+      true,
+    );
+    expect(
+      spec.binds.some((b) => b.endsWith('/state/testprof:/ccpod/state:rw')),
+    ).toBe(true);
+    expect(
+      spec.binds.some((b) => b.includes(`/state/testprof/${PROJECT_HASH}`)),
+    ).toBe(false);
   });
 
   it('SSH dir mount when mountSshDir=true', () => {

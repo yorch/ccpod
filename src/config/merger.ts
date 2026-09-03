@@ -137,6 +137,7 @@ export function mergeConfigs(
       services: profile.services,
       ssh: profile.ssh,
       state: overrides.state ?? profile.state,
+      stateIsolation: profile.stateIsolation,
     };
   }
 
@@ -222,6 +223,7 @@ export function mergeConfigs(
     services,
     ssh: profile.ssh,
     state: overrides.state ?? profile.state,
+    stateIsolation: profile.stateIsolation,
   };
 }
 
