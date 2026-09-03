@@ -163,11 +163,32 @@ export function mergeConfigs(
     ...parsePorts(project?.ports?.list ?? [], '127.0.0.1'),
   ];
 
-  const projectServices = profile.allowProjectHostMounts
-    ? (project?.services ?? {})
-    : sanitizeProjectServices(project?.services ?? {});
+  // Project-declared sidecar services are untrusted by default: a cloned repo
+  // could start arbitrary container images on the same bridge network as the
+  // credential-bearing main container. The profile must opt in with
+  // allowProjectServices: true. When opted out, project services are ignored
+  // with a warning (matching the allowProjectInit / allowProjectHostMounts
+  // pattern). When opted in, volumes and ports are still sanitized unless
+  // allowProjectHostMounts is also set.
+  let projectServices: Record<string, ServiceConfig> = {};
+  if (project?.services && Object.keys(project.services).length > 0) {
+    if (!profile.allowProjectServices) {
+      console.warn(
+        'Warning: project .ccpod.yml declares services, but the active ' +
+          'profile does not set allowProjectServices: true — ignoring them.',
+      );
+    } else {
+      projectServices = profile.allowProjectHostMounts
+        ? (project.services ?? {})
+        : sanitizeProjectServices(project.services ?? {});
+    }
+  }
+  // Use the gated projectServices for the override decision too: if
+  // allowProjectServices is false, projectServices is {} and the override
+  // should NOT discard profile-declared services (only an explicit project
+  // opt-in should replace them).
   const services =
-    strategy === 'override' && project?.services
+    strategy === 'override' && Object.keys(projectServices).length > 0
       ? projectServices
       : { ...profile.services, ...projectServices };
 

@@ -14,6 +14,7 @@ interface PortsConfig {
 export interface ProfileConfig {
   allowProjectHostMounts: boolean;
   allowProjectInit: boolean;
+  allowProjectServices: boolean;
   auth: {
     type: AuthType;
     keyEnv?: string;

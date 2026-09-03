@@ -95,7 +95,18 @@ export function buildContainerSpec(
   // injected via docker's own environment (see ContainerSpec.secretEnv), never
   // as `-e KEY=VALUE` argv. ccpod's own control vars below are not secret and
   // stay as plain flags.
-  const secretEnv: Record<string, string> = { ...config.env };
+  // Defense-in-depth: strip CCPOD_* and DOCKER_* from secretEnv even though
+  // the resolver already blocks them from project env. A CCPOD_* in secretEnv
+  // could override the control vars we construct below (docker's last `-e`
+  // wins), and a DOCKER_* (e.g. DOCKER_HOST) would redirect the docker CLI
+  // itself when dockerSpawn merges extraEnv into its environment.
+  const secretEnv: Record<string, string> = {};
+  for (const [k, v] of Object.entries(config.env)) {
+    const upper = k.toUpperCase();
+    if (!upper.startsWith('CCPOD_') && !upper.startsWith('DOCKER_')) {
+      secretEnv[k] = v;
+    }
+  }
   const env: string[] = [];
   env.push(`CCPOD_STATE=${config.state}`);
 

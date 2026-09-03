@@ -118,6 +118,14 @@ const PROJECT_ENV_DENYLIST = new Set([
   'REQUESTS_CA_BUNDLE',
 ]);
 
+// Prefixes for env vars an untrusted project may not set. CCPOD_* control vars
+// (e.g. CCPOD_NETWORK_POLICY) are constructed by builder.ts and must never come
+// from a cloned repo — otherwise a project can bypass the profile's network
+// policy or other sandbox controls. DOCKER_* vars (e.g. DOCKER_HOST) can
+// redirect the docker CLI itself to an attacker-controlled daemon. Compared
+// case-insensitively against the upper-cased key name.
+const PROJECT_ENV_PREFIX_DENYLIST = ['CCPOD_', 'DOCKER_'];
+
 export function resolveEnvForwarding(
   profileKeys: string[],
   projectKeys: string[],
@@ -133,12 +141,22 @@ export function resolveEnvForwarding(
   ) => {
     for (const entry of entries) {
       const eqIdx = entry.indexOf('=');
-      const name = eqIdx !== -1 ? entry.slice(0, eqIdx) : entry;
+      const rawName = eqIdx !== -1 ? entry.slice(0, eqIdx) : entry;
+      // Trim whitespace so a leading-space key like ' CCPOD_FOO' cannot
+      // bypass the prefix denylist. Docker would reject such keys anyway,
+      // but we want to fail consistently rather than silently forward them.
+      const name = rawName.trim();
       // Only project entries are untrusted; profile/CLI use interpolation.
-      if (!allowInterpolation && PROJECT_ENV_DENYLIST.has(name.toUpperCase())) {
+      const upperName = name.toUpperCase();
+      const isDenylisted = PROJECT_ENV_DENYLIST.has(upperName);
+      const isPrefixDenylisted = PROJECT_ENV_PREFIX_DENYLIST.some((p) =>
+        upperName.startsWith(p),
+      );
+      if (!allowInterpolation && (isDenylisted || isPrefixDenylisted)) {
         console.warn(
           `Warning: project .ccpod.yml env entry '${name}' is not allowed ` +
-            '(it could redirect API traffic or weaken TLS) — ignoring it.',
+            '(it could redirect API traffic, bypass sandbox controls, or ' +
+            'redirect the docker client) — ignoring it.',
         );
         continue;
       }

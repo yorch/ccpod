@@ -58,6 +58,12 @@ Use named volumes (e.g. `ccpod-pg-data:/var/lib/postgresql/data`) so service dat
 ## When to use a profile sidecar vs. a project sidecar
 
 - **Profile** (`~/.ccpod/profiles/<name>/profile.yml`): always-on services that every project using this profile expects.
-- **Project** (`.ccpod.yml`): services specific to this repo.
+- **Project** (`.ccpod.yml`): services specific to this repo. **Requires `allowProjectServices: true`** in the profile — project-declared services are ignored by default so a cloned repo cannot start arbitrary containers on the shared network.
 
 Under deep merge, the two are combined by service name. A project entry with the same name as a profile entry replaces it.
+
+## Security
+
+- **Sidecar env values** are passed to Docker as bare `-e KEY` flags with the values injected into the Docker CLI's own environment — they never appear in the process command line (`ps` / `/proc/<pid>/cmdline`).
+- **Project-declared services** are ignored unless the profile sets `allowProjectServices: true`. When enabled, project service volumes and ports are still sanitized (named volumes only, loopback-only ports) unless `allowProjectHostMounts` is also set.
+- **Sidecar startup failure** rolls back any sidecars started earlier in the same call, so a partial failure does not leave orphaned containers.
