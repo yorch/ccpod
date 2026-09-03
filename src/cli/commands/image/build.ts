@@ -14,6 +14,7 @@ import {
   profileExists,
   updateProfileImage,
 } from '../../../profile/manager.ts';
+import { validateProfileArg } from '../../validate.ts';
 
 export default defineCommand({
   args: {
@@ -34,6 +35,7 @@ export default defineCommand({
   },
   meta: { description: 'Build a local Docker image for a profile' },
   async run({ args }) {
+    validateProfileArg(args.profile);
     const projectConfig = loadProjectConfig(process.cwd());
     const profileName = args.profile ?? projectConfig?.profile ?? 'default';
 

@@ -9,6 +9,7 @@ import {
   projectConfigSchema,
 } from '../../../config/schema.ts';
 import { getProfileDir, profileExists } from '../../../profile/manager.ts';
+import { validateProfileArg } from '../../validate.ts';
 
 export default defineCommand({
   args: {
@@ -17,6 +18,7 @@ export default defineCommand({
   meta: { description: 'Validate profile and project config files' },
   run({ args }) {
     const cwd = process.cwd();
+    validateProfileArg(args.profile);
     let allOk = true;
 
     // Determine profile to validate

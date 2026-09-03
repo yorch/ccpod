@@ -7,6 +7,7 @@ import {
   volumeExists,
 } from '../../../plugins/volume.ts';
 import { profileExists } from '../../../profile/manager.ts';
+import { validateProfileArg } from '../../validate.ts';
 
 export default defineCommand({
   args: {
@@ -21,6 +22,7 @@ export default defineCommand({
     description: 'Reset the plugins volume (forces reinstall on next run)',
   },
   async run({ args }) {
+    validateProfileArg(args.profile);
     const projectConfig = loadProjectConfig(process.cwd());
     const profileName = args.profile ?? projectConfig?.profile ?? 'default';
 

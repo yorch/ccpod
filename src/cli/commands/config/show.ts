@@ -13,6 +13,7 @@ import {
   getProfileDir,
   profileExists,
 } from '../../../profile/manager.ts';
+import { validateProfileArg } from '../../validate.ts';
 
 export default defineCommand({
   args: {
@@ -24,6 +25,7 @@ export default defineCommand({
   },
   run({ args }) {
     const cwd = process.cwd();
+    validateProfileArg(args.profile);
     const projectConfig = loadProjectConfig(cwd);
     const profileName = args.profile ?? projectConfig?.profile ?? 'default';
 

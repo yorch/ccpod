@@ -305,6 +305,24 @@ To opt out, the profile may set `allowProjectHostMounts: true` (for sidecar volu
 
 The `install.sh` bootstrap performs the same verification: after downloading the binary it fetches `SHASUMS256.txt`, computes the digest with `sha256sum` (or `shasum -a 256`), and aborts on mismatch. It only warns-and-proceeds when the checksum asset is absent (a release predating it) or no sha256 tool is available — never on an actual mismatch.
 
+### Garbage collection (`ccpod prune`)
+
+Over time, stopped containers, orphaned networks, and unreferenced plugin volumes accumulate. `ccpod prune` cleans them up:
+
+- **Stopped containers** — any ccpod-labeled container that is not `running`, `paused`, or `restarting` is removed. Use `--profile` to restrict to one profile.
+- **Orphaned networks** — `ccpod-net-*` networks with no attached endpoints are removed.
+- **Unreferenced plugin volumes** — `ccpod-plugins-<profile>` volumes that no container references and whose profile no longer exists on disk are removed. With `--profile`, the profile-exists check is skipped (the caller explicitly wants that profile's volume). Volume removal prompts for confirmation unless `--force` is given.
+
+`--dry-run` lists what would be removed without executing any `docker rm`/`network rm`/`volume rm`. The `--profile` flag is validated with `PROFILE_NAME_REGEX` before any Docker command is constructed.
+
+### Profile name validation
+
+Every CLI command that accepts `--profile` validates the name with `validateProfileArg()` (`src/cli/validate.ts`) before passing it to `profileExists`, `getProfileDir`, `getStateDir`, or any Docker filter. This prevents path traversal (`../etc`) and shell metacharacter injection through the profile name. The shared setup helper `setupContainer` also validates, covering `ccpod run` and `ccpod shell`. The validation uses the same `PROFILE_NAME_REGEX` (`/^[a-zA-Z0-9_-]{1,64}$/`) as the Zod schema in `schema.ts`.
+
+### Setup error handling
+
+`setupContainer` (`src/cli/commands/_setup.ts`) throws `Error` on failure (missing profile, missing auth, missing OAuth credentials) instead of calling `process.exit`. The calling commands (`run`, `shell`) catch the error, print it, and exit. This makes the setup pipeline testable with `await expect(...).rejects.toThrow(...)`. The global `unhandledRejection`/`uncaughtException` handler in `cli/index.ts` remains as a last-resort backstop.
+
 ## Startup sequence
 
 ```

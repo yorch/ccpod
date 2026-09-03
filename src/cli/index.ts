@@ -37,6 +37,7 @@ const main = defineCommand({
     init: () => import('./commands/init.ts').then((m) => m.default),
     plugins: () => import('./commands/plugins/index.ts').then((m) => m.default),
     profile: () => import('./commands/profile/index.ts').then((m) => m.default),
+    prune: () => import('./commands/prune.ts').then((m) => m.default),
     ps: () => import('./commands/ps.ts').then((m) => m.default),
     run: () => import('./commands/run.ts').then((m) => m.default),
     shell: () => import('./commands/shell.ts').then((m) => m.default),
