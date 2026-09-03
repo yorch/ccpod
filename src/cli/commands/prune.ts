@@ -98,7 +98,7 @@ async function listOrphanedVolumes(
     // Strict parse: only accept volumes with a valid profile name suffix.
     // Prevents path traversal from crafted volume names (e.g. ccpod-plugins-..).
     const match = volName.match(VOLUME_NAME_RE);
-    if (!match) {
+    if (!match || !match[1]) {
       continue;
     }
     const prof = match[1];
