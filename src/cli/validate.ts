@@ -8,8 +8,11 @@ import { PROFILE_NAME_REGEX } from '../config/schema.ts';
  */
 export function validateProfileArg(name: string | undefined): void {
   if (name !== undefined && !PROFILE_NAME_REGEX.test(name)) {
+    // Sanitize control/ANSI escape chars before printing — an invalid name
+    // could contain terminal escape sequences (log injection).
+    const safeName = name.replace(/[^\x20-\x7E]/g, '?');
     console.error(
-      `${chalk.red('error:')} Invalid profile name '${name}'. Profile names may only contain letters, digits, hyphens, and underscores (max 64 chars).`,
+      `${chalk.red('error:')} Invalid profile name '${safeName}'. Profile names may only contain letters, digits, hyphens, and underscores (max 64 chars).`,
     );
     process.exit(1);
   }

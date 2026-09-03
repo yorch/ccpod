@@ -229,4 +229,61 @@ describe('ccpod prune', () => {
       logSpy.mockRestore();
     }
   });
+
+  it('skips volumes when docker ps reference check fails', async () => {
+    // ps -a ok (no containers), network ls ok (empty), volume ls ok (one vol),
+    // ps volume check FAILS → volume should be skipped, not removed.
+    queueResults(
+      { exitCode: 0, stderr: '', stdout: '' }, // ps -a (no containers)
+      { exitCode: 0, stderr: '', stdout: '' }, // network ls
+      { exitCode: 0, stderr: '', stdout: 'ccpod-plugins-oldprof\n' }, // volume ls
+      { exitCode: 1, stderr: 'docker daemon error', stdout: '' }, // ps volume check FAILS
+    );
+    const logSpy = spyOn(console, 'log').mockImplementation(() => {});
+    const warnSpy = spyOn(console, 'warn').mockImplementation(() => {});
+    try {
+      await pruneCommand.run?.({
+        args: { 'dry-run': false, force: true, profile: undefined },
+        rawArgs: [],
+      } as never);
+      const output = logSpy.mock.calls.map((c) => c[0] as string).join('\n');
+      // Volume should NOT be listed as orphaned
+      expect(output).toMatch(/No unreferenced plugin volumes/);
+      // Warning should be emitted
+      const warnOutput = warnSpy.mock.calls
+        .map((c) => c[0] as string)
+        .join('\n');
+      expect(warnOutput).toMatch(/could not check volume references/);
+    } finally {
+      logSpy.mockRestore();
+      warnSpy.mockRestore();
+    }
+  });
+
+  it('skips networks when docker network inspect fails', async () => {
+    // ps -a ok (no containers), network ls ok (one net), inspect FAILS
+    queueResults(
+      { exitCode: 0, stderr: '', stdout: '' }, // ps -a
+      { exitCode: 0, stderr: '', stdout: 'ccpod-net-abc123\n' }, // network ls
+      { exitCode: 1, stderr: 'permission denied', stdout: '' }, // inspect FAILS
+      { exitCode: 0, stderr: '', stdout: '' }, // volume ls
+    );
+    const logSpy = spyOn(console, 'log').mockImplementation(() => {});
+    const warnSpy = spyOn(console, 'warn').mockImplementation(() => {});
+    try {
+      await pruneCommand.run?.({
+        args: { 'dry-run': false, force: true, profile: undefined },
+        rawArgs: [],
+      } as never);
+      const output = logSpy.mock.calls.map((c) => c[0] as string).join('\n');
+      expect(output).toMatch(/No orphaned ccpod networks/);
+      const warnOutput = warnSpy.mock.calls
+        .map((c) => c[0] as string)
+        .join('\n');
+      expect(warnOutput).toMatch(/could not inspect network/);
+    } finally {
+      logSpy.mockRestore();
+      warnSpy.mockRestore();
+    }
+  });
 });

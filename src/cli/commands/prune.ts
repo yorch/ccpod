@@ -22,12 +22,16 @@ async function listStaleContainers(
   if (profile) {
     filterArgs.push('--filter', `label=${LABEL_PROFILE}=${profile}`);
   }
-  const { stdout } = await dockerExec([
+  const { exitCode, stdout, stderr } = await dockerExec([
     'ps',
     ...filterArgs,
     '--format',
     '{{.ID}}|{{.Names}}|{{.State}}|{{.Label "ccpod.profile"}}',
   ]);
+  if (exitCode !== 0) {
+    console.warn(`Warning: docker ps failed: ${stderr}`);
+    return [];
+  }
   return stdout
     .split('\n')
     .map((s) => s.trim())
@@ -40,7 +44,7 @@ async function listStaleContainers(
 }
 
 async function listOrphanedNetworks(): Promise<string[]> {
-  const { stdout } = await dockerExec([
+  const { exitCode, stdout, stderr } = await dockerExec([
     'network',
     'ls',
     '--filter',
@@ -48,6 +52,10 @@ async function listOrphanedNetworks(): Promise<string[]> {
     '--format',
     '{{.Name}}',
   ]);
+  if (exitCode !== 0) {
+    console.warn(`Warning: docker network ls failed: ${stderr}`);
+    return [];
+  }
   const names = stdout
     .split('\n')
     .map((s) => s.trim())
@@ -55,13 +63,22 @@ async function listOrphanedNetworks(): Promise<string[]> {
 
   const orphaned: string[] = [];
   for (const name of names) {
-    const { stdout: inspect } = await dockerExec([
+    const {
+      exitCode: inspectCode,
+      stdout: inspect,
+      stderr: inspectErr,
+    } = await dockerExec([
       'network',
       'inspect',
       '-f',
       '{{json .Containers}}',
       name,
     ]);
+    if (inspectCode !== 0) {
+      // Skip networks we can't inspect — treat as in-use to avoid accidental removal.
+      console.warn(`Warning: could not inspect network ${name}: ${inspectErr}`);
+      continue;
+    }
     // Empty container map means no endpoints attached. Docker returns `{}`,
     // but Podman or non-bridge networks may return `null` or `<no value>`.
     const trimmed = inspect.trim();
@@ -80,7 +97,7 @@ async function listOrphanedNetworks(): Promise<string[]> {
 async function listOrphanedVolumes(
   profile?: string,
 ): Promise<{ name: string; profile: string }[]> {
-  const { stdout } = await dockerExec([
+  const { exitCode, stdout, stderr } = await dockerExec([
     'volume',
     'ls',
     '--filter',
@@ -88,6 +105,10 @@ async function listOrphanedVolumes(
     '--format',
     '{{.Name}}',
   ]);
+  if (exitCode !== 0) {
+    console.warn(`Warning: docker volume ls failed: ${stderr}`);
+    return [];
+  }
   const names = stdout
     .split('\n')
     .map((s) => s.trim())
@@ -98,7 +119,7 @@ async function listOrphanedVolumes(
     // Strict parse: only accept volumes with a valid profile name suffix.
     // Prevents path traversal from crafted volume names (e.g. ccpod-plugins-..).
     const match = volName.match(VOLUME_NAME_RE);
-    if (!match || !match[1]) {
+    if (!match?.[1]) {
       continue;
     }
     const prof = match[1];
@@ -107,13 +128,18 @@ async function listOrphanedVolumes(
     }
     // Check if ANY container references this volume (not just ccpod-labeled
     // ones — a non-ccpod container could still be mounting it).
-    const { stdout: refs } = await dockerExec([
-      'ps',
-      '-a',
-      '-q',
-      '--filter',
-      `volume=${volName}`,
-    ]);
+    const {
+      exitCode: refCode,
+      stdout: refs,
+      stderr: refErr,
+    } = await dockerExec(['ps', '-a', '-q', '--filter', `volume=${volName}`]);
+    if (refCode !== 0) {
+      // Can't determine if the volume is in use — skip it to avoid accidental removal.
+      console.warn(
+        `Warning: could not check volume references for ${volName}: ${refErr}`,
+      );
+      continue;
+    }
     if (refs.trim() !== '') {
       continue;
     }
