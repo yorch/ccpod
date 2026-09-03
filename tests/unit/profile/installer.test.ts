@@ -116,6 +116,28 @@ describe('detectSource', () => {
     const src = detectSource('git://github.com/user/repo.git');
     expect(src).toEqual({ type: 'git', url: 'git://github.com/user/repo.git' });
   });
+
+  it('detects generic scp-style user@host:path as git', () => {
+    const src = detectSource('deploy@git.example.com:myorg/my-profile');
+    expect(src).toEqual({
+      type: 'git',
+      url: 'deploy@git.example.com:myorg/my-profile',
+    });
+  });
+
+  it('detects scp-style URL with .git suffix as git', () => {
+    const src = detectSource('user@gitlab.internal:team/profile.git');
+    expect(src).toEqual({
+      type: 'git',
+      url: 'user@gitlab.internal:team/profile.git',
+    });
+  });
+
+  it('does not classify base64-looking input with @ as git', () => {
+    // No colon after the host part → not scp-style
+    const src = detectSource('user@host');
+    expect(src.type).toBe('base64');
+  });
 });
 
 describe('fetchProfileYaml - file', () => {

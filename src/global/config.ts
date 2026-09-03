@@ -1,4 +1,10 @@
-import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
+import {
+  chmodSync,
+  existsSync,
+  mkdirSync,
+  readFileSync,
+  writeFileSync,
+} from 'node:fs';
 import { dirname, join } from 'node:path';
 import { parse as yamlParse, stringify as yamlStringify } from 'yaml';
 import { z } from 'zod';
@@ -30,6 +36,8 @@ export function loadGlobalConfig(): GlobalConfig {
 
 export function saveGlobalConfig(config: GlobalConfig): void {
   const path = globalConfigPath();
-  mkdirSync(dirname(path), { recursive: true });
+  mkdirSync(dirname(path), { mode: 0o700, recursive: true });
+  // chmod ensures 0o700 even if the dir pre-existed with looser perms
+  chmodSync(dirname(path), 0o700);
   writeFileSync(path, yamlStringify(config), 'utf8');
 }

@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it } from 'bun:test';
-import { mkdtempSync, rmSync, writeFileSync } from 'node:fs';
+import { mkdtempSync, rmSync, symlinkSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { extractHttpMcpPorts, parseMcpJson } from '../../../src/mcp/parser.ts';
@@ -92,6 +92,22 @@ describe('parseMcpJson', () => {
     } finally {
       console.warn = original;
     }
+  });
+
+  it('rejects a symlink .mcp.json pointing outside the project', () => {
+    const dir = makeTempDir();
+    const target = makeTempDir();
+    writeFileSync(join(target, 'secret.json'), '{"stolen": true}');
+    symlinkSync(join(target, 'secret.json'), join(dir, '.mcp.json'));
+    const warnings: string[] = [];
+    const original = console.warn;
+    console.warn = (msg: string) => warnings.push(msg);
+    try {
+      expect(parseMcpJson(dir)).toBeNull();
+    } finally {
+      console.warn = original;
+    }
+    expect(warnings.some((w) => /symlink/i.test(w))).toBe(true);
   });
 });
 

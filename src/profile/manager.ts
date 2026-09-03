@@ -1,4 +1,5 @@
 import {
+  chmodSync,
   existsSync,
   mkdirSync,
   readdirSync,
@@ -30,8 +31,15 @@ function credentialsBase(): string {
 }
 
 export function ensureCcpodDirs(): void {
+  mkdirSync(baseDir(), { mode: 0o700, recursive: true });
+  // chmod ensures 0o700 even if the base dir pre-existed with looser perms
+  // (e.g. created by saveGlobalConfig before the mode was added, or by a
+  // prior version of ccpod that relied on umask).
+  chmodSync(baseDir(), 0o700);
   mkdirSync(profilesDir(), { mode: 0o700, recursive: true });
+  chmodSync(profilesDir(), 0o700);
   mkdirSync(credentialsBase(), { mode: 0o700, recursive: true });
+  chmodSync(credentialsBase(), 0o700);
 }
 
 export function profileExists(name: string): boolean {
@@ -49,12 +57,14 @@ export function expandProfilePath(path: string, profileName: string): string {
 export function getCredentialsDir(profileName: string): string {
   const dir = join(credentialsBase(), profileName);
   mkdirSync(dir, { mode: 0o700, recursive: true });
+  chmodSync(dir, 0o700);
   return dir;
 }
 
 export function getStateDir(profileName: string): string {
   const dir = join(baseDir(), 'state', profileName);
   mkdirSync(dir, { mode: 0o700, recursive: true });
+  chmodSync(dir, 0o700);
   return dir;
 }
 

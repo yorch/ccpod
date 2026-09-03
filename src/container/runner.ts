@@ -39,14 +39,6 @@ export async function runContainer(
   return deps.dockerSpawn(buildRunArgs(spec), spec.secretEnv);
 }
 
-export async function execContainer(
-  name: string,
-  cmd: string[],
-  deps: RunnerDeps = defaultDeps(),
-): Promise<number> {
-  return deps.dockerSpawn(['exec', '-it', name, ...cmd]);
-}
-
 export async function shellContainer(
   spec: ContainerSpec,
   deps: RunnerDeps = defaultDeps(),

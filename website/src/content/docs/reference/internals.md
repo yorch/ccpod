@@ -287,7 +287,7 @@ Source precedence: profile → project → CLI override (later wins).
 
 ### Project config trust boundary
 
-A repo's `.ccpod.yml` ships with the codebase being run inside the sandbox, so it is treated as untrusted by default. `mergeConfigs` enforces:
+A repo's `.ccpod.yml` ships with the codebase being run inside the sandbox, so it is treated as untrusted by default. The config walk (`findProjectConfig` in `src/config/loader.ts`) searches upward from the current directory but stops at the user's home directory — a `.ccpod.yml` found above `$HOME` (e.g. at `/` on macOS) is not loaded, preventing a stray parent config from overriding profile settings for every child project. `mergeConfigs` enforces:
 
 - `services` from project are ignored entirely unless the profile sets `allowProjectServices: true`. A cloned repo could otherwise start arbitrary container images on the same bridge network as the credential-bearing main container. When opted in, the volume and port sanitization below still applies (unless `allowProjectHostMounts` is also set).
 - `services[].volumes` from project must be named volumes (`<name>:<path>[:opts]`). Host-path mounts (`/foo`, `./foo`, `~/foo`) are rejected.
@@ -345,6 +345,7 @@ ccpod run [-- claude-args]
 │     entrypoint does delta-install (skips dirs that already exist)
 │
 ├─ 7. Parse .mcp.json (if present and ports.autoDetectMcp: true)
+│     lstatSync rejects symlinks (untrusted project could point at host files)
 │     extract HTTP/SSE entries → additional port mappings
 │
 ├─ 8. Start sidecars (if services: declared)
@@ -390,7 +391,6 @@ tests/
 │   └── update/{checker,updater}.test.ts
 ├── integration/
 │   └── container/docker.test.ts       # requires a real Docker socket
-└── fixtures/                          # profile.yml / .ccpod.yml / .mcp.json
 ```
 
 ## Runtime socket paths
