@@ -55,6 +55,20 @@ describe('confirmSharedOAuthRisk()', () => {
     expect(confirmMock).toHaveBeenCalledTimes(1);
   });
 
+  it('prompts and returns true for host-keychain when accepted', async () => {
+    confirmMock.mockImplementation(async () => true);
+    expect(await confirmSharedOAuthRisk('host-keychain', [])).toBe(true);
+    expect(confirmMock).toHaveBeenCalledTimes(1);
+  });
+
+  it('uses default: false on the confirm prompt', async () => {
+    confirmMock.mockImplementation(async () => false);
+    await confirmSharedOAuthRisk('host-keychain', []);
+    expect(confirmMock).toHaveBeenCalledWith(
+      expect.objectContaining({ default: false }),
+    );
+  });
+
   it('prompts when copying from an existing oauth profile', async () => {
     confirmMock.mockImplementation(async () => true);
     const result = await confirmSharedOAuthRisk('profile:work', [
@@ -64,11 +78,25 @@ describe('confirmSharedOAuthRisk()', () => {
     expect(confirmMock).toHaveBeenCalledTimes(1);
   });
 
+  it('returns false when declining an oauth profile copy', async () => {
+    confirmMock.mockImplementation(async () => false);
+    const result = await confirmSharedOAuthRisk('profile:work', [
+      { auth: { type: 'oauth' }, name: 'work' },
+    ]);
+    expect(result).toBe(false);
+    expect(confirmMock).toHaveBeenCalledTimes(1);
+  });
+
   it('does not prompt when copying from an api-key profile', async () => {
     const result = await confirmSharedOAuthRisk('profile:work', [
       { auth: { keyEnv: 'ANTHROPIC_API_KEY', type: 'api-key' }, name: 'work' },
     ]);
     expect(result).toBe(true);
+    expect(confirmMock).not.toHaveBeenCalled();
+  });
+
+  it('does not prompt for a non-existent profile source', async () => {
+    expect(await confirmSharedOAuthRisk('profile:missing', [])).toBe(true);
     expect(confirmMock).not.toHaveBeenCalled();
   });
 });

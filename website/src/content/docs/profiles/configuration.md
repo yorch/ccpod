@@ -94,6 +94,10 @@ When `use: build`, both `ccpod run` and `ccpod image build` use the same tag `cc
 
 For `oauth`, ccpod manages tokens in `~/.ccpod/credentials/<name>/`.
 
+:::caution
+Copying OAuth credentials from the host Keychain or another oauth profile during `ccpod init` is a **one-time snapshot**, not a live link. Anthropic's OAuth refresh tokens rotate on use — whichever side refreshes first (host `claude` or a ccpod container) will silently log the other out. The wizard warns before creating such a copy; prefer a fresh `OAuth (browser login)` per profile to avoid the collision.
+:::
+
 ### `state`
 
 `ephemeral` (default) wipes Claude history and session state when the container exits. `persistent` binds `~/.ccpod/state/<name>/` on the host into the container — history, projects, and todos survive across runs. Override per run with `--no-state`.
