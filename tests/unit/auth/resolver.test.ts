@@ -39,6 +39,10 @@ describe('resolveAuth', () => {
     expect(resolveAuth({ type: 'oauth' })).toEqual({});
   });
 
+  it('proxy returns empty — sentinel key and base URL injected at run time', () => {
+    expect(resolveAuth({ type: 'proxy' })).toEqual({});
+  });
+
   it('reads ANTHROPIC_API_KEY from env', () => {
     saveEnv('ANTHROPIC_API_KEY');
     process.env.ANTHROPIC_API_KEY = 'sk-test-abc';

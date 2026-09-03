@@ -23,6 +23,9 @@ export interface ContainerSpec {
   networkMode: string;
   openStdin: boolean;
   portBindings: Record<string, Array<{ HostPort: string; HostIp?: string }>>;
+  // When true, the entrypoint skips copying .credentials.json (proxy mode
+  // uses a sentinel API key + ANTHROPIC_BASE_URL, no credential file).
+  proxyAuth?: boolean;
   // Secret env vars (resolved credential + user-forwarded values). Passed to
   // the container as bare `-e KEY` flags and supplied to docker via its own
   // environment, so the values never land in the run command line.
@@ -58,12 +61,19 @@ export function buildContainerSpec(
 ): ContainerSpec {
   const hash = computeProjectHash(projectDir);
   const credentialsDir = getCredentialsDir(config.profileName);
+  const isProxyAuth = config.auth.type === 'proxy';
 
   const binds = [
     `${projectDir}:/workspace:rw`,
     `${config.mergedConfigDir}:/ccpod/config:ro`,
-    `${credentialsDir}:/ccpod/credentials:rw`,
   ];
+
+  // Proxy mode doesn't use a credential file — the sentinel API key and
+  // ANTHROPIC_BASE_URL are injected as env vars. Skip the credentials mount
+  // so no OAuth tokens enter the container.
+  if (!isProxyAuth) {
+    binds.push(`${credentialsDir}:/ccpod/credentials:rw`);
+  }
 
   if (config.ssh.mountSshDir) {
     binds.push(`${homedir()}/.ssh:/root/.ssh:ro`);
@@ -110,6 +120,10 @@ export function buildContainerSpec(
   const env: string[] = [];
   env.push(`CCPOD_STATE=${config.state}`);
 
+  if (isProxyAuth) {
+    env.push('CCPOD_PROXY_AUTH=1');
+  }
+
   if (config.plugins.length > 0) {
     env.push(`CCPOD_PLUGINS_TO_INSTALL=${config.plugins.join(',')}`);
   }
@@ -118,8 +132,15 @@ export function buildContainerSpec(
   if (config.network.policy === 'restricted') {
     capAdd.push('NET_ADMIN');
     env.push('CCPOD_NETWORK_POLICY=restricted');
-    if (config.network.allow.length > 0) {
-      env.push(`CCPOD_ALLOWED_HOSTS=${config.network.allow.join(',')}`);
+    // Proxy mode requires the container to reach the host-side auth proxy
+    // via host.docker.internal. Auto-add it to the allow-list so restricted
+    // + proxy mode works without manual configuration.
+    const allowList = [...config.network.allow];
+    if (isProxyAuth && !allowList.includes('host.docker.internal')) {
+      allowList.push('host.docker.internal');
+    }
+    if (allowList.length > 0) {
+      env.push(`CCPOD_ALLOWED_HOSTS=${allowList.join(',')}`);
     }
   }
 
@@ -152,6 +173,7 @@ export function buildContainerSpec(
     networkMode: networkName ?? 'bridge',
     openStdin: tty,
     portBindings,
+    ...(isProxyAuth ? { proxyAuth: true } : {}),
     secretEnv,
     tty,
     workingDir: '/workspace',

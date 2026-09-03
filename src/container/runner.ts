@@ -147,6 +147,13 @@ function buildRunArgs(spec: ContainerSpec): string[] {
     args.push('--cap-add', cap);
   }
 
+  // Proxy auth mode: ensure host.docker.internal resolves inside the
+  // container. Docker Desktop and OrbStack provide it automatically, but
+  // Linux Docker Engine and Podman require --add-host.
+  if (spec.proxyAuth) {
+    args.push('--add-host=host.docker.internal:host-gateway');
+  }
+
   if (spec.networkMode && spec.networkMode !== 'bridge') {
     args.push('--network', spec.networkMode);
   }

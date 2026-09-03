@@ -7,6 +7,14 @@ import type { ProfileConfig } from '../types/index.ts';
 export function resolveAuth(
   auth: ProfileConfig['auth'],
 ): Record<string, string> {
+  if (auth.type === 'proxy') {
+    // Proxy mode: the auth proxy daemon handles credential injection at
+    // runtime. The sentinel API key and ANTHROPIC_BASE_URL are set by the
+    // run command after the proxy starts (the port is ephemeral). Return
+    // empty here — the env vars are injected directly into ContainerSpec.
+    return {};
+  }
+
   if (auth.type === 'oauth') {
     // OAuth tokens live in the credentials dir, mounted by entrypoint
     return {};

@@ -69,7 +69,7 @@ export const profileConfigSchema = z.object({
     .object({
       keyEnv: z.string().default('ANTHROPIC_API_KEY'),
       keyFile: keyFileSchema.optional(),
-      type: z.enum(['api-key', 'oauth']).default('api-key'),
+      type: z.enum(['api-key', 'oauth', 'proxy']).default('api-key'),
     })
     .default({ keyEnv: 'ANTHROPIC_API_KEY', type: 'api-key' }),
   claudeArgs: z.array(z.string()).default([]),

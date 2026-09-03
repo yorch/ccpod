@@ -25,9 +25,9 @@ image:
   # dockerfile: "{{profile_dir}}/Dockerfile"
 
 auth:
-  type: api-key                 # "api-key" | "oauth"
-  keyEnv: ANTHROPIC_API_KEY     # env var to read from
-  # keyFile: ~/.ccpod/credentials/default/api-key  # must be under ~/.ccpod
+  type: api-key                 # "api-key" | "oauth" | "proxy"
+  keyEnv: ANTHROPIC_API_KEY     # env var to read from (api-key only)
+  # keyFile: ~/.ccpod/credentials/default/api-key  # must be under ~/.ccpod (api-key only)
 
 state: ephemeral                # "ephemeral" (default) | "persistent"
 
@@ -88,11 +88,13 @@ When `use: build`, both `ccpod run` and `ccpod image build` use the same tag `cc
 
 | Field | Type | Notes |
 |---|---|---|
-| `type` | `api-key` \| `oauth` | |
+| `type` | `api-key` \| `oauth` \| `proxy` | |
 | `keyEnv` | string | Env var name to read on the host (`api-key` only). |
 | `keyFile` | string | File on the host to read (`api-key` only). Must be a path under `~/.ccpod/` (no `..`, no escape via symlink); use `keyEnv` for keys stored elsewhere. |
 
 For `oauth`, ccpod manages tokens in `~/.ccpod/credentials/<name>/`.
+
+For `proxy`, ccpod starts a local HTTP proxy that shares the host's OAuth session without copying credentials into the container. The container runs claude in API-key mode with a sentinel key, and the proxy injects the real OAuth bearer token into each request. This eliminates the refresh-token rotation race that occurs when multiple containers (or a container + native `claude`) share the same OAuth login. The proxy holds the only refresh token, serializes refreshes with a single-flight lock, and writes refreshed tokens back to the host Keychain. Requires host OAuth credentials — run `claude /login` on the host first.
 
 ### `state`
 

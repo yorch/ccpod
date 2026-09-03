@@ -138,7 +138,11 @@ export async function runWizard(profileName = 'default'): Promise<void> {
   const authChoices: { name: string; value: string }[] = [];
   if (hostKeychainToken) {
     authChoices.push({
-      name: 'Use host Claude Code OAuth (macOS Keychain)',
+      name: 'Proxy — share host OAuth session (no credential copy, no refresh race)',
+      value: 'proxy-keychain',
+    });
+    authChoices.push({
+      name: 'Use host Claude Code OAuth (macOS Keychain) — copies credentials (may conflict)',
       value: 'host-keychain',
     });
   }
@@ -164,6 +168,10 @@ export async function runWizard(profileName = 'default'): Promise<void> {
     { name: 'API key — environment variable', value: 'env' },
     { name: 'API key — file on disk', value: 'file' },
     { name: 'OAuth (browser login via claude)', value: 'oauth' },
+    {
+      name: 'Proxy — share host OAuth session (no credential copy)',
+      value: 'proxy',
+    },
   );
 
   const authMethod = await select({
@@ -174,7 +182,14 @@ export async function runWizard(profileName = 'default'): Promise<void> {
   let authConfig: ProfileConfigInput['auth'];
   let credentialSourceProfile: string | undefined;
   let hostKeychainTokenToWrite: string | undefined;
-  if (authMethod === 'host-keychain') {
+  if (authMethod === 'proxy-keychain' || authMethod === 'proxy') {
+    authConfig = { type: 'proxy' };
+    console.log(
+      chalk.dim(
+        `     Proxy mode: ccpod starts a local HTTP proxy that injects your host\n     OAuth token into container requests. No credentials are copied — the\n     container uses a sentinel API key, and the proxy handles refresh centrally.\n     Multiple containers share one OAuth session without refresh-token races.`,
+      ),
+    );
+  } else if (authMethod === 'host-keychain') {
     authConfig = { type: 'oauth' };
     hostKeychainTokenToWrite = hostKeychainToken;
   } else if (authMethod.startsWith('detected:')) {
@@ -580,7 +595,7 @@ export function buildAnnotatedProfileYaml(profile: ProfileConfigInput): string {
 
   s.push('# Authentication with the Anthropic API.');
   s.push(
-    '# type: api-key (env var or file on disk) | oauth (browser login via claude)',
+    '# type: api-key (env var or file on disk) | oauth (browser login via claude) | proxy (share host OAuth session)',
   );
   if (profile.auth?.type === 'api-key') {
     if (profile.auth.keyFile) {

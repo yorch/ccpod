@@ -16,11 +16,15 @@ fi
 # 2. Restore persisted auth files:
 #   .credentials.json — OAuth access/refresh tokens (lives inside CLAUDE_CONFIG_DIR)
 #   .claude.json      — account state, migration flags (fixed at $HOME, not in CLAUDE_CONFIG_DIR)
-if [ -f /ccpod/credentials/.credentials.json ]; then
-  cp -f /ccpod/credentials/.credentials.json "${CLAUDE_DIR}/.credentials.json"
-fi
-if [ -f /ccpod/credentials/.claude.json ]; then
-  cp -f /ccpod/credentials/.claude.json "${NODE_HOME}/.claude.json"
+# Proxy mode (CCPOD_PROXY_AUTH=1) skips this — the container uses a sentinel
+# API key + ANTHROPIC_BASE_URL, no credential file is needed.
+if [ -z "${CCPOD_PROXY_AUTH}" ]; then
+  if [ -f /ccpod/credentials/.credentials.json ]; then
+    cp -f /ccpod/credentials/.credentials.json "${CLAUDE_DIR}/.credentials.json"
+  fi
+  if [ -f /ccpod/credentials/.claude.json ]; then
+    cp -f /ccpod/credentials/.claude.json "${NODE_HOME}/.claude.json"
+  fi
 fi
 
 # 3. Plugins — symlink named volume so installs persist across runs
@@ -156,8 +160,11 @@ wait $CHILD_PID || STATUS=$?
 STATUS=${STATUS:-0}
 
 # Write both auth files back so they persist across container restarts
-# (root can read node-owned files, so no permission issue here)
-cp -f "${CLAUDE_DIR}/.credentials.json" /ccpod/credentials/.credentials.json 2>/dev/null || true
-cp -f "${NODE_HOME}/.claude.json" /ccpod/credentials/.claude.json 2>/dev/null || true
+# (root can read node-owned files, so no permission issue here).
+# Proxy mode skips this — no credential file exists in the container.
+if [ -z "${CCPOD_PROXY_AUTH}" ]; then
+  cp -f "${CLAUDE_DIR}/.credentials.json" /ccpod/credentials/.credentials.json 2>/dev/null || true
+  cp -f "${NODE_HOME}/.claude.json" /ccpod/credentials/.claude.json 2>/dev/null || true
+fi
 
 exit $STATUS
