@@ -69,9 +69,8 @@ describe('findProjectConfig', () => {
   });
 
   it('does not walk above the user home directory', () => {
-    // The walk stops at $HOME — a .ccpod.yml placed directly in $HOME should
-    // be found when starting from a child, but the walk must never go above
-    // $HOME. We verify the positive case (config found inside $HOME tree).
+    // The walk stops at $HOME — a .ccpod.yml in a subdirectory of $HOME is
+    // found by a deeper child, but the walk never goes above $HOME.
     const os = require('node:os');
     const home = realpathSync(os.homedir());
     const testRoot = join(home, '.ccpod-test-loader-boundary');

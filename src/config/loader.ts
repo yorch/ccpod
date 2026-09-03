@@ -19,7 +19,9 @@ export function loadProfileConfig(profileDir: string): ProfileConfig {
 // and walking to the filesystem root lets a stray file in a parent directory
 // override profile settings for every child project. Both $HOME and the start
 // dir are canonicalised via realpathSync so symlinked paths don't bypass the
-// boundary check.
+// boundary check. Symlink/non-regular candidates are rejected here so all
+// callers (loadProjectConfig, config validate) are protected — not just the
+// loader.
 export function findProjectConfig(startDir: string): string | null {
   let home: string;
   try {
@@ -36,10 +38,24 @@ export function findProjectConfig(startDir: string): string | null {
   while (true) {
     const candidate = join(dir, '.ccpod.yml');
     if (existsSync(candidate)) {
+      try {
+        const stat = lstatSync(candidate);
+        if (stat.isSymbolicLink() || !stat.isFile()) {
+          console.warn(
+            'Warning: .ccpod.yml is a symlink or non-regular file; ignoring.',
+          );
+          return null;
+        }
+      } catch {
+        return null;
+      }
       return candidate;
     }
+    if (dir === home) {
+      return null;
+    }
     const parent = dirname(dir);
-    if (parent === dir || parent === home) {
+    if (parent === dir) {
       return null;
     }
     dir = parent;
@@ -49,21 +65,6 @@ export function findProjectConfig(startDir: string): string | null {
 export function loadProjectConfig(projectDir: string): ProjectConfig | null {
   const configPath = findProjectConfig(projectDir);
   if (!configPath) {
-    return null;
-  }
-  // Reject symlinks — same protection as parseMcpJson. An untrusted project
-  // could symlink .ccpod.yml at an arbitrary host file to probe readability
-  // or exfiltrate contents through parse-error messages.
-  let stat: ReturnType<typeof lstatSync>;
-  try {
-    stat = lstatSync(configPath);
-  } catch {
-    return null;
-  }
-  if (stat.isSymbolicLink() || !stat.isFile()) {
-    console.warn(
-      'Warning: .ccpod.yml is a symlink or non-regular file; ignoring.',
-    );
     return null;
   }
   const raw = parseYaml(readFileSync(configPath, 'utf8'));
