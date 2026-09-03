@@ -3,6 +3,7 @@ import { defineCommand } from 'citty';
 import { loadProfileConfig } from '../../../config/loader.ts';
 import { syncGitConfig } from '../../../profile/git-sync.ts';
 import { getProfileDir, profileExists } from '../../../profile/manager.ts';
+import { validateProfileArg } from '../../validate.ts';
 
 export default defineCommand({
   args: { name: { description: 'Profile name', type: 'positional' } },
@@ -12,6 +13,7 @@ export default defineCommand({
       console.error('Profile name required');
       process.exit(1);
     }
+    validateProfileArg(args.name);
 
     if (!profileExists(args.name)) {
       console.error(`Profile '${args.name}' not found.`);

@@ -6,6 +6,7 @@ import {
 } from '../../../config/loader.ts';
 import { ensureImage } from '../../../image/manager.ts';
 import { getProfileDir, profileExists } from '../../../profile/manager.ts';
+import { validateProfileArg } from '../../validate.ts';
 
 export default defineCommand({
   args: {
@@ -18,6 +19,7 @@ export default defineCommand({
   },
   meta: { description: 'Pull the Docker image for a profile' },
   async run({ args }) {
+    validateProfileArg(args.profile);
     const projectConfig = loadProjectConfig(process.cwd());
     const profileName = args.profile ?? projectConfig?.profile ?? 'default';
 

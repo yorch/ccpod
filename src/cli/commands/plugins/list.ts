@@ -7,6 +7,7 @@ import {
   volumeExists,
 } from '../../../plugins/volume.ts';
 import { profileExists } from '../../../profile/manager.ts';
+import { validateProfileArg } from '../../validate.ts';
 
 export default defineCommand({
   args: {
@@ -17,6 +18,7 @@ export default defineCommand({
   },
   meta: { description: "List plugins installed in a profile's volume" },
   async run({ args }) {
+    validateProfileArg(args.profile);
     const projectConfig = loadProjectConfig(process.cwd());
     const profileName = args.profile ?? projectConfig?.profile ?? 'default';
 

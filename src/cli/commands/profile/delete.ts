@@ -2,6 +2,7 @@ import { confirm } from '@inquirer/prompts';
 import chalk from 'chalk';
 import { defineCommand } from 'citty';
 import { deleteProfile, profileExists } from '../../../profile/manager.ts';
+import { validateProfileArg } from '../../validate.ts';
 
 export default defineCommand({
   args: {
@@ -18,6 +19,7 @@ export default defineCommand({
       console.error('Profile name required.');
       process.exit(1);
     }
+    validateProfileArg(args.name);
 
     if (!profileExists(args.name)) {
       console.error(`Profile '${args.name}' not found.`);

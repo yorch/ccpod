@@ -61,6 +61,8 @@ bun run preview          # preview built site
 | `src/update/updater.ts` | Downloads and replaces the ccpod binary in-place |
 | `src/profile/installer.ts` | `detectSource` + `fetchProfileYaml` — source detection and YAML fetching for profile install |
 | `src/profile/exporter.ts` | `exportProfile` — reads profile.yml and returns base64-encoded string for sharing |
+| `src/cli/validate.ts` | `validateProfileArg` — shared `--profile` name validation for all CLI commands |
+| `src/cli/commands/prune.ts` | `ccpod prune` — remove stopped containers, orphaned networks, unreferenced plugin volumes |
 
 ### Storage layout
 
@@ -86,7 +88,7 @@ Docker volumes:
 
 ### Security invariants
 
-- **Profile names** are validated by Zod regex `/^[a-zA-Z0-9_-]{1,64}$/` — enforced at parse time in `schema.ts`.
+- **Profile names** are validated by Zod regex `/^[a-zA-Z0-9_-]{1,64}$/` — enforced at parse time in `schema.ts` and at the CLI entry point via `validateProfileArg()` (`src/cli/validate.ts`). Every command that accepts `--profile` calls `validateProfileArg` before passing the name to `profileExists`, `getProfileDir`, `getStateDir`, etc., preventing path traversal (`../etc`) and shell metacharacter injection through the profile name. The shared setup helper `setupContainer` also validates, covering `run` and `shell`.
 - **`--file` arg** in `run.ts` is normalized and rejected if it starts with `..` or is absolute.
 - **Config temp dirs** live under a private per-uid parent `${tmpdir}/ccpod-u<uid>` (created `0o700`, verified owned by us and not a symlink), so another user on a shared host cannot pre-seed or race the deterministic per-content path. Dirs are `0o700`, files `0o600`, and the merged config is assembled in a `mkdtemp` dir then atomically `rename`d into place (a reader never sees a half-populated mount). On reuse, the writer `lstat`s `outDir` and refuses it if it is a symlink, not a directory, or owned by a different uid.
 - **Per-profile directories** — `profilesDir()`, `credentialsBase()`, and `getStateDir()` all `mkdir` with `mode: 0o700`, so another local user cannot read a profile's config, credentials, or Claude conversation state. The `~/.ccpod` base dir itself is also created `0o700` by `ensureCcpodDirs()` and `saveGlobalConfig()`, with `chmodSync` to tighten pre-existing dirs that may have been created with looser perms by prior versions.
@@ -109,6 +111,8 @@ Docker volumes:
   - `network:` (`policy` and `allow`) is profile-owned — project `network` keys are ignored with a warning regardless of `merge` strategy, so a repo cannot downgrade a `restricted` profile to `full` or widen the allow-list.
   - `init:` commands are ignored unless the profile sets `allowProjectInit: true`.
 - **Project `.claude/settings.json`** deep-merges into profile settings (project wins on conflicts) — same trust level as `claudeArgs` passthrough. Only run ccpod against repos you control.
+- **`setupContainer`** (`src/cli/commands/_setup.ts`) throws on error instead of calling `process.exit` — the calling commands (`run`, `shell`) catch and exit. This makes the setup pipeline testable with `await expect(...).rejects.toThrow(...)`. The global `unhandledRejection`/`uncaughtException` handler in `cli/index.ts` remains as a last-resort backstop.
+- **`ccpod prune`** removes stopped ccpod containers, orphaned `ccpod-net-*` networks (no attached endpoints), and unreferenced `ccpod-plugins-<profile>` volumes (no container references and profile no longer exists on disk). Supports `--dry-run`, `--profile`, and `--force`. Volume removal prompts for confirmation unless `--force` is given.
 
 ### Testing
 

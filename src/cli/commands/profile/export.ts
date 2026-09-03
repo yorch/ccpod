@@ -1,8 +1,7 @@
 import chalk from 'chalk';
 import { defineCommand } from 'citty';
 import { exportProfile } from '../../../profile/exporter.ts';
-
-const NAME_RE = /^[a-zA-Z0-9_-]{1,64}$/;
+import { validateProfileArg } from '../../validate.ts';
 
 export default defineCommand({
   args: {
@@ -14,14 +13,7 @@ export default defineCommand({
       console.error('Profile name required.');
       process.exit(1);
     }
-    if (!NAME_RE.test(args.name)) {
-      console.error(
-        chalk.red(
-          'Invalid profile name. Use only letters, digits, hyphens, and underscores (max 64 chars).',
-        ),
-      );
-      process.exit(1);
-    }
+    validateProfileArg(args.name);
     try {
       const encoded = exportProfile(args.name);
       console.warn(

@@ -21,6 +21,7 @@ import {
   profileExists,
 } from '../../profile/manager.ts';
 import type { ResolvedConfig } from '../../types/index.ts';
+import { validateProfileArg } from '../validate.ts';
 
 export interface ContainerSetupArgs {
   claudeArgs?: string[];
@@ -40,6 +41,7 @@ export async function setupContainer(
   args: ContainerSetupArgs,
   cwd: string,
 ): Promise<ContainerSetupResult> {
+  validateProfileArg(args.profile);
   const projectConfig = loadProjectConfig(cwd);
   const explicitProfile = args.profile ?? projectConfig?.profile;
   const profileName = explicitProfile ?? 'default';
@@ -51,10 +53,9 @@ export async function setupContainer(
       );
       await runWizard('default');
     } else {
-      console.error(
-        `${chalk.red('error:')} Profile '${profileName}' not found. Run 'ccpod init --profile ${profileName}'.`,
+      throw new Error(
+        `Profile '${profileName}' not found. Run 'ccpod init --profile ${profileName}'.`,
       );
-      process.exit(1);
     }
   }
 
@@ -91,10 +92,9 @@ export async function setupContainer(
 
   if (args.requireAuth) {
     if (profile.auth.type === 'api-key' && Object.keys(authEnv).length === 0) {
-      console.error(
-        `${chalk.red('error:')} Headless mode requires auth. Set ${profile.auth.keyEnv ?? 'ANTHROPIC_API_KEY'} or configure keyFile.`,
+      throw new Error(
+        `Headless mode requires auth. Set ${profile.auth.keyEnv ?? 'ANTHROPIC_API_KEY'} or configure keyFile.`,
       );
-      process.exit(1);
     }
     if (profile.auth.type === 'oauth') {
       // The entrypoint copies ~/.claude/.credentials.json out of the
@@ -105,10 +105,9 @@ export async function setupContainer(
         '.credentials.json',
       );
       if (!existsSync(credPath)) {
-        console.error(
-          `${chalk.red('error:')} Headless mode with auth.type=oauth requires a prior interactive login. Run 'ccpod run' once to sign in, then re-run headlessly.`,
+        throw new Error(
+          `Headless mode with auth.type=oauth requires a prior interactive login. Run 'ccpod run' once to sign in, then re-run headlessly.`,
         );
-        process.exit(1);
       }
     }
   }

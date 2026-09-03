@@ -13,6 +13,7 @@ import {
   profileExists,
   updateProfileDockerfile,
 } from '../../../profile/manager.ts';
+import { validateProfileArg } from '../../validate.ts';
 
 export default defineCommand({
   args: {
@@ -32,6 +33,7 @@ export default defineCommand({
       'Download a Dockerfile into the profile directory for local customization',
   },
   async run({ args }) {
+    validateProfileArg(args.profile);
     const projectConfig = loadProjectConfig(process.cwd());
     const profileName = args.profile ?? projectConfig?.profile ?? 'default';
 

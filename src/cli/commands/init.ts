@@ -1,6 +1,7 @@
 import { ExitPromptError } from '@inquirer/core';
 import { defineCommand } from 'citty';
 import { runWizard } from '../../init/wizard.ts';
+import { validateProfileArg } from '../validate.ts';
 
 export default defineCommand({
   args: {
@@ -13,6 +14,7 @@ export default defineCommand({
   meta: { description: 'Interactive first-run setup wizard' },
   async run({ args }) {
     try {
+      validateProfileArg(args.profile);
       await runWizard(args.profile ?? 'default');
     } catch (err) {
       if (err instanceof ExitPromptError) {

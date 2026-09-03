@@ -5,6 +5,7 @@ import { defineCommand } from 'citty';
 import { loadProjectConfig } from '../../../config/loader.ts';
 import { getStateDir, profileExists } from '../../../profile/manager.ts';
 import { dockerExec } from '../../../runtime/docker.ts';
+import { validateProfileArg } from '../../validate.ts';
 
 async function hasRunningContainer(profileName: string): Promise<boolean> {
   const { stdout } = await dockerExec([
@@ -29,6 +30,7 @@ export default defineCommand({
   },
   meta: { description: 'Clear persistent state for a profile' },
   async run({ args }) {
+    validateProfileArg(args.profile);
     const projectConfig = loadProjectConfig(process.cwd());
     const profileName = args.profile ?? projectConfig?.profile ?? 'default';
 
