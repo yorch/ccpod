@@ -74,9 +74,11 @@ function readFromKeychainRaw(): string | undefined {
     }
   };
 
-  let raw: string | undefined;
+  // Try with -a <account> first, but only accept it if it parses as valid
+  // credential JSON. Fall back to no -a if the -a result is missing or
+  // corrupted (e.g. a stale keychain entry from a previous version).
   if (KEYCHAIN_ACCOUNT) {
-    raw = tryRead([
+    const withAccount = tryRead([
       'find-generic-password',
       '-s',
       KEYCHAIN_SERVICE,
@@ -84,11 +86,11 @@ function readFromKeychainRaw(): string | undefined {
       KEYCHAIN_ACCOUNT,
       '-w',
     ]);
+    if (withAccount && parseCredentialJson(withAccount)) {
+      return withAccount;
+    }
   }
-  if (!raw) {
-    raw = tryRead(['find-generic-password', '-s', KEYCHAIN_SERVICE, '-w']);
-  }
-  return raw;
+  return tryRead(['find-generic-password', '-s', KEYCHAIN_SERVICE, '-w']);
 }
 
 function writeToKeychain(creds: OAuthCredentials): void {

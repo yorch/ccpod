@@ -29,6 +29,7 @@ const MAX_BODY_BYTES = 100 * 1024 * 1024; // 100 MB max request body
 
 // Retry delay after a failed proactive refresh.
 const REFRESH_RETRY_MS = 60_000; // 1 minute
+const MAX_REFRESH_RETRIES = 10; // stop retrying after this many consecutive failures
 
 // Headers that must not be forwarded as-is (either stripped or replaced).
 const STRIP_HEADERS = new Set([
@@ -78,6 +79,7 @@ export class AuthProxy {
   private readonly hostname: string;
   private readonly sentinelKey: string | undefined;
   private refreshTimer: ReturnType<typeof setTimeout> | null = null;
+  private refreshRetryCount = 0;
   private stopped = false;
 
   constructor(opts: AuthProxyOptions = {}) {
@@ -218,6 +220,7 @@ export class AuthProxy {
     const refreshPromise = this.doRefresh()
       .then((newCreds) => {
         this.cache = { creds: newCreds, refreshing: null };
+        this.refreshRetryCount = 0; // reset on success
         // Write-back is best-effort: the in-memory token is already valid.
         // A Keychain permission prompt or disk error should not fail the
         // request — the token will be persisted on the next successful write.
@@ -235,15 +238,30 @@ export class AuthProxy {
         if (this.cache) {
           this.cache.refreshing = null;
         }
-        // Schedule a retry so a transient failure doesn't leave us without
-        // a proactive refresh timer. The only recovery path otherwise is
-        // a 401 from upstream triggering on-demand refresh.
-        if (!this.stopped) {
+        // Schedule a retry with exponential backoff so a transient failure
+        // doesn't leave us without a proactive refresh timer. Cap at
+        // MAX_REFRESH_RETRIES to avoid an infinite loop when the refresh
+        // token is permanently invalid; after that, rely solely on the
+        // 401 on-demand path.
+        if (!this.stopped && this.refreshRetryCount < MAX_REFRESH_RETRIES) {
+          this.refreshRetryCount++;
+          const delay = Math.min(
+            REFRESH_RETRY_MS * 2 ** (this.refreshRetryCount - 1),
+            3600_000, // cap at 1 hour
+          );
+          if (this.refreshTimer) {
+            clearTimeout(this.refreshTimer);
+          }
           this.refreshTimer = setTimeout(() => {
             this.refreshToken().catch((e) =>
               console.error(`[ccpod-auth-proxy] retry refresh failed: ${e}`),
             );
-          }, REFRESH_RETRY_MS);
+          }, delay);
+        } else if (this.refreshRetryCount >= MAX_REFRESH_RETRIES) {
+          console.error(
+            `[ccpod-auth-proxy] refresh retry limit reached (${MAX_REFRESH_RETRIES}); ` +
+              'relying on 401 on-demand refresh',
+          );
         }
         throw err;
       });
@@ -277,7 +295,7 @@ export class AuthProxy {
       // been invalidated by native claude refreshing concurrently. Re-read
       // the host credential store and retry once with the fresh token.
       const msg = err instanceof Error ? err.message : String(err);
-      if (msg.includes('invalid_grant') || msg.includes('400')) {
+      if (msg.includes('invalid_grant')) {
         const freshCreds = readHostOAuthCredentials();
         if (freshCreds && freshCreds.refreshToken !== refreshToken) {
           const retryBody = JSON.stringify({
@@ -446,10 +464,17 @@ export class AuthProxy {
     };
 
     return new Promise<void>((resolve) => {
+      // Abort the upstream request if the client disconnects while we're
+      // waiting for the upstream response or during body streaming.
+      let onClientClose: (() => void) | null = null;
+
       const upstreamReq = httpsRequest(opts, (upstreamResp) => {
         // On 401, try refreshing the token and retry once
         if (upstreamResp.statusCode === 401 && retryCount === 0) {
           upstreamResp.resume(); // drain
+          // Keep the close listener attached through the retry window
+          // so a client disconnect during refresh is caught by the next
+          // forwardRequest's upstreamReq.destroy().
           this.refreshToken()
             .then(() => {
               const cached = this.cache?.creds.accessToken;
@@ -480,7 +505,15 @@ export class AuthProxy {
         // Stream the upstream response back to the client
         res.writeHead(upstreamResp.statusCode ?? 502, upstreamResp.headers);
         upstreamResp.pipe(res);
-        upstreamResp.on('end', resolve);
+        // Clean up the close listener only after the response body has
+        // fully streamed (not when headers arrive — the client could still
+        // disconnect during streaming).
+        upstreamResp.on('end', () => {
+          if (onClientClose) {
+            res.off('close', onClientClose);
+          }
+          resolve();
+        });
       });
 
       // Attach timeout immediately after request creation so DNS/TLS/connect
@@ -489,13 +522,13 @@ export class AuthProxy {
         upstreamReq.destroy(new Error('upstream timeout'));
       });
 
-      // Abort the upstream request if the client disconnects while we're
-      // waiting for the upstream response — avoids wasting resources.
-      const onClientClose = () => upstreamReq.destroy();
+      onClientClose = () => upstreamReq.destroy();
       res.on('close', onClientClose);
 
       upstreamReq.on('error', (err) => {
-        res.off('close', onClientClose);
+        if (onClientClose) {
+          res.off('close', onClientClose);
+        }
         if (!res.headersSent) {
           this.sendError(
             res,
@@ -504,11 +537,6 @@ export class AuthProxy {
           );
         }
         resolve();
-      });
-
-      // Clean up the close listener when the response completes normally
-      upstreamReq.on('response', () => {
-        res.off('close', onClientClose);
       });
 
       if (body.length > 0) {

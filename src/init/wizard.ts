@@ -31,6 +31,7 @@ import { detectRuntime } from '../runtime/detector.ts';
 type DetectedAuth = {
   envKey: string | undefined;
   hostKeychainToken: string | undefined;
+  hostCredsFound: boolean;
   profiles: Array<{ name: string; auth: ProfileConfigInput['auth'] }>;
 };
 
@@ -83,7 +84,7 @@ function detectAuth(currentProfile: string): DetectedAuth {
       // skip unreadable profiles
     }
   }
-  return { envKey, hostKeychainToken, profiles };
+  return { envKey, hostCredsFound: !!hostCreds, hostKeychainToken, profiles };
 }
 
 export async function runWizard(profileName = 'default'): Promise<void> {
@@ -140,15 +141,18 @@ export async function runWizard(profileName = 'default'): Promise<void> {
   const {
     envKey,
     hostKeychainToken,
+    hostCredsFound,
     profiles: existingProfiles,
   } = detectAuth(profileName);
 
   const authChoices: { name: string; value: string }[] = [];
-  if (hostKeychainToken) {
+  if (hostCredsFound) {
     authChoices.push({
       name: 'Proxy — share host OAuth session (no credential copy, no refresh race)',
       value: 'proxy-keychain',
     });
+  }
+  if (hostKeychainToken) {
     authChoices.push({
       name: 'Use host Claude Code OAuth (macOS Keychain) — copies credentials (may conflict)',
       value: 'host-keychain',
