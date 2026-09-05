@@ -155,6 +155,7 @@ https://github.com/yorch/ccpod
           items: [
             { label: 'CLI Reference', slug: 'reference/cli' },
             { label: 'Architecture', slug: 'reference/architecture' },
+            { label: 'Auth Proxy Design', slug: 'reference/auth-proxy-design' },
             { label: 'Internals', slug: 'reference/internals' },
             { label: 'Storage Layout', slug: 'reference/storage' },
           ],
