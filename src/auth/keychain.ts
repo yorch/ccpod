@@ -49,25 +49,46 @@ export function writeHostOAuthCredentials(creds: OAuthCredentials): void {
 }
 
 function readFromKeychain(): OAuthCredentials | undefined {
-  try {
-    const args = ['find-generic-password', '-s', KEYCHAIN_SERVICE, '-w'];
-    // Include the account name if known — claude stores its entry with -a
-    // <username>, and omitting -a when multiple entries exist under the same
-    // service causes `security` to error with "SecKeychainItemCopyContent".
-    if (KEYCHAIN_ACCOUNT) {
-      args.push('-a', KEYCHAIN_ACCOUNT);
-    }
-    const raw = execFileSync('security', args, {
-      encoding: 'utf8',
-      stdio: ['ignore', 'pipe', 'ignore'],
-      timeout: 5000,
-    }).trim();
-
-    return parseCredentialJson(raw);
-  } catch {
-    // Keychain entry not found or access denied
+  const raw = readFromKeychainRaw();
+  if (!raw) {
     return undefined;
   }
+  return parseCredentialJson(raw);
+}
+
+/**
+ * Read the raw Keychain JSON string, trying with -a <account> first
+ * (matching claude's storage), then falling back to no -a (matching
+ * any entry under the service name).
+ */
+function readFromKeychainRaw(): string | undefined {
+  const tryRead = (args: string[]): string | undefined => {
+    try {
+      return execFileSync('security', args, {
+        encoding: 'utf8',
+        stdio: ['ignore', 'pipe', 'ignore'],
+        timeout: 5000,
+      }).trim();
+    } catch {
+      return undefined;
+    }
+  };
+
+  let raw: string | undefined;
+  if (KEYCHAIN_ACCOUNT) {
+    raw = tryRead([
+      'find-generic-password',
+      '-s',
+      KEYCHAIN_SERVICE,
+      '-a',
+      KEYCHAIN_ACCOUNT,
+      '-w',
+    ]);
+  }
+  if (!raw) {
+    raw = tryRead(['find-generic-password', '-s', KEYCHAIN_SERVICE, '-w']);
+  }
+  return raw;
 }
 
 function writeToKeychain(creds: OAuthCredentials): void {
@@ -144,9 +165,12 @@ function parseCredentialJson(raw: string): OAuthCredentials | undefined {
     if (!accessToken || !refreshToken) {
       return undefined;
     }
+    // Validate expiresAt is a finite number. If missing or invalid, the
+    // proxy's needsRefresh() will treat it as expired and force a refresh.
+    const expiresAt = Number(oauth.expiresAt);
     return {
       accessToken,
-      expiresAt: oauth.expiresAt as number,
+      expiresAt: Number.isFinite(expiresAt) ? expiresAt : 0,
       refreshToken,
       ...(oauth.refreshTokenExpiresAt !== undefined
         ? { refreshTokenExpiresAt: oauth.refreshTokenExpiresAt as number }
@@ -188,22 +212,11 @@ function wrapInClaudeAiOauth(creds: OAuthCredentials): string {
 }
 
 function mergeCredentialJson(updated: OAuthCredentials): string {
-  // Preserve mcpOAuth and other top-level keys by re-reading the raw JSON
+  // Preserve mcpOAuth and other top-level keys by re-reading the raw JSON.
+  // Uses the same -a fallback logic as readFromKeychain to avoid mismatch.
   let raw: string | undefined;
   if (process.platform === 'darwin') {
-    try {
-      const args = ['find-generic-password', '-s', KEYCHAIN_SERVICE, '-w'];
-      if (KEYCHAIN_ACCOUNT) {
-        args.push('-a', KEYCHAIN_ACCOUNT);
-      }
-      raw = execFileSync('security', args, {
-        encoding: 'utf8',
-        stdio: ['ignore', 'pipe', 'ignore'],
-        timeout: 5000,
-      }).trim();
-    } catch {
-      // fall through
-    }
+    raw = readFromKeychainRaw();
   } else if (existsSync(CREDENTIAL_FILE)) {
     try {
       raw = readFileSync(CREDENTIAL_FILE, 'utf8').trim();

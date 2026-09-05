@@ -58,10 +58,7 @@ export default defineCommand({
         const sentinelKey = generateSentinelApiKey();
         authProxy = new AuthProxy({ sentinelKey });
         await authProxy.start();
-        spec.secretEnv.ANTHROPIC_BASE_URL = authProxy.address.replace(
-          '127.0.0.1',
-          'host.docker.internal',
-        );
+        spec.secretEnv.ANTHROPIC_BASE_URL = `http://host.docker.internal:${authProxy.resolvedPort}`;
         spec.secretEnv.ANTHROPIC_API_KEY = sentinelKey;
         console.log(
           chalk.dim(`  Auth proxy listening on ${authProxy.address}`),

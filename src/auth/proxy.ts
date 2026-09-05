@@ -21,6 +21,15 @@ const API_UPSTREAM = 'https://api.anthropic.com';
 // Refresh the access token this long before it expires (1 hour margin).
 const REFRESH_MARGIN_MS = 60 * 60 * 1000;
 
+// Timeouts for upstream requests.
+const UPSTREAM_TIMEOUT_MS = 120_000; // 2 minutes for API requests
+const REFRESH_TIMEOUT_MS = 15_000; // 15 seconds for OAuth refresh
+const BODY_TIMEOUT_MS = 30_000; // 30 seconds to read request body
+const MAX_BODY_BYTES = 100 * 1024 * 1024; // 100 MB max request body
+
+// Retry delay after a failed proactive refresh.
+const REFRESH_RETRY_MS = 60_000; // 1 minute
+
 // Headers that must not be forwarded as-is (either stripped or replaced).
 const STRIP_HEADERS = new Set([
   'x-api-key',
@@ -56,6 +65,11 @@ interface TokenCache {
  * Multiple containers share one proxy instance, so all consumers share one
  * OAuth session with serialized refresh — eliminating the refresh-token
  * rotation race.
+ *
+ * Limitation: if native `claude` runs concurrently on the host and refreshes
+ * the same OAuth session independently, it can invalidate the proxy's refresh
+ * token. The proxy re-reads the host credential store on `invalid_grant` to
+ * recover, but a brief window of 401s is possible during recovery.
  */
 export class AuthProxy {
   private server: Server | null = null;
@@ -64,10 +78,18 @@ export class AuthProxy {
   private readonly hostname: string;
   private readonly sentinelKey: string | undefined;
   private refreshTimer: ReturnType<typeof setTimeout> | null = null;
+  private stopped = false;
 
   constructor(opts: AuthProxyOptions = {}) {
     this.port = opts.port ?? 0; // 0 = ephemeral port
-    this.hostname = opts.hostname ?? '127.0.0.1';
+    // On macOS, Docker Desktop/OrbStack route host.docker.internal to the
+    // host's 127.0.0.1, so binding loopback is sufficient. On native Linux
+    // Docker Engine and Podman, host-gateway resolves to the bridge IP
+    // (e.g. 172.17.0.1), not 127.0.0.1 — so we must bind 0.0.0.0 to be
+    // reachable from the container. The sentinel key gates access.
+    this.hostname =
+      opts.hostname ??
+      (process.platform === 'darwin' ? '127.0.0.1' : '0.0.0.0');
     this.sentinelKey = opts.sentinelKey;
   }
 
@@ -94,6 +116,7 @@ export class AuthProxy {
   }
 
   async start(): Promise<void> {
+    this.stopped = false;
     // Load initial credentials from the host store
     const creds = readHostOAuthCredentials();
     if (!creds) {
@@ -138,6 +161,7 @@ export class AuthProxy {
   }
 
   async stop(): Promise<void> {
+    this.stopped = true;
     if (this.refreshTimer) {
       clearTimeout(this.refreshTimer);
       this.refreshTimer = null;
@@ -153,16 +177,21 @@ export class AuthProxy {
   }
 
   private needsRefresh(creds: OAuthCredentials): boolean {
+    if (!Number.isFinite(creds.expiresAt)) {
+      return true; // missing/invalid expiry → force refresh
+    }
     return Date.now() + REFRESH_MARGIN_MS >= creds.expiresAt;
   }
 
   private scheduleProactiveRefresh(): void {
-    if (!this.cache) {
+    if (this.stopped || !this.cache) {
       return;
     }
     const { creds } = this.cache;
     const refreshAt = creds.expiresAt - REFRESH_MARGIN_MS;
-    const delay = Math.max(refreshAt - Date.now(), 60_000); // at least 1 min
+    const delay = Number.isFinite(refreshAt)
+      ? Math.max(refreshAt - Date.now(), 60_000)
+      : 60_000; // at least 1 min, or 1 min if expiresAt is invalid
 
     if (this.refreshTimer) {
       clearTimeout(this.refreshTimer);
@@ -189,13 +218,32 @@ export class AuthProxy {
     const refreshPromise = this.doRefresh()
       .then((newCreds) => {
         this.cache = { creds: newCreds, refreshing: null };
-        writeHostOAuthCredentials(newCreds);
+        // Write-back is best-effort: the in-memory token is already valid.
+        // A Keychain permission prompt or disk error should not fail the
+        // request — the token will be persisted on the next successful write.
+        try {
+          writeHostOAuthCredentials(newCreds);
+        } catch (err) {
+          console.warn(
+            `[ccpod-auth-proxy] credential write-back failed (non-fatal): ${err}`,
+          );
+        }
         this.scheduleProactiveRefresh();
         return newCreds;
       })
       .catch((err) => {
         if (this.cache) {
           this.cache.refreshing = null;
+        }
+        // Schedule a retry so a transient failure doesn't leave us without
+        // a proactive refresh timer. The only recovery path otherwise is
+        // a 401 from upstream triggering on-demand refresh.
+        if (!this.stopped) {
+          this.refreshTimer = setTimeout(() => {
+            this.refreshToken().catch((e) =>
+              console.error(`[ccpod-auth-proxy] retry refresh failed: ${e}`),
+            );
+          }, REFRESH_RETRY_MS);
         }
         throw err;
       });
@@ -217,6 +265,44 @@ export class AuthProxy {
       refresh_token: refreshToken,
     });
 
+    try {
+      return await this.callTokenEndpoint(
+        body,
+        scopes,
+        subscriptionType,
+        rateLimitTier,
+      );
+    } catch (err) {
+      // If the refresh failed with invalid_grant, the refresh token may have
+      // been invalidated by native claude refreshing concurrently. Re-read
+      // the host credential store and retry once with the fresh token.
+      const msg = err instanceof Error ? err.message : String(err);
+      if (msg.includes('invalid_grant') || msg.includes('400')) {
+        const freshCreds = readHostOAuthCredentials();
+        if (freshCreds && freshCreds.refreshToken !== refreshToken) {
+          const retryBody = JSON.stringify({
+            client_id: OAUTH_CLIENT_ID,
+            grant_type: 'refresh_token',
+            refresh_token: freshCreds.refreshToken,
+          });
+          return await this.callTokenEndpoint(
+            retryBody,
+            scopes,
+            subscriptionType,
+            rateLimitTier,
+          );
+        }
+      }
+      throw err;
+    }
+  }
+
+  private callTokenEndpoint(
+    body: string,
+    scopes: string[] | undefined,
+    subscriptionType: string | undefined,
+    rateLimitTier: string | undefined,
+  ): Promise<OAuthCredentials> {
     return new Promise<OAuthCredentials>((resolve, reject) => {
       const url = new URL(TOKEN_ENDPOINT);
       const opts: RequestOptions = {
@@ -268,6 +354,10 @@ export class AuthProxy {
         });
       });
 
+      // Attach timeout immediately so DNS/TLS/connect stalls are caught
+      req.setTimeout(REFRESH_TIMEOUT_MS, () => {
+        req.destroy(new Error('OAuth refresh timeout'));
+      });
       req.on('error', reject);
       req.write(body);
       req.end();
@@ -279,7 +369,15 @@ export class AuthProxy {
       throw new Error('Proxy not initialized');
     }
     if (this.needsRefresh(this.cache.creds)) {
-      await this.refreshToken();
+      try {
+        await this.refreshToken();
+      } catch (err) {
+        // If proactive refresh failed, the old token may still be valid
+        // (refresh starts 1 hour before expiry). Try it rather than failing.
+        console.warn(
+          `[ccpod-auth-proxy] refresh failed, trying existing token: ${err}`,
+        );
+      }
     }
     return this.cache.creds.accessToken;
   }
@@ -349,10 +447,6 @@ export class AuthProxy {
 
     return new Promise<void>((resolve) => {
       const upstreamReq = httpsRequest(opts, (upstreamResp) => {
-        // Set a timeout so a hung upstream doesn't linger forever
-        upstreamReq.setTimeout(120000, () => {
-          upstreamReq.destroy(new Error('upstream timeout'));
-        });
         // On 401, try refreshing the token and retry once
         if (upstreamResp.statusCode === 401 && retryCount === 0) {
           upstreamResp.resume(); // drain
@@ -363,9 +457,12 @@ export class AuthProxy {
                 this.sendError(res, 401, 'auth proxy: no token after refresh');
                 return;
               }
+              // Use lowercase 'authorization' to match buildUpstreamHeaders.
+              // JS object keys are case-sensitive; mixing cases would send
+              // two Authorization headers to the upstream.
               const newHeaders = {
                 ...headers,
-                Authorization: `Bearer ${cached}`,
+                authorization: `Bearer ${cached}`,
               };
               return this.forwardRequest(url, method, newHeaders, body, res, 1);
             })
@@ -386,7 +483,19 @@ export class AuthProxy {
         upstreamResp.on('end', resolve);
       });
 
+      // Attach timeout immediately after request creation so DNS/TLS/connect
+      // stalls are caught before any response headers arrive.
+      upstreamReq.setTimeout(UPSTREAM_TIMEOUT_MS, () => {
+        upstreamReq.destroy(new Error('upstream timeout'));
+      });
+
+      // Abort the upstream request if the client disconnects while we're
+      // waiting for the upstream response — avoids wasting resources.
+      const onClientClose = () => upstreamReq.destroy();
+      res.on('close', onClientClose);
+
       upstreamReq.on('error', (err) => {
+        res.off('close', onClientClose);
         if (!res.headersSent) {
           this.sendError(
             res,
@@ -395,6 +504,11 @@ export class AuthProxy {
           );
         }
         resolve();
+      });
+
+      // Clean up the close listener when the response completes normally
+      upstreamReq.on('response', () => {
+        res.off('close', onClientClose);
       });
 
       if (body.length > 0) {
@@ -419,7 +533,9 @@ export class AuthProxy {
         headers[key] = value;
       }
     }
-    // Replace the sentinel API key with the real OAuth bearer token
+    // Replace the sentinel API key with the real OAuth bearer token.
+    // Always use lowercase 'authorization' — Node.js lowercases outbound
+    // header keys, and the 401-retry path must match this casing.
     headers.authorization = `Bearer ${accessToken}`;
     return headers;
   }
@@ -427,9 +543,29 @@ export class AuthProxy {
   private readBody(req: IncomingMessage): Promise<Buffer> {
     return new Promise((resolve, reject) => {
       const chunks: Buffer[] = [];
-      req.on('data', (chunk: Buffer) => chunks.push(chunk));
-      req.on('end', () => resolve(Buffer.concat(chunks)));
-      req.on('error', reject);
+      let size = 0;
+      const timer = setTimeout(() => {
+        reject(new Error('request body read timeout'));
+        req.destroy();
+      }, BODY_TIMEOUT_MS);
+      req.on('data', (chunk: Buffer) => {
+        size += chunk.length;
+        if (size > MAX_BODY_BYTES) {
+          clearTimeout(timer);
+          reject(new Error('request body too large'));
+          req.destroy();
+          return;
+        }
+        chunks.push(chunk);
+      });
+      req.on('end', () => {
+        clearTimeout(timer);
+        resolve(Buffer.concat(chunks));
+      });
+      req.on('error', (err) => {
+        clearTimeout(timer);
+        reject(err);
+      });
     });
   }
 

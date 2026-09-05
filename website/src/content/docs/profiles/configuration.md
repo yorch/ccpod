@@ -94,7 +94,7 @@ When `use: build`, both `ccpod run` and `ccpod image build` use the same tag `cc
 
 For `oauth`, ccpod manages tokens in `~/.ccpod/credentials/<name>/`.
 
-For `proxy`, ccpod starts a local HTTP proxy that shares the host's OAuth session without copying credentials into the container. The container runs claude in API-key mode with a sentinel key, and the proxy injects the real OAuth bearer token into each request. This eliminates the refresh-token rotation race that occurs when multiple containers (or a container + native `claude`) share the same OAuth login. The proxy holds the only refresh token, serializes refreshes with a single-flight lock, and writes refreshed tokens back to the host Keychain. Requires host OAuth credentials — run `claude /login` on the host first.
+For `proxy`, ccpod starts a local HTTP proxy that shares the host's OAuth session without copying credentials into the container. The container runs claude in API-key mode with a sentinel key, and the proxy injects the real OAuth bearer token into each request. This eliminates the refresh-token rotation race that occurs when multiple containers share the same OAuth login. The proxy holds the only refresh token, serializes refreshes with a single-flight lock, and writes refreshed tokens back to the host Keychain. Requires host OAuth credentials — run `claude /login` on the host first. If native `claude` runs concurrently on the host and refreshes the same OAuth session, the proxy re-reads the host credential store to recover, but a brief window of 401s is possible.
 
 ### `state`
 

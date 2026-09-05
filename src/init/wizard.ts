@@ -12,6 +12,7 @@ import { join } from 'node:path';
 import { confirm, input, select } from '@inquirer/prompts';
 import chalk from 'chalk';
 import { parse } from 'yaml';
+import { readHostOAuthCredentials } from '../auth/keychain.ts';
 import {
   type ProfileConfigInput,
   profileConfigSchema,
@@ -38,21 +39,28 @@ function detectAuth(currentProfile: string): DetectedAuth {
     ? 'ANTHROPIC_API_KEY'
     : undefined;
 
+  // Use the shared readHostOAuthCredentials (with -a fallback) so the
+  // wizard's detection matches what the proxy will actually see at runtime.
+  // The raw token string is still needed for the credential-copy path.
   let hostKeychainToken: string | undefined;
-  if (process.platform === 'darwin') {
-    try {
-      hostKeychainToken =
-        execFileSync(
-          'security',
-          ['find-generic-password', '-s', 'Claude Code-credentials', '-w'],
-          {
-            encoding: 'utf8',
-            stdio: ['ignore', 'pipe', 'ignore'],
-            timeout: 3000,
-          },
-        ).trim() || undefined;
-    } catch {
-      // not found or access denied
+  const hostCreds = readHostOAuthCredentials();
+  if (hostCreds) {
+    if (process.platform === 'darwin') {
+      try {
+        hostKeychainToken =
+          execFileSync(
+            'security',
+            ['find-generic-password', '-s', 'Claude Code-credentials', '-w'],
+            {
+              encoding: 'utf8',
+              stdio: ['ignore', 'pipe', 'ignore'],
+              timeout: 3000,
+            },
+          ).trim() || undefined;
+      } catch {
+        // not found or access denied — but readHostOAuthCredentials succeeded,
+        // so the credentials exist; the copy path will fail gracefully
+      }
     }
   }
 
