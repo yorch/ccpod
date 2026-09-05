@@ -17,7 +17,7 @@ ccpod's problem is that it **forks** the credential store — each profile has i
 
 ### How Docker Sandbox (`sbx`) solves it
 
-Docker Sandboxes uses a **host-side HTTP proxy** that intercepts all container egress. The key mechanisms:
+Docker Sandbox uses a **host-side HTTP proxy** that intercepts all container egress. The key mechanisms:
 
 1. **Token never enters the sandbox** — the container sees only a sentinel value. The proxy replaces it with the real token before forwarding.
 2. **Proxy owns the refresh** — the daemon holds the real refresh token, refreshes the access token when it expires, and caches the result.
@@ -44,7 +44,7 @@ Redirect only API calls via `ANTHROPIC_BASE_URL`. The proxy would still need to 
 
 **Rejected because:** same TLS MITM complexity as Architecture B, just for a different endpoint.
 
-### Architecture C-revised: API-key translation (selected)
+### Architecture D: API-key translation (selected)
 
 Trick containerized claude into API-key mode while the proxy does the OAuth dance. See below.
 
@@ -57,7 +57,7 @@ Claude Code in API-key mode:
 - Has **no refresh token, no expiry, no `.credentials.json`**
 - Never calls the OAuth token endpoint
 
-The Anthropic API accepts **either** `x-api-key` **or** `Authorization: Bearer` — they're interchangeable at the API level. The server doesn't care which auth mode the client "thinks" it's in; it just validates the credential.
+The Anthropic API accepts **either** an API key in `x-api-key` **or** an OAuth access token in `Authorization: Bearer`. The same token cannot be used in both headers — an OAuth access token in `x-api-key` returns 401, and sending both headers together also returns 401 (the server checks `x-api-key` first). The server doesn't care which auth mode the client "thinks" it's in; it just validates whichever credential is provided in the expected header.
 
 ### Architecture
 
@@ -117,7 +117,7 @@ The following was verified by hand against `api.anthropic.com` during developmen
 
 | Test | Setup | Result |
 |------|-------|--------|
-| OAuth Bearer + `anthropic-beta: oauth` header | `Authorization: Bearer <AT>` | **200** |
+| OAuth Bearer + `anthropic-beta: oauth` header | `Authorization: Bearer <AT>` + `anthropic-beta: oauth-2025-04-20` | **200** |
 | OAuth Bearer, no beta header | `Authorization: Bearer <AT>` | **200** (beta not required) |
 | OAuth token in `x-api-key` header | `x-api-key: <AT>` | **401** ("API key is invalid") |
 | Both `x-api-key` (fake) + Bearer (real) | Both headers present | **401** (server checks `x-api-key` first) |
