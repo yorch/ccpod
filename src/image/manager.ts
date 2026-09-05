@@ -10,7 +10,10 @@ export interface ImageDeps {
   dockerSpawn: DockerSpawnFn;
 }
 
-const defaultDeps: ImageDeps = { dockerExec, dockerSpawn };
+const defaultDeps: Readonly<ImageDeps> = Object.freeze({
+  dockerExec,
+  dockerSpawn,
+});
 
 export async function ensureImage(
   image: string,
