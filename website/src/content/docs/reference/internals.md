@@ -30,7 +30,7 @@ export type PermissionsPreset = 'conservative' | 'moderate' | 'permissive';
 type MergeStrategy = 'deep' | 'override';
 type StateMode = 'ephemeral' | 'persistent';
 type NetworkPolicy = 'full' | 'restricted';
-type AuthType = 'api-key' | 'oauth';
+type AuthType = 'api-key' | 'oauth' | 'proxy';
 type ClaudeMdMerge = 'append' | 'override';
 
 interface PortsConfig {
@@ -240,6 +240,8 @@ exit $STATUS
 |---|---|---|
 | `.credentials.json` | `$CLAUDE_CONFIG_DIR/.credentials.json` | OAuth access/refresh tokens |
 | `.claude.json` | `$HOME/.claude.json` (ignores `CLAUDE_CONFIG_DIR`) | Account metadata, migration flags |
+
+**Proxy auth mode** (`auth.type: proxy`): when a profile uses proxy auth, the credential bind mount and copy-in/copy-out are skipped entirely. Instead, `ccpod run` starts a local HTTP proxy (`src/auth/proxy.ts`) before the container. The container receives `ANTHROPIC_BASE_URL` (pointing at the proxy via `host.docker.internal`) and a format-valid sentinel `ANTHROPIC_API_KEY` (`sk-ant-api03-ccpod-proxy-...`). Claude runs in API-key mode — no `.credentials.json`, no refresh token, no OAuth refresh flow inside the container. The proxy strips the sentinel `x-api-key` header, adds `Authorization: Bearer <real-oauth-access-token>`, and forwards to `api.anthropic.com`. The proxy holds the only OAuth session (read from the host Keychain or `~/.claude/.credentials.json`), refreshes the access token with a single-flight lock (proactively before expiry and on-demand on 401), and writes refreshed tokens back to the host store. This eliminates the refresh-token rotation race that occurs when multiple containers or a container + native `claude` share the same OAuth login.
 
 ## Config merging pipeline
 

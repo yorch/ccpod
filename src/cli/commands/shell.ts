@@ -1,6 +1,7 @@
 import chalk from 'chalk';
 import { defineCommand } from 'citty';
 import { ZodError } from 'zod';
+import { AuthProxy, generateSentinelApiKey } from '../../auth/proxy.ts';
 import { buildContainerSpec } from '../../container/builder.ts';
 import { shellContainer } from '../../container/runner.ts';
 import { setupContainer } from './_setup.ts';
@@ -51,8 +52,28 @@ export default defineCommand({
       spec.cmd = ['/bin/bash'];
       spec.env.push('CCPOD_SHELL_MODE=1');
 
+      let authProxy: AuthProxy | null = null;
+      if (config.auth.type === 'proxy') {
+        console.log(chalk.dim('Starting auth proxy...'));
+        const sentinelKey = generateSentinelApiKey();
+        authProxy = new AuthProxy({ sentinelKey });
+        await authProxy.start();
+        spec.secretEnv.ANTHROPIC_BASE_URL = `http://host.docker.internal:${authProxy.resolvedPort}`;
+        spec.secretEnv.ANTHROPIC_API_KEY = sentinelKey;
+        console.log(
+          chalk.dim(`  Auth proxy listening on ${authProxy.address}`),
+        );
+      }
+
       console.log(chalk.dim('Starting container...'));
-      const exitCode = await shellContainer(spec);
+      let exitCode: number;
+      try {
+        exitCode = await shellContainer(spec);
+      } finally {
+        if (authProxy) {
+          await authProxy.stop();
+        }
+      }
       process.exit(exitCode);
     } catch (err) {
       if (err instanceof ZodError) {

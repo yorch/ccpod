@@ -110,6 +110,20 @@ export async function setupContainer(
         );
       }
     }
+    if (profile.auth.type === 'proxy') {
+      // Proxy mode reads OAuth credentials from the host Keychain/file at
+      // daemon start. Fail early if none are found so the user gets a clear
+      // message instead of a proxy startup error mid-run.
+      const { readHostOAuthCredentials } = await import(
+        '../../auth/keychain.ts'
+      );
+      const creds = readHostOAuthCredentials();
+      if (!creds) {
+        throw new Error(
+          `Headless mode with auth.type=proxy requires host OAuth credentials. Run 'claude /login' on the host first.`,
+        );
+      }
+    }
   }
 
   const env = {

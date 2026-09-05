@@ -12,6 +12,7 @@ import { join } from 'node:path';
 import { confirm, input, select } from '@inquirer/prompts';
 import chalk from 'chalk';
 import { parse } from 'yaml';
+import { readHostOAuthCredentials } from '../auth/keychain.ts';
 import {
   type ProfileConfigInput,
   profileConfigSchema,
@@ -30,6 +31,7 @@ import { detectRuntime } from '../runtime/detector.ts';
 type DetectedAuth = {
   envKey: string | undefined;
   hostKeychainToken: string | undefined;
+  hostCredsFound: boolean;
   profiles: Array<{ name: string; auth: ProfileConfigInput['auth'] }>;
 };
 
@@ -38,21 +40,28 @@ function detectAuth(currentProfile: string): DetectedAuth {
     ? 'ANTHROPIC_API_KEY'
     : undefined;
 
+  // Use the shared readHostOAuthCredentials (with -a fallback) so the
+  // wizard's detection matches what the proxy will actually see at runtime.
+  // The raw token string is still needed for the credential-copy path.
   let hostKeychainToken: string | undefined;
-  if (process.platform === 'darwin') {
-    try {
-      hostKeychainToken =
-        execFileSync(
-          'security',
-          ['find-generic-password', '-s', 'Claude Code-credentials', '-w'],
-          {
-            encoding: 'utf8',
-            stdio: ['ignore', 'pipe', 'ignore'],
-            timeout: 3000,
-          },
-        ).trim() || undefined;
-    } catch {
-      // not found or access denied
+  const hostCreds = readHostOAuthCredentials();
+  if (hostCreds) {
+    if (process.platform === 'darwin') {
+      try {
+        hostKeychainToken =
+          execFileSync(
+            'security',
+            ['find-generic-password', '-s', 'Claude Code-credentials', '-w'],
+            {
+              encoding: 'utf8',
+              stdio: ['ignore', 'pipe', 'ignore'],
+              timeout: 3000,
+            },
+          ).trim() || undefined;
+      } catch {
+        // not found or access denied — but readHostOAuthCredentials succeeded,
+        // so the credentials exist; the copy path will fail gracefully
+      }
     }
   }
 
@@ -75,7 +84,7 @@ function detectAuth(currentProfile: string): DetectedAuth {
       // skip unreadable profiles
     }
   }
-  return { envKey, hostKeychainToken, profiles };
+  return { envKey, hostCredsFound: !!hostCreds, hostKeychainToken, profiles };
 }
 
 export async function runWizard(profileName = 'default'): Promise<void> {
@@ -132,13 +141,20 @@ export async function runWizard(profileName = 'default'): Promise<void> {
   const {
     envKey,
     hostKeychainToken,
+    hostCredsFound,
     profiles: existingProfiles,
   } = detectAuth(profileName);
 
   const authChoices: { name: string; value: string }[] = [];
+  if (hostCredsFound) {
+    authChoices.push({
+      name: 'Proxy — share host OAuth session (no credential copy, no refresh race)',
+      value: 'proxy-keychain',
+    });
+  }
   if (hostKeychainToken) {
     authChoices.push({
-      name: 'Use host Claude Code OAuth (macOS Keychain)',
+      name: 'Use host Claude Code OAuth (macOS Keychain) — copies credentials (may conflict)',
       value: 'host-keychain',
     });
   }
@@ -164,6 +180,10 @@ export async function runWizard(profileName = 'default'): Promise<void> {
     { name: 'API key — environment variable', value: 'env' },
     { name: 'API key — file on disk', value: 'file' },
     { name: 'OAuth (browser login via claude)', value: 'oauth' },
+    {
+      name: 'Proxy — share host OAuth session (no credential copy)',
+      value: 'proxy',
+    },
   );
 
   const authMethod = await select({
@@ -174,7 +194,14 @@ export async function runWizard(profileName = 'default'): Promise<void> {
   let authConfig: ProfileConfigInput['auth'];
   let credentialSourceProfile: string | undefined;
   let hostKeychainTokenToWrite: string | undefined;
-  if (authMethod === 'host-keychain') {
+  if (authMethod === 'proxy-keychain' || authMethod === 'proxy') {
+    authConfig = { type: 'proxy' };
+    console.log(
+      chalk.dim(
+        `     Proxy mode: ccpod starts a local HTTP proxy that injects your host\n     OAuth token into container requests. No credentials are copied — the\n     container uses a sentinel API key, and the proxy handles refresh centrally.\n     Multiple containers share one OAuth session without refresh-token races.`,
+      ),
+    );
+  } else if (authMethod === 'host-keychain') {
     authConfig = { type: 'oauth' };
     hostKeychainTokenToWrite = hostKeychainToken;
   } else if (authMethod.startsWith('detected:')) {
@@ -580,7 +607,7 @@ export function buildAnnotatedProfileYaml(profile: ProfileConfigInput): string {
 
   s.push('# Authentication with the Anthropic API.');
   s.push(
-    '# type: api-key (env var or file on disk) | oauth (browser login via claude)',
+    '# type: api-key (env var or file on disk) | oauth (browser login via claude) | proxy (share host OAuth session)',
   );
   if (profile.auth?.type === 'api-key') {
     if (profile.auth.keyFile) {

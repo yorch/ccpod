@@ -258,3 +258,106 @@ describe('computeProjectHash', () => {
     }
   });
 });
+
+describe('buildContainerSpec — proxy auth mode', () => {
+  let testDir: string;
+  beforeAll(() => {
+    testDir = mkdtempSync(`${tmpdir()}/ccpod-proxy-test-`);
+    process.env.CCPOD_TEST_DIR = testDir;
+  });
+  afterAll(() => {
+    delete process.env.CCPOD_TEST_DIR;
+    rmSync(testDir, { force: true, recursive: true });
+  });
+
+  it('skips credentials mount in proxy mode', () => {
+    const spec = buildContainerSpec(
+      makeConfig({ auth: { type: 'proxy' } }),
+      PROJECT_DIR,
+      true,
+    );
+    expect(spec.binds.some((b) => b.includes(':/ccpod/credentials:rw'))).toBe(
+      false,
+    );
+  });
+
+  it('includes credentials mount in non-proxy modes', () => {
+    const spec = buildContainerSpec(
+      makeConfig({ auth: { keyEnv: 'ANTHROPIC_API_KEY', type: 'api-key' } }),
+      PROJECT_DIR,
+      true,
+    );
+    expect(spec.binds.some((b) => b.includes(':/ccpod/credentials:rw'))).toBe(
+      true,
+    );
+  });
+
+  it('sets CCPOD_PROXY_AUTH env var in proxy mode', () => {
+    const spec = buildContainerSpec(
+      makeConfig({ auth: { type: 'proxy' } }),
+      PROJECT_DIR,
+      true,
+    );
+    expect(spec.env).toContain('CCPOD_PROXY_AUTH=1');
+  });
+
+  it('does not set CCPOD_PROXY_AUTH in non-proxy modes', () => {
+    const spec = buildContainerSpec(
+      makeConfig({ auth: { keyEnv: 'ANTHROPIC_API_KEY', type: 'api-key' } }),
+      PROJECT_DIR,
+      true,
+    );
+    expect(spec.env).not.toContain('CCPOD_PROXY_AUTH=1');
+  });
+
+  it('sets proxyAuth flag on spec in proxy mode', () => {
+    const spec = buildContainerSpec(
+      makeConfig({ auth: { type: 'proxy' } }),
+      PROJECT_DIR,
+      true,
+    );
+    expect(spec.proxyAuth).toBe(true);
+  });
+
+  it('does not set proxyAuth flag in non-proxy modes', () => {
+    const spec = buildContainerSpec(
+      makeConfig({ auth: { keyEnv: 'ANTHROPIC_API_KEY', type: 'api-key' } }),
+      PROJECT_DIR,
+      true,
+    );
+    expect(spec.proxyAuth).toBeUndefined();
+  });
+
+  it('auto-adds host.docker.internal to allow-list in restricted + proxy mode', () => {
+    const spec = buildContainerSpec(
+      makeConfig({
+        auth: { type: 'proxy' },
+        network: { allow: ['example.com'], policy: 'restricted' },
+      }),
+      PROJECT_DIR,
+      true,
+    );
+    const allowedHostsEntry = spec.env.find((e) =>
+      e.startsWith('CCPOD_ALLOWED_HOSTS='),
+    );
+    expect(allowedHostsEntry).toBeDefined();
+    expect(allowedHostsEntry).toContain('host.docker.internal');
+    expect(allowedHostsEntry).toContain('example.com');
+  });
+
+  it('does not add host.docker.internal in restricted + non-proxy mode', () => {
+    const spec = buildContainerSpec(
+      makeConfig({
+        auth: { keyEnv: 'ANTHROPIC_API_KEY', type: 'api-key' },
+        network: { allow: ['example.com'], policy: 'restricted' },
+      }),
+      PROJECT_DIR,
+      true,
+    );
+    const allowedHostsEntry = spec.env.find((e) =>
+      e.startsWith('CCPOD_ALLOWED_HOSTS='),
+    );
+    expect(allowedHostsEntry).toBeDefined();
+    expect(allowedHostsEntry).not.toContain('host.docker.internal');
+  });
+});

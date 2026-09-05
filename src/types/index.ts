@@ -2,7 +2,7 @@ export type SyncStrategy = 'always' | 'daily' | 'pin';
 type MergeStrategy = 'deep' | 'override';
 type StateMode = 'ephemeral' | 'persistent';
 type NetworkPolicy = 'full' | 'restricted';
-type AuthType = 'api-key' | 'oauth';
+type AuthType = 'api-key' | 'oauth' | 'proxy';
 type ClaudeMdMerge = 'append' | 'override';
 export type PermissionsPreset = 'conservative' | 'moderate' | 'permissive';
 

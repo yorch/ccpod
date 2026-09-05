@@ -2,6 +2,7 @@ import { isAbsolute, normalize } from 'node:path';
 import chalk from 'chalk';
 import { defineCommand } from 'citty';
 import { ZodError } from 'zod';
+import { AuthProxy, generateSentinelApiKey } from '../../auth/proxy.ts';
 import { buildContainerSpec } from '../../container/builder.ts';
 import { runContainer } from '../../container/runner.ts';
 import { dockerExec } from '../../runtime/docker.ts';
@@ -119,6 +120,31 @@ export default defineCommand({
 
       const tty = !fileArg && !promptArg;
       const spec = buildContainerSpec(config, cwd, tty, networkName);
+
+      // Proxy auth mode: start a local HTTP proxy that translates the
+      // sentinel API key into a real OAuth bearer token. The proxy holds
+      // the only OAuth session and serializes refreshes, eliminating the
+      // refresh-token rotation race between concurrent containers.
+      let authProxy: AuthProxy | null = null;
+      if (config.auth.type === 'proxy') {
+        console.log(chalk.dim('Starting auth proxy...'));
+        const sentinelKey = generateSentinelApiKey();
+        authProxy = new AuthProxy({ sentinelKey });
+        await authProxy.start();
+        // Inject the proxy URL and the sentinel API key into the container's
+        // secret env. Claude runs in API-key mode (no refresh token, no
+        // .credentials.json) and sends requests to the proxy, which validates
+        // the sentinel and replaces it with a real OAuth bearer token.
+        // Use host.docker.internal directly (not the proxy's bind address)
+        // so the container reaches the host regardless of whether the proxy
+        // is bound to 127.0.0.1 (macOS) or 0.0.0.0 (Linux).
+        spec.secretEnv.ANTHROPIC_BASE_URL = `http://host.docker.internal:${authProxy.resolvedPort}`;
+        spec.secretEnv.ANTHROPIC_API_KEY = sentinelKey;
+        console.log(
+          chalk.dim(`  Auth proxy listening on ${authProxy.address}`),
+        );
+      }
+
       console.log(chalk.dim('Starting container...'));
 
       // In TTY mode docker -it forwards Ctrl+C to the container natively;
@@ -130,6 +156,9 @@ export default defineCommand({
         exitCode = await runContainer(spec);
       } finally {
         detach();
+        if (authProxy) {
+          await authProxy.stop();
+        }
       }
       if (tty && !args.resume) {
         const profileFlag = args.profile ? ` --profile ${args.profile}` : '';
