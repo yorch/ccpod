@@ -1,6 +1,7 @@
 export type SyncStrategy = 'always' | 'daily' | 'pin';
 type MergeStrategy = 'deep' | 'override';
 type StateMode = 'ephemeral' | 'persistent';
+type StateIsolation = 'per-profile' | 'per-project';
 type NetworkPolicy = 'full' | 'restricted';
 type AuthType = 'api-key' | 'oauth' | 'proxy';
 type ClaudeMdMerge = 'append' | 'override';
@@ -50,6 +51,7 @@ export interface ProfileConfig {
     mountSshDir: boolean;
   };
   state: StateMode;
+  stateIsolation: StateIsolation;
 }
 
 export interface ProjectConfig {
@@ -98,6 +100,7 @@ export interface ResolvedConfig {
   services: Record<string, ServiceConfig>;
   ssh: ProfileConfig['ssh'];
   state: StateMode;
+  stateIsolation: StateIsolation;
 }
 
 export interface DetectedRuntime {

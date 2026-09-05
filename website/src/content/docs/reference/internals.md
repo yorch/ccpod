@@ -314,8 +314,17 @@ Over time, stopped containers, orphaned networks, and unreferenced plugin volume
 - **Stopped containers** — any ccpod-labeled container that is not `running`, `paused`, or `restarting` is removed. Use `--profile` to restrict to one profile.
 - **Orphaned networks** — `ccpod-net-*` networks with no attached endpoints are removed.
 - **Unreferenced plugin volumes** — `ccpod-plugins-<profile>` volumes that no container references and whose profile no longer exists on disk are removed. With `--profile`, the profile-exists check is skipped (the caller explicitly wants that profile's volume). Volume removal prompts for confirmation unless `--force` is given.
+- **Orphaned per-project state dirs** — `~/.ccpod/state/<profile>/<projectHash>/` directories with no remaining ccpod containers referencing that project hash are removed. Only applies to `stateIsolation: per-project` profiles. State dir removal prompts for confirmation unless `--force` is given.
 
-`--dry-run` lists what would be removed without executing any `docker rm`/`network rm`/`volume rm`. The `--profile` flag is validated with `PROFILE_NAME_REGEX` before any Docker command is constructed.
+`--dry-run` lists what would be removed without executing any `docker rm`/`network rm`/`volume rm`/`rm`. The `--profile` flag is validated with `PROFILE_NAME_REGEX` before any Docker command is constructed.
+
+### State isolation (`stateIsolation`)
+
+By default, persistent state is shared across all projects using the same profile (`stateIsolation: per-profile`). The state directory is `~/.ccpod/state/<profile>/`, containing Claude's `projects/`, `todos/`, and `statsig/` directories.
+
+When `stateIsolation: per-project` is set, each project gets its own state directory at `~/.ccpod/state/<profile>/<projectHash>/`, where `<projectHash>` is the first 16 hex chars of SHA-256 over the canonical project path (same hash used for container names and network names). This prevents cross-project state leakage — conversation history, todos, and project metadata from one project are not visible to another project using the same profile.
+
+`ccpod state clear` clears the current project's state by default; `--all` clears all state for the profile. `ccpod prune` cleans orphaned per-project state dirs (those with no remaining containers).
 
 ### Profile name validation
 

@@ -100,6 +100,10 @@ For `proxy`, ccpod starts a local HTTP proxy that shares the host's OAuth sessio
 
 `ephemeral` (default) wipes Claude history and session state when the container exits. `persistent` binds `~/.ccpod/state/<name>/` on the host into the container — history, projects, and todos survive across runs. Override per run with `--no-state`.
 
+### `stateIsolation`
+
+`per-profile` (default) shares state across all projects using the same profile. `per-project` isolates state per project — each project gets its own `~/.ccpod/state/<name>/<projectHash>/` directory, preventing cross-project state leakage. Only meaningful with `state: persistent`. See [State Persistence](../features/state.md) for details.
+
 ### `plugins`
 
 A list of Claude Code plugin names to install on first run. ccpod passes them to the container entrypoint, which delta-installs only the ones not already present — subsequent runs are fast.

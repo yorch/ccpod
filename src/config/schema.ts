@@ -119,6 +119,7 @@ export const profileConfigSchema = z.object({
     })
     .default({ agentForward: true, mountSshDir: false }),
   state: z.enum(['ephemeral', 'persistent']).default('ephemeral'),
+  stateIsolation: z.enum(['per-profile', 'per-project']).default('per-profile'),
 });
 
 export const projectConfigSchema = z.object({

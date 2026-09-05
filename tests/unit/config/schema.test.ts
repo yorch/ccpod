@@ -19,9 +19,28 @@ describe('profileConfigSchema', () => {
       name: 'test',
     });
     expect(result.state).toBe('ephemeral');
+    expect(result.stateIsolation).toBe('per-profile');
     expect(result.ssh.agentForward).toBe(true);
     expect(result.network.policy).toBe('full');
     expect(result.ports.autoDetectMcp).toBe(true);
+  });
+
+  it('accepts stateIsolation: per-project', () => {
+    const result = profileConfigSchema.parse({
+      config: { source: 'local' },
+      name: 'test',
+      stateIsolation: 'per-project',
+    });
+    expect(result.stateIsolation).toBe('per-project');
+  });
+
+  it('rejects invalid stateIsolation value', () => {
+    const result = profileConfigSchema.safeParse({
+      config: { source: 'local' },
+      name: 'test',
+      stateIsolation: 'per-namespace',
+    });
+    expect(result.success).toBe(false);
   });
 
   it('rejects unknown source', () => {

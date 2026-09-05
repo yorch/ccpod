@@ -61,8 +61,18 @@ export function getCredentialsDir(profileName: string): string {
   return dir;
 }
 
-export function getStateDir(profileName: string): string {
-  const dir = join(baseDir(), 'state', profileName);
+const PROJECT_HASH_RE = /^[a-f0-9]{16}$/;
+
+export function getStateDir(profileName: string, projectHash?: string): string {
+  if (projectHash !== undefined && !PROJECT_HASH_RE.test(projectHash)) {
+    throw new Error(
+      `Invalid project hash: '${projectHash}'. Expected 16 hex characters.`,
+    );
+  }
+  const dir =
+    projectHash !== undefined
+      ? join(baseDir(), 'state', profileName, projectHash)
+      : join(baseDir(), 'state', profileName);
   mkdirSync(dir, { mode: 0o700, recursive: true });
   chmodSync(dir, 0o700);
   return dir;

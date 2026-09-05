@@ -62,7 +62,7 @@ bun run preview          # preview built site
 | `src/profile/installer.ts` | `detectSource` + `fetchProfileYaml` — source detection and YAML fetching for profile install |
 | `src/profile/exporter.ts` | `exportProfile` — reads profile.yml and returns base64-encoded string for sharing |
 | `src/cli/validate.ts` | `validateProfileArg` — shared `--profile` name validation for all CLI commands |
-| `src/cli/commands/prune.ts` | `ccpod prune` — remove stopped containers, orphaned networks, unreferenced plugin volumes |
+| `src/cli/commands/prune.ts` | `ccpod prune` — remove stopped containers, orphaned networks, unreferenced plugin volumes, orphaned per-project state dirs |
 | `src/auth/proxy.ts` | `AuthProxy` — HTTP proxy that translates sentinel API key into OAuth bearer token (proxy auth mode) |
 | `src/auth/keychain.ts` | `readHostOAuthCredentials` / `writeHostOAuthCredentials` — read/write host OAuth credentials (macOS Keychain or `~/.claude/.credentials.json`) |
 
@@ -75,7 +75,8 @@ bun run preview          # preview built site
     profile.yml          # profile config
     config/              # Claude config dir (if source: git, cloned here)
   credentials/<name>/    # auth tokens/keys
-  state/<name>/          # persistent state (when state: persistent)
+  state/<name>/          # persistent state (when state: persistent, stateIsolation: per-profile)
+  state/<name>/<hash>/   # per-project state (when state: persistent, stateIsolation: per-project)
 Docker volumes:
   ccpod-plugins-<profile>   # persistent plugin installs
 ```
@@ -115,7 +116,8 @@ Docker volumes:
   - `init:` commands are ignored unless the profile sets `allowProjectInit: true`.
 - **Project `.claude/settings.json`** deep-merges into profile settings (project wins on conflicts) — same trust level as `claudeArgs` passthrough. Only run ccpod against repos you control.
 - **`setupContainer`** (`src/cli/commands/_setup.ts`) throws on error instead of calling `process.exit` — the calling commands (`run`, `shell`) catch and exit. This makes the setup pipeline testable with `await expect(...).rejects.toThrow(...)`. The global `unhandledRejection`/`uncaughtException` handler in `cli/index.ts` remains as a last-resort backstop.
-- **`ccpod prune`** removes stopped ccpod containers, orphaned `ccpod-net-*` networks (no attached endpoints), and unreferenced `ccpod-plugins-<profile>` volumes (no container references and profile no longer exists on disk). Supports `--dry-run`, `--profile`, and `--force`. Volume removal prompts for confirmation unless `--force` is given.
+- **`ccpod prune`** removes stopped ccpod containers, orphaned `ccpod-net-*` networks (no attached endpoints), unreferenced `ccpod-plugins-<profile>` volumes (no container references and profile no longer exists on disk), and orphaned per-project state dirs (no remaining containers with matching project hash). Supports `--dry-run`, `--profile`, and `--force`. Volume and state dir removal prompts for confirmation unless `--force` is given.
+- **`stateIsolation`** (profile config, default `per-profile`) controls whether persistent state is shared across projects using the same profile (`per-profile`: `~/.ccpod/state/<profile>/`) or isolated per project (`per-project`: `~/.ccpod/state/<profile>/<projectHash>/`). When `per-project`, each project gets its own conversation history, todos, and statsig state — preventing cross-project state leakage when using the same profile for trusted and untrusted repos. `ccpod state clear` clears the current project's state by default; `--all` clears all state for the profile. `ccpod prune` cleans orphaned per-project state dirs.
 
 ### Testing
 
