@@ -7,7 +7,10 @@ import { validateProfileArg } from '../../validate.ts';
 
 export default defineCommand({
   args: { name: { description: 'Profile name', type: 'positional' } },
-  meta: { description: "Force-sync a profile's config source" },
+  meta: {
+    description: "Force-sync a profile's config source",
+    name: 'update',
+  },
   async run({ args }) {
     if (!args.name) {
       console.error('Profile name required');

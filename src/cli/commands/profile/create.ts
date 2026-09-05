@@ -4,7 +4,7 @@ import { validateProfileArg } from '../../validate.ts';
 
 export default defineCommand({
   args: { name: { description: 'Profile name', type: 'positional' } },
-  meta: { description: 'Create a new profile' },
+  meta: { description: 'Create a new profile', name: 'create' },
   async run({ args }) {
     if (!args.name) {
       console.error('Profile name required');

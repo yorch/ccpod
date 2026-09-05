@@ -23,6 +23,7 @@ export default defineCommand({
   },
   meta: {
     description: 'Stop and remove ccpod containers for the current project',
+    name: 'down',
   },
   async run({ args }) {
     const currentProjectHash = computeProjectHash(process.cwd());

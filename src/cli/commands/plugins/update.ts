@@ -20,6 +20,7 @@ export default defineCommand({
   },
   meta: {
     description: 'Reset the plugins volume (forces reinstall on next run)',
+    name: 'update',
   },
   async run({ args }) {
     validateProfileArg(args.profile);

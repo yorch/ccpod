@@ -10,7 +10,10 @@ import {
 import { VERSION } from '../../version.ts';
 
 export default defineCommand({
-  meta: { description: 'Update ccpod to the latest release' },
+  meta: {
+    description: 'Update ccpod to the latest release',
+    name: 'update',
+  },
   async run() {
     const assetName = getAssetName();
     if (!assetName) {

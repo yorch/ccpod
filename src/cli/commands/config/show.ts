@@ -22,6 +22,7 @@ export default defineCommand({
   },
   meta: {
     description: 'Show effective merged config for the current directory',
+    name: 'show',
   },
   run({ args }) {
     const cwd = process.cwd();

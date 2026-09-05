@@ -48,7 +48,10 @@ export default defineCommand({
     },
     profile: { description: 'Profile name', type: 'string' },
   },
-  meta: { description: 'Clear persistent state for a profile' },
+  meta: {
+    description: 'Clear persistent state for a profile',
+    name: 'clear',
+  },
   async run({ args }) {
     validateProfileArg(args.profile);
     const projectConfig = loadProjectConfig(process.cwd());

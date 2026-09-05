@@ -17,7 +17,10 @@ export default defineCommand({
     },
     profile: { description: 'Profile name', type: 'string' },
   },
-  meta: { description: 'Pull the Docker image for a profile' },
+  meta: {
+    description: 'Pull the Docker image for a profile',
+    name: 'pull',
+  },
   async run({ args }) {
     validateProfileArg(args.profile);
     const projectConfig = loadProjectConfig(process.cwd());

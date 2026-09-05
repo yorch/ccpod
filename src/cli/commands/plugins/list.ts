@@ -16,7 +16,10 @@ export default defineCommand({
       type: 'string',
     },
   },
-  meta: { description: "List plugins installed in a profile's volume" },
+  meta: {
+    description: "List plugins installed in a profile's volume",
+    name: 'list',
+  },
   async run({ args }) {
     validateProfileArg(args.profile);
     const projectConfig = loadProjectConfig(process.cwd());

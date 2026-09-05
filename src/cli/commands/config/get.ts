@@ -12,7 +12,10 @@ export default defineCommand({
       type: 'positional',
     },
   },
-  meta: { description: 'Get a global ccpod config value' },
+  meta: {
+    description: 'Get a global ccpod config value',
+    name: 'get',
+  },
   run({ args }) {
     const key = args.key as string;
 

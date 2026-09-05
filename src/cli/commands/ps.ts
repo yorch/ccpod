@@ -28,7 +28,7 @@ export default defineCommand({
       type: 'boolean',
     },
   },
-  meta: { description: 'List ccpod containers' },
+  meta: { description: 'List ccpod containers', name: 'ps' },
   async run({ args }) {
     const filterArgs = args.all ? ['-a'] : [];
     const { exitCode, stderr, stdout } = await dockerExec([

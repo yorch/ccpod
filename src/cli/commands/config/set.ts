@@ -24,7 +24,10 @@ export default defineCommand({
     },
     value: { description: 'Value to set', required: true, type: 'positional' },
   },
-  meta: { description: 'Set a global ccpod config value' },
+  meta: {
+    description: 'Set a global ccpod config value',
+    name: 'set',
+  },
   run({ args }) {
     const key = args.key as string;
     const rawValue = args.value as string;

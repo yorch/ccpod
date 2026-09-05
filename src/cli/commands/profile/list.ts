@@ -5,7 +5,7 @@ import { getLastSync } from '../../../profile/lock.ts';
 import { getProfileDir, listProfiles } from '../../../profile/manager.ts';
 
 export default defineCommand({
-  meta: { description: 'List all profiles' },
+  meta: { description: 'List all profiles', name: 'list' },
   run() {
     const profiles = listProfiles();
     if (profiles.length === 0) {

@@ -253,6 +253,7 @@ export default defineCommand({
   meta: {
     description:
       'Remove stopped ccpod containers, orphaned networks, and unreferenced plugin volumes',
+    name: 'prune',
   },
   async run({ args }) {
     validateProfileArg(args.profile);

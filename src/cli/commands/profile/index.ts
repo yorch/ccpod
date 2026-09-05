@@ -1,7 +1,7 @@
 import { defineCommand } from 'citty';
 
 export default defineCommand({
-  meta: { description: 'Manage ccpod profiles' },
+  meta: { description: 'Manage ccpod profiles', name: 'profile' },
   subCommands: {
     create: () => import('./create.ts').then((m) => m.default),
     delete: () => import('./delete.ts').then((m) => m.default),

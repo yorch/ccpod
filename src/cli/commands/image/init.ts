@@ -31,6 +31,7 @@ export default defineCommand({
   meta: {
     description:
       'Download a Dockerfile into the profile directory for local customization',
+    name: 'init',
   },
   async run({ args }) {
     validateProfileArg(args.profile);

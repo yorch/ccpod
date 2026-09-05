@@ -35,6 +35,7 @@ export default defineCommand({
   meta: {
     description:
       'Install a profile from a URL, git repo, file, or base64 string',
+    name: 'install',
   },
   async run({ args }) {
     if (!args.source) {

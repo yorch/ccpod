@@ -15,7 +15,10 @@ export default defineCommand({
   args: {
     profile: { description: 'Profile name to validate', type: 'string' },
   },
-  meta: { description: 'Validate profile and project config files' },
+  meta: {
+    description: 'Validate profile and project config files',
+    name: 'validate',
+  },
   run({ args }) {
     const cwd = process.cwd();
     validateProfileArg(args.profile);

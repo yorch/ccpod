@@ -61,6 +61,7 @@ export default defineCommand({
   },
   meta: {
     description: 'Run Claude Code in a container (interactive or headless)',
+    name: 'run',
   },
   async run({ args }) {
     try {

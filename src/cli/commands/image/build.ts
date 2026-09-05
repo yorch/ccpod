@@ -33,7 +33,10 @@ export default defineCommand({
       type: 'string',
     },
   },
-  meta: { description: 'Build a local Docker image for a profile' },
+  meta: {
+    description: 'Build a local Docker image for a profile',
+    name: 'build',
+  },
   async run({ args }) {
     validateProfileArg(args.profile);
     const projectConfig = loadProjectConfig(process.cwd());

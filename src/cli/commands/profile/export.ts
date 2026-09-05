@@ -7,7 +7,10 @@ export default defineCommand({
   args: {
     name: { description: 'Profile name', type: 'positional' },
   },
-  meta: { description: 'Export a profile as a shareable base64 string' },
+  meta: {
+    description: 'Export a profile as a shareable base64 string',
+    name: 'export',
+  },
   run({ args }) {
     if (!args.name) {
       console.error('Profile name required.');

@@ -13,7 +13,7 @@ export default defineCommand({
     },
     name: { description: 'Profile name', type: 'positional' },
   },
-  meta: { description: 'Delete a profile' },
+  meta: { description: 'Delete a profile', name: 'delete' },
   async run({ args }) {
     if (!args.name) {
       console.error('Profile name required.');

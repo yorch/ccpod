@@ -30,6 +30,7 @@ export default defineCommand({
   },
   meta: {
     description: 'Open an interactive shell in the container',
+    name: 'shell',
   },
   async run({ args }) {
     try {

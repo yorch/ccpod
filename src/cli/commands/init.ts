@@ -11,7 +11,10 @@ export default defineCommand({
       type: 'string',
     },
   },
-  meta: { description: 'Interactive first-run setup wizard' },
+  meta: {
+    description: 'Interactive first-run setup wizard',
+    name: 'init',
+  },
   async run({ args }) {
     try {
       validateProfileArg(args.profile);
