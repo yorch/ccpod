@@ -123,6 +123,12 @@ Docker volumes:
 
 Tests live in `tests/unit/` and `tests/integration/`. Unit tests use `bun:test`; `mock.module()` is used for Docker subprocess isolation in container tests.
 
+## Workflow
+
+- **Always work in a dedicated worktree** (e.g. `git worktree add /path/to/ccpod-<branch> -b <branch> origin/main`) unless the user explicitly says otherwise. Never commit directly to `main`.
+- **Open a PR for every change** — no matter how small. Push the branch and use `gh pr create` with a clear title and description. Do not push directly to `main`.
+- Clean up worktrees and local branches after the PR is merged.
+
 ## Commit Checklist
 
 Before every commit:
