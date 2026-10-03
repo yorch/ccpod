@@ -29,7 +29,7 @@ bun run preview          # preview built site
 bun scripts/build-og.mjs # re-render public/og.png (social card) from scripts/og.svg
 ```
 
-SEO notes: the homepage overrides `<title>` via frontmatter `head` (Starlight would otherwise emit `ccpod | ccpod`); site-wide `og:type`, `og:image`, `twitter:image` and the `SoftwareApplication` JSON-LD live in `website/astro.config.mjs`.
+SEO notes: the homepage overrides `<title>` via frontmatter `head` (Starlight would otherwise emit `ccpod | ccpod`); site-wide `og:type`, `og:image`, `twitter:image` and the `SoftwareApplication` JSON-LD live in `website/astro.config.mjs`. "Last updated" dates come from git history (`lastUpdated: true`), so the deploy workflow checks out with `fetch-depth: 0`, and `Footer.astro` must keep rendering Starlight's default footer (it carries the date, edit link, and prev/next). Task-oriented guides live in `website/src/content/docs/guides/`.
 
 ## Architecture
 

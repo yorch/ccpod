@@ -23,6 +23,9 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v6
+        with:
+          # Full history so Starlight's lastUpdated can read per-file git dates
+          fetch-depth: 0
 
       - name: Copy install script to website public dir
         run: cp install.sh website/public/install.sh

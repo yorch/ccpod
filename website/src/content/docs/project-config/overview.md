@@ -8,7 +8,6 @@ A profile is global to your machine. A **project config** lives in a repo and ov
 ## Why use one
 
 - Pin which profile this repo uses (`profile:`).
-- Add domains to a restricted network policy.
 - Expose extra ports.
 - Forward extra env vars.
 - Add sidecar services that only this project needs.
@@ -27,12 +26,6 @@ claudeArgs:
 
 config:
   claudeMd: append             # "append" (default) | "override"
-
-network:
-  policy: restricted
-  allow:
-    - api.github.com
-    - registry.npmjs.org
 
 ports:
   list:
@@ -57,7 +50,7 @@ services:
 | `claudeArgs` | string[] | Extra CLI flags passed to `claude`. Deep: appended after profile args. Override: replaces. |
 | `init` | string[] | Shell commands run in `/workspace` as `node` before Claude starts. Deep: appended after profile commands. Override: replaces. Ignored when profile has `isolation: true`. |
 | `config.claudeMd` | `append` \| `override` | How to combine `CLAUDE.md` files. |
-| `network` | partial network block | Adds to (or replaces) the profile's network config. |
+| `network` | — | Not honored. Network policy is profile-owned; a project `network:` block is ignored with a warning. See [Network Policy](../../features/network/). |
 | `ports` | object | Extra port mappings (`list`, `autoDetectMcp`). |
 | `services` | object | Extra sidecars; merged by key. |
 | `env` | string[] | Extra env entries. Each is `KEY` (forward host var) or `KEY=value` (literal). Unlike profile and `--env`, project entries may **not** use `${VAR}` interpolation — a malicious project repo could otherwise exfiltrate host secrets. See [profile env reference](../../profiles/configuration/#env). |
