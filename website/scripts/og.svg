@@ -1,0 +1,20 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1200 630" width="1200" height="630">
+  <defs>
+    <linearGradient id="bg" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0%" stop-color="#ff5e1a"/>
+      <stop offset="100%" stop-color="#ff9a5c"/>
+    </linearGradient>
+  </defs>
+  <rect width="1200" height="630" fill="#0f1115"/>
+  <g transform="translate(90 120) scale(4)">
+    <rect x="2" y="2" width="60" height="60" rx="14" fill="url(#bg)"/>
+    <g fill="none" stroke="#ffffff" stroke-width="6" stroke-linecap="round">
+      <path d="M 30 24 A 9 9 0 1 0 30 40"/>
+      <path d="M 48 24 A 9 9 0 1 0 48 40"/>
+    </g>
+  </g>
+  <text x="90" y="440" font-family="Helvetica, Arial, sans-serif" font-size="96" font-weight="700" fill="#ffffff">ccpod</text>
+  <text x="90" y="510" font-family="Helvetica, Arial, sans-serif" font-size="40" fill="#c9ccd3">Run Claude Code in Docker with portable,</text>
+  <text x="90" y="560" font-family="Helvetica, Arial, sans-serif" font-size="40" fill="#c9ccd3">versioned profiles.</text>
+  <text x="1110" y="560" text-anchor="end" font-family="Menlo, monospace" font-size="30" fill="#ff9a5c">ccpod.brnby.com</text>
+</svg>
