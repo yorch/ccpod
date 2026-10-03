@@ -27,8 +27,19 @@ export async function runContainer(
     if (!spec.tty) {
       throw new Error(
         `A container for this project is already running (${spec.name}). ` +
-          "Stop it with 'ccpod down' before starting a headless run, or omit " +
-          '--file to attach to the interactive session.',
+          "Stop it with 'ccpod down' before starting a headless run, or run " +
+          'interactively (no prompt or --file) to attach to the session.',
+      );
+    }
+    // In proxy auth mode the container's ANTHROPIC_BASE_URL/key point at the
+    // auth proxy owned by the `ccpod run` process that created it. That proxy
+    // dies with that process, and a proxy started by this run would never be
+    // used by the existing container — reattaching would just hand the user a
+    // session that fails (or dies when the original terminal exits).
+    if (spec.proxyAuth) {
+      throw new Error(
+        `A container for this project is already running (${spec.name}) with a per-run auth proxy that cannot be shared. ` +
+          "Stop it with 'ccpod down' and start again (auth.type: proxy sessions cannot be reattached).",
       );
     }
     console.log(`Reattaching to running container: ${spec.name}`);
@@ -39,15 +50,50 @@ export async function runContainer(
   return deps.dockerSpawn(buildRunArgs(spec), spec.secretEnv);
 }
 
+// Where a shell session goes: `docker exec` into the main (claude) container if
+// it is up, else into a previous shell container, else (target null) a fresh
+// shell container. `state` is the shell container's own lifecycle state.
+async function resolveShellTarget(
+  spec: ContainerSpec,
+  deps: RunnerDeps,
+): Promise<{ state: ContainerLifecycle; target: string | null }> {
+  if (
+    spec.execTarget &&
+    (await containerState(spec.execTarget, deps.dockerExec)) === 'running'
+  ) {
+    return { state: 'not_found', target: spec.execTarget };
+  }
+  const state = await containerState(spec.name, deps.dockerExec);
+  return { state, target: state === 'running' ? spec.name : null };
+}
+
+export async function findRunningShellTarget(
+  spec: ContainerSpec,
+  deps: RunnerDeps = defaultDeps(),
+): Promise<string | null> {
+  return (await resolveShellTarget(spec, deps)).target;
+}
+
 export async function shellContainer(
   spec: ContainerSpec,
   deps: RunnerDeps = defaultDeps(),
 ): Promise<number> {
-  const state = await containerState(spec.name, deps.dockerExec);
-
-  if (state === 'running') {
+  const { state, target } = await resolveShellTarget(spec, deps);
+  if (target) {
     const cmd = spec.cmd ?? ['/bin/bash'];
-    return deps.dockerSpawn(['exec', '-it', spec.name, ...cmd]);
+    // The image's final USER is root (the entrypoint drops to node); exec
+    // bypasses the entrypoint, so drop privileges explicitly or files created
+    // in /workspace end up root-owned.
+    return deps.dockerSpawn([
+      'exec',
+      spec.tty ? '-it' : '-i',
+      '-u',
+      'node',
+      '-e',
+      'HOME=/home/node',
+      target,
+      ...cmd,
+    ]);
   }
 
   await removeForFreshRun(spec.name, state, deps);
@@ -56,17 +102,19 @@ export async function shellContainer(
 
 // Lifecycle status from `docker inspect`. 'not_found' when the container does
 // not exist. All other values map directly to Docker's `.State.Status`.
-export type ContainerLifecycle =
-  | 'created'
-  | 'restarting'
-  | 'running'
-  | 'paused'
-  | 'exited'
-  | 'dead'
-  | 'removing'
-  | 'not_found';
+const CONTAINER_LIFECYCLES = [
+  'created',
+  'restarting',
+  'running',
+  'paused',
+  'exited',
+  'dead',
+  'removing',
+  'not_found',
+] as const;
+export type ContainerLifecycle = (typeof CONTAINER_LIFECYCLES)[number];
 
-export async function containerState(
+async function containerState(
   name: string,
   dockerExecFn: DockerExecFn,
 ): Promise<ContainerLifecycle> {
@@ -79,7 +127,8 @@ export async function containerState(
   if (exitCode !== 0) {
     return 'not_found';
   }
-  return (stdout.trim() || 'not_found') as ContainerLifecycle;
+  const status = stdout.trim();
+  return CONTAINER_LIFECYCLES.find((l) => l === status) ?? 'not_found';
 }
 
 // Clear the way for a fresh `docker run` under this name. `rm -f` handles every

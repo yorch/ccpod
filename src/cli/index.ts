@@ -32,7 +32,9 @@ const main = defineCommand({
   },
   subCommands: {
     config: () => import('./commands/config/index.ts').then((m) => m.default),
+    doctor: () => import('./commands/doctor.ts').then((m) => m.default),
     down: () => import('./commands/down.ts').then((m) => m.default),
+    exec: () => import('./commands/exec.ts').then((m) => m.default),
     image: () => import('./commands/image/index.ts').then((m) => m.default),
     init: () => import('./commands/init.ts').then((m) => m.default),
     plugins: () => import('./commands/plugins/index.ts').then((m) => m.default),

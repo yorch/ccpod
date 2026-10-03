@@ -7,7 +7,13 @@ import {
   mock,
   spyOn,
 } from 'bun:test';
-import { mkdirSync, mkdtempSync, readdirSync, rmSync } from 'node:fs';
+import {
+  mkdirSync,
+  mkdtempSync,
+  readdirSync,
+  rmSync,
+  writeFileSync,
+} from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 
@@ -46,6 +52,19 @@ afterEach(() => {
   rmSync(testDir, { force: true, recursive: true });
 });
 
+// One `docker ps --format` row as produced for listCcpodContainers (tab-separated).
+function psRow(
+  id: string,
+  name: string,
+  state: string,
+  profile: string,
+  project = '',
+): string {
+  return `${[id, name, state, 'img', state, profile, project, ''].join('\t')}\n`;
+}
+
+const MARKER = '.ccpod-project';
+
 // Helper: queue multiple exec results
 function queueResults(...results: ExecResult[]): void {
   execResults = [...results];
@@ -79,7 +98,7 @@ describe('ccpod prune', () => {
       {
         exitCode: 0,
         stderr: '',
-        stdout: 'abc123|ccpod-default-hash|exited|default\n',
+        stdout: psRow('abc123', 'ccpod-default-hash', 'exited', 'default'),
       }, // ps -a
       { exitCode: 0, stderr: '', stdout: '' }, // network ls
       { exitCode: 0, stderr: '', stdout: '' }, // volume ls
@@ -106,7 +125,7 @@ describe('ccpod prune', () => {
       {
         exitCode: 0,
         stderr: '',
-        stdout: 'abc123|ccpod-default-hash|exited|default\n',
+        stdout: psRow('abc123', 'ccpod-default-hash', 'exited', 'default'),
       }, // ps -a
       { exitCode: 0, stderr: '', stdout: '' }, // network ls
       { exitCode: 0, stderr: '', stdout: '' }, // volume ls
@@ -299,6 +318,7 @@ describe('ccpod prune', () => {
     // Create a per-project state dir on disk
     const stateDir = join(testDir, 'state', 'myprof', 'abcdef0123456789');
     mkdirSync(stateDir, { recursive: true });
+    writeFileSync(join(stateDir, MARKER), join(testDir, 'gone-project'));
     // ps -a returns no containers (no active project hashes)
     // volume ls returns empty
     queueResults(
@@ -326,6 +346,7 @@ describe('ccpod prune', () => {
   it('removes orphaned per-project state dirs with --force', async () => {
     const stateDir = join(testDir, 'state', 'myprof', 'abcdef0123456789');
     mkdirSync(stateDir, { recursive: true });
+    writeFileSync(join(stateDir, MARKER), join(testDir, 'gone-project'));
     queueResults(
       { exitCode: 0, stderr: '', stdout: '' }, // ps -a (containers for stale check)
       { exitCode: 0, stderr: '', stdout: '' }, // network ls
@@ -351,6 +372,7 @@ describe('ccpod prune', () => {
   it('does not remove state dirs for projects with active containers', async () => {
     const stateDir = join(testDir, 'state', 'myprof', 'abcdef0123456789');
     mkdirSync(stateDir, { recursive: true });
+    writeFileSync(join(stateDir, MARKER), join(testDir, 'gone-project'));
     // ps -a returns a container with profile|hash matching the state dir
     queueResults(
       { exitCode: 0, stderr: '', stdout: '' }, // ps -a (containers for stale check)
@@ -359,7 +381,13 @@ describe('ccpod prune', () => {
       {
         exitCode: 0,
         stderr: '',
-        stdout: 'myprof|abcdef0123456789\n', // ps -a (state dir check: profile|hash IS active)
+        stdout: psRow(
+          'c1',
+          'ccpod-myprof-x',
+          'exited',
+          'myprof',
+          'abcdef0123456789',
+        ), // ps -a (state dir check: profile+hash IS active)
       },
     );
     const logSpy = spyOn(console, 'log').mockImplementation(() => {});
@@ -380,6 +408,7 @@ describe('ccpod prune', () => {
   it('skips state dir removal if container starts between scan and rm', async () => {
     const stateDir = join(testDir, 'state', 'myprof', 'abcdef0123456789');
     mkdirSync(stateDir, { recursive: true });
+    writeFileSync(join(stateDir, MARKER), join(testDir, 'gone-project'));
     // Initial scan: no active containers. Re-check: container now exists.
     queueResults(
       { exitCode: 0, stderr: '', stdout: '' }, // ps -a (containers for stale check)
@@ -401,6 +430,93 @@ describe('ccpod prune', () => {
       const output = logSpy.mock.calls.map((c) => c[0] as string).join('\n');
       expect(output).toMatch(/skipped/);
       // Dir should still exist
+      expect(readdirSync(stateDir)).toBeDefined();
+    } finally {
+      logSpy.mockRestore();
+    }
+  });
+
+  it('keeps state dirs whose project still exists, even with no containers (regression)', async () => {
+    const stateDir = join(testDir, 'state', 'myprof', 'abcdef0123456789');
+    mkdirSync(stateDir, { recursive: true });
+    // Project dir that still exists on disk.
+    writeFileSync(join(stateDir, MARKER), testDir);
+    queueResults(
+      { exitCode: 0, stderr: '', stdout: '' }, // ps -a (stale containers)
+      { exitCode: 0, stderr: '', stdout: '' }, // network ls
+      { exitCode: 0, stderr: '', stdout: '' }, // volume ls
+      { exitCode: 0, stderr: '', stdout: '' }, // ps -a (state scan)
+    );
+    const logSpy = spyOn(console, 'log').mockImplementation(() => {});
+    try {
+      await pruneCommand.run?.({
+        args: { 'dry-run': false, force: true, profile: undefined },
+        rawArgs: [],
+      } as never);
+      const output = logSpy.mock.calls.map((c) => c[0] as string).join('\n');
+      expect(output).toMatch(/No orphaned state dirs/);
+      expect(readdirSync(stateDir)).toBeDefined();
+    } finally {
+      logSpy.mockRestore();
+    }
+  });
+
+  it('never deletes state dirs that have no project marker', async () => {
+    const stateDir = join(testDir, 'state', 'myprof', 'abcdef0123456789');
+    mkdirSync(stateDir, { recursive: true });
+    queueResults(
+      { exitCode: 0, stderr: '', stdout: '' },
+      { exitCode: 0, stderr: '', stdout: '' },
+      { exitCode: 0, stderr: '', stdout: '' },
+      { exitCode: 0, stderr: '', stdout: '' },
+    );
+    const logSpy = spyOn(console, 'log').mockImplementation(() => {});
+    try {
+      await pruneCommand.run?.({
+        args: { 'dry-run': false, force: true, profile: undefined },
+        rawArgs: [],
+      } as never);
+      const output = logSpy.mock.calls.map((c) => c[0] as string).join('\n');
+      expect(output).toMatch(/Kept 1 state dir/);
+      expect(readdirSync(stateDir)).toBeDefined();
+    } finally {
+      logSpy.mockRestore();
+    }
+  });
+
+  it('skips networks when --profile is given', async () => {
+    queueResults({ exitCode: 0, stderr: '', stdout: '' });
+    const logSpy = spyOn(console, 'log').mockImplementation(() => {});
+    try {
+      await pruneCommand.run?.({
+        args: { 'dry-run': true, force: true, profile: 'myprof' },
+        rawArgs: [],
+      } as never);
+      const netCalls = dockerExecMock.mock.calls.filter(
+        (c) => c[0][0] === 'network',
+      );
+      expect(netCalls.length).toBe(0);
+    } finally {
+      logSpy.mockRestore();
+    }
+  });
+
+  it('keeps state whose project path is missing because its parent is unmounted', async () => {
+    const stateDir = join(testDir, 'state', 'myprof', 'abcdef0123456789');
+    mkdirSync(stateDir, { recursive: true });
+    writeFileSync(join(stateDir, MARKER), '/nonexistent-volume/project');
+    queueResults(
+      { exitCode: 0, stderr: '', stdout: '' },
+      { exitCode: 0, stderr: '', stdout: '' },
+      { exitCode: 0, stderr: '', stdout: '' },
+      { exitCode: 0, stderr: '', stdout: '' },
+    );
+    const logSpy = spyOn(console, 'log').mockImplementation(() => {});
+    try {
+      await pruneCommand.run?.({
+        args: { 'dry-run': false, force: true, profile: undefined },
+        rawArgs: [],
+      } as never);
       expect(readdirSync(stateDir)).toBeDefined();
     } finally {
       logSpy.mockRestore();

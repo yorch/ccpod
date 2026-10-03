@@ -5,8 +5,42 @@ set -e
 # the 'node' user (uid 1000) before exec'ing claude. This satisfies Claude
 # Code's refusal to run --dangerously-skip-permissions as root.
 NODE_HOME=/home/node
+
+# Root-run commands (cp, chown, iptables, gosu, ...) must resolve from a fixed,
+# root-owned PATH. The image PATH starts with node-writable dirs
+# (/home/node/.local/bin, /home/node/.bun/bin); anything running as node —
+# init commands, plugin installs, the agent itself — could plant a fake
+# `iptables` there and have root execute it. USER_PATH is what the node user
+# gets (including any PATH set via profile env).
+USER_PATH="${PATH}"
+PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
+export PATH
+# Resolve gosu once, here, under the root PATH. `PATH=... gosu` / `env PATH=...
+# gosu` would look the binary up using the *new* (node-writable) PATH.
+GOSU="$(command -v gosu)" || { echo "ccpod: gosu not found" >&2; exit 1; }
 CLAUDE_DIR="${CLAUDE_CONFIG_DIR:-${NODE_HOME}/.claude}"
 mkdir -p "${CLAUDE_DIR}"
+
+# 0. Native Linux: run `node` as the host user's uid/gid (CCPOD_HOST_UID/GID)
+# so bind-mounted dirs (project, ~/.ccpod/state) stay owned by the host user
+# instead of being chown-ed to whatever uid 1000 is on the host. usermod also
+# re-owns /home/node. Skipped when unset (macOS) or already matching.
+case "${CCPOD_HOST_UID}:${CCPOD_HOST_GID}" in
+  *[!0-9:]*|:*|*:) ;;  # not numeric / incomplete: leave node as-is
+  *)
+    if [ "${CCPOD_HOST_UID}" != "0" ] && \
+       { [ "${CCPOD_HOST_UID}" != "$(id -u node)" ] || [ "${CCPOD_HOST_GID}" != "$(id -g node)" ]; }; then
+      groupmod -o -g "${CCPOD_HOST_GID}" node 2>/dev/null || true
+      # usermod also chown-s the home dir and exits non-zero if part of it is
+      # a read-only bind mount (e.g. ~/.ssh) even though the id change itself
+      # succeeded, so judge success by the resulting ids, not the exit code.
+      usermod -o -u "${CCPOD_HOST_UID}" -g "${CCPOD_HOST_GID}" node 2>/dev/null || true
+      if [ "$(id -u node)" != "${CCPOD_HOST_UID}" ]; then
+        echo "ccpod: warning: could not remap node to uid ${CCPOD_HOST_UID}" >&2
+      fi
+    fi
+    ;;
+esac
 
 # 1. Seed config (CLAUDE.md, settings.json, skills/, extensions/) — ro source → rw dest
 if [ -d /ccpod/config ]; then
@@ -39,13 +73,17 @@ for dir in projects todos statsig; do
   ln -sf "/ccpod/state/${dir}" "${CLAUDE_DIR}/${dir}"
 done
 
-# Fix ownership so the node user can read/write everything
-chown -R node:node "${CLAUDE_DIR}" "${NODE_HOME}" /ccpod/plugins /ccpod/state /ccpod/credentials 2>/dev/null || true
+# Fix ownership so the node user can read/write everything. /ccpod/credentials
+# is deliberately excluded: only root reads/writes it (cp in above, cp out at
+# exit), and it is a host bind mount — chown-ing it would hand a 0700 host
+# directory of OAuth tokens to another uid. (With step 0, `node` already is the
+# host uid on Linux, so chown-ing the state bind mount is a no-op there.)
+chown -R node:node "${CLAUDE_DIR}" "${NODE_HOME}" /ccpod/plugins /ccpod/state 2>/dev/null || true
 
 # 5. Run user-defined init commands (as node user, in /workspace)
 if [ -f /ccpod/config/post-init.sh ]; then
   echo "ccpod: running init commands..."
-  HOME="${NODE_HOME}" PATH="${PATH}" gosu node sh -c 'cd /workspace && sh /ccpod/config/post-init.sh'
+  HOME="${NODE_HOME}" PATH="${USER_PATH}" "${GOSU}" node sh -c 'cd /workspace && sh /ccpod/config/post-init.sh'
 fi
 
 # 6. Delta-install missing plugins (comma-separated list from env)
@@ -53,7 +91,7 @@ if [ -n "${CCPOD_PLUGINS_TO_INSTALL}" ]; then
   for plugin in $(printf '%s' "${CCPOD_PLUGINS_TO_INSTALL}" | tr ',' '\n'); do
     if [ -n "${plugin}" ] && [ ! -d "${CLAUDE_DIR}/plugins/${plugin}" ]; then
       echo "ccpod: installing plugin: ${plugin}"
-      HOME="${NODE_HOME}" PATH="${PATH}" gosu node claude plugin install "${plugin}" 2>/dev/null || true
+      HOME="${NODE_HOME}" PATH="${USER_PATH}" "${GOSU}" node claude plugin install "${plugin}" 2>/dev/null || true
     fi
   done
 fi
@@ -119,6 +157,25 @@ if [ "${CCPOD_NETWORK_POLICY}" = "restricted" ]; then
     allow_dns "$ns"
   done
 
+  # Proxy auth mode: allow the host-side auth proxy on its single port only,
+  # not the whole host gateway (every host service listening on 0.0.0.0 would
+  # otherwise be reachable). Host and port come from ANTHROPIC_BASE_URL, which
+  # ccpod sets to http://host.docker.internal:<port>.
+  if [ -n "${CCPOD_PROXY_AUTH}" ]; then
+    _hp="${ANTHROPIC_BASE_URL#*://}"
+    _hp="${_hp%%/*}"
+    _proxy_host="${_hp%:*}"
+    _proxy_port="${_hp##*:}"
+    case "${_proxy_port}" in
+      ''|*[!0-9]*) fail_closed "cannot determine auth proxy port from ANTHROPIC_BASE_URL" ;;
+    esac
+    for ip in $(getent hosts "${_proxy_host}" 2>/dev/null | awk '{print $1}'); do
+      _ipt=$(ipt_bin "$ip"); [ -n "$_ipt" ] || continue
+      "$_ipt" -A OUTPUT -p tcp -d "$ip" --dport "${_proxy_port}" -j ACCEPT || \
+        fail_closed "auth proxy rule"
+    done
+  fi
+
   # Allow declared hosts (resolve domains to IPs at startup), dispatching each
   # resolved address to the matching IPv4/IPv6 table.
   for host in $(printf '%s' "${CCPOD_ALLOWED_HOSTS:-}" | tr ',' '\n'); do
@@ -150,10 +207,10 @@ fi
 # Drop to node user. In shell mode exec directly so bash gets TTY process group
 # control (backgrounding prevents tcsetpgrp and causes immediate exit).
 if [ "${CCPOD_SHELL_MODE}" = "1" ]; then
-  exec env HOME="${NODE_HOME}" PATH="${PATH}" gosu node "$@"
+  exec env HOME="${NODE_HOME}" PATH="${USER_PATH}" "${GOSU}" node "$@"
 fi
 
-HOME="${NODE_HOME}" PATH="${PATH}" gosu node "$@" &
+HOME="${NODE_HOME}" PATH="${USER_PATH}" "${GOSU}" node "$@" &
 CHILD_PID=$!
 trap "kill -TERM $CHILD_PID 2>/dev/null" TERM INT HUP
 wait $CHILD_PID || STATUS=$?

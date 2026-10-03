@@ -115,8 +115,20 @@ const PROJECT_ENV_DENYLIST = new Set([
   'HTTPS_PROXY',
   'ALL_PROXY',
   'NO_PROXY',
-  // Code injection into the Node process
+  // Code injection into the Node/Bun process
   'NODE_OPTIONS',
+  'BUN_OPTIONS',
+  // Binary/library hijack: a project-set PATH or HOME would make the root
+  // entrypoint (and, via secretEnv, the host docker CLI) execute binaries or
+  // shell startup files shipped in the cloned repo.
+  'PATH',
+  'HOME',
+  'SHELL',
+  'BASH_ENV',
+  'ENV',
+  'IFS',
+  // Redirects where Claude reads its (trusted) config from
+  'CLAUDE_CONFIG_DIR',
   // TLS-trust weakening (Node + non-Node MCP servers)
   'NODE_EXTRA_CA_CERTS',
   'NODE_TLS_REJECT_UNAUTHORIZED',
@@ -130,14 +142,16 @@ const PROJECT_ENV_DENYLIST = new Set([
 // (e.g. CCPOD_NETWORK_POLICY) are constructed by builder.ts and must never come
 // from a cloned repo — otherwise a project can bypass the profile's network
 // policy or other sandbox controls. DOCKER_* vars (e.g. DOCKER_HOST) can
-// redirect the docker CLI itself to an attacker-controlled daemon. Compared
-// case-insensitively against the upper-cased key name.
-const PROJECT_ENV_PREFIX_DENYLIST = ['CCPOD_', 'DOCKER_'];
+// redirect the docker CLI itself to an attacker-controlled daemon. LD_* /
+// DYLD_* (e.g. LD_PRELOAD) inject shared libraries into whatever process
+// receives them. Compared case-insensitively against the upper-cased key name.
+const PROJECT_ENV_PREFIX_DENYLIST = ['CCPOD_', 'DOCKER_', 'LD_', 'DYLD_'];
 
 export function resolveEnvForwarding(
   profileKeys: string[],
   projectKeys: string[],
   cliOverrides: string[],
+  projectForwardAllowlist: string[] = [],
 ): Record<string, string> {
   const resolved: Record<string, string> = {};
   const warned = new Set<string>();
@@ -172,14 +186,25 @@ export function resolveEnvForwarding(
         const rawValue = entry.slice(eqIdx + 1);
         if (!allowInterpolation && /\$\{[A-Za-z_]/.test(rawValue)) {
           throw new Error(
-            `${source} entry '${name}=…' uses \${VAR} interpolation, which is only allowed in profile or --env entries. Use a literal value or forward the variable bare.`,
+            `${source} entry '${name}=…' uses \${VAR} interpolation, which is only allowed in profile or --env entries. Use a literal value, or have the profile list the variable in allowProjectEnvForward and forward it bare.`,
           );
         }
         resolved[name] = allowInterpolation
           ? interpolateHostEnv(rawValue, { source }, warned)
           : rawValue;
-      } else if (process.env[entry] !== undefined) {
-        resolved[entry] = process.env[entry] ?? '';
+      } else if (
+        !allowInterpolation &&
+        !projectForwardAllowlist.includes(name)
+      ) {
+        // A bare name forwards the host value — the same exfiltration path as
+        // ${VAR}. Untrusted project config may only do it for names the
+        // profile explicitly allows via allowProjectEnvForward.
+        console.warn(
+          `Warning: project .ccpod.yml env entry '${name}' forwards a host variable, ` +
+            `but the profile does not list it in allowProjectEnvForward — ignoring it.`,
+        );
+      } else if (process.env[name] !== undefined) {
+        resolved[name] = process.env[name] ?? '';
       }
     }
   };

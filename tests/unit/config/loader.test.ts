@@ -1,4 +1,4 @@
-import { afterEach, beforeEach, describe, expect, it } from 'bun:test';
+import { afterEach, beforeEach, describe, expect, it, spyOn } from 'bun:test';
 import {
   mkdirSync,
   mkdtempSync,
@@ -26,48 +26,69 @@ afterEach(() => {
 
 describe('loadProfileConfig', () => {
   it('parses a valid profile.yml', () => {
+    const dir = join(tmpDir, 'myprod');
+    mkdirSync(dir);
     writeFileSync(
-      join(tmpDir, 'profile.yml'),
+      join(dir, 'profile.yml'),
       yamlStringify({
         config: { path: '/tmp/cfg', source: 'local' },
         name: 'myprod',
       }),
     );
-    const profile = loadProfileConfig(tmpDir);
+    const profile = loadProfileConfig(dir);
     expect(profile.name).toBe('myprod');
     expect(profile.config.source).toBe('local');
     expect(profile.state).toBe('ephemeral'); // default applied
     expect(profile.ssh.agentForward).toBe(true); // default applied
   });
 
-  it('expands a leading ~ in config.path', () => {
+  // Profile directories are named after the profile (the loader treats the
+  // directory name as the profile's identity).
+  const writeNamedProfile = (name: string, config: object): string => {
+    const dir = join(tmpDir, name);
+    mkdirSync(dir, { recursive: true });
     writeFileSync(
-      join(tmpDir, 'profile.yml'),
-      yamlStringify({
-        config: { path: '~/.my-claude-config', source: 'local' },
-        name: 'tilde',
-      }),
+      join(dir, 'profile.yml'),
+      yamlStringify({ config: { source: 'local', ...config }, name }),
     );
-    expect(loadProfileConfig(tmpDir).config.path).toBe(
+    return dir;
+  };
+
+  it('expands a leading ~ in config.path', () => {
+    const dir = writeNamedProfile('tilde', { path: '~/.my-claude-config' });
+    expect(loadProfileConfig(dir).config.path).toBe(
       join(homedir(), '.my-claude-config'),
     );
   });
 
   it('expands a bare ~ in config.path', () => {
-    writeFileSync(
-      join(tmpDir, 'profile.yml'),
-      yamlStringify({ config: { path: '~', source: 'local' }, name: 'tilde' }),
-    );
-    expect(loadProfileConfig(tmpDir).config.path).toBe(homedir());
+    const dir = writeNamedProfile('tilde', { path: '~' });
+    expect(loadProfileConfig(dir).config.path).toBe(homedir());
   });
 
   it('leaves absolute, relative, and ~user config.path values unchanged', () => {
     for (const path of ['/tmp/cfg', 'rel/cfg', '~other/cfg']) {
-      writeFileSync(
-        join(tmpDir, 'profile.yml'),
-        yamlStringify({ config: { path, source: 'local' }, name: 'p' }),
-      );
-      expect(loadProfileConfig(tmpDir).config.path).toBe(path);
+      const dir = writeNamedProfile('p', { path });
+      expect(loadProfileConfig(dir).config.path).toBe(path);
+    }
+  });
+
+  it('uses the directory name when profile.yml declares a different name', () => {
+    const dir = join(tmpDir, 'work');
+    mkdirSync(dir);
+    writeFileSync(
+      join(dir, 'profile.yml'),
+      yamlStringify({
+        config: { path: '/tmp/cfg', source: 'local' },
+        name: 'default', // copied from another profile, never edited
+      }),
+    );
+    const warn = spyOn(console, 'warn').mockImplementation(() => {});
+    try {
+      expect(loadProfileConfig(dir).name).toBe('work');
+      expect(warn).toHaveBeenCalledTimes(1);
+    } finally {
+      warn.mockRestore();
     }
   });
 

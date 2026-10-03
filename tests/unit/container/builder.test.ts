@@ -122,7 +122,7 @@ describe('buildContainerSpec', () => {
       PROJECT_DIR,
       true,
     );
-    expect(spec.binds.some((b) => b.includes('/.ssh:/root/.ssh:ro'))).toBe(
+    expect(spec.binds.some((b) => b.includes('/.ssh:/home/node/.ssh:ro'))).toBe(
       true,
     );
   });
@@ -356,7 +356,8 @@ describe('buildContainerSpec — proxy auth mode', () => {
     expect(spec.proxyAuth).toBeUndefined();
   });
 
-  it('auto-adds host.docker.internal to allow-list in restricted + proxy mode', () => {
+  it('does not whitelist the whole host gateway in restricted + proxy mode', () => {
+    // The entrypoint allows only the proxy port, derived from ANTHROPIC_BASE_URL.
     const spec = buildContainerSpec(
       makeConfig({
         auth: { type: 'proxy' },
@@ -368,9 +369,46 @@ describe('buildContainerSpec — proxy auth mode', () => {
     const allowedHostsEntry = spec.env.find((e) =>
       e.startsWith('CCPOD_ALLOWED_HOSTS='),
     );
-    expect(allowedHostsEntry).toBeDefined();
-    expect(allowedHostsEntry).toContain('host.docker.internal');
-    expect(allowedHostsEntry).toContain('example.com');
+    expect(allowedHostsEntry).toBe('CCPOD_ALLOWED_HOSTS=example.com');
+    expect(spec.env).toContain('CCPOD_PROXY_AUTH=1');
+  });
+
+  it('injects proxy URL and sentinel key into secretEnv', () => {
+    const spec = buildContainerSpec(
+      makeConfig({ auth: { type: 'proxy' } }),
+      PROJECT_DIR,
+      true,
+      undefined,
+      {
+        proxy: {
+          baseUrl: 'http://host.docker.internal:1234',
+          sentinelKey: 'sk-ant-api03-x',
+        },
+      },
+    );
+    expect(spec.secretEnv.ANTHROPIC_BASE_URL).toBe(
+      'http://host.docker.internal:1234',
+    );
+    expect(spec.secretEnv.ANTHROPIC_API_KEY).toBe('sk-ant-api03-x');
+  });
+
+  it('shell mode uses a distinct name/label, bash cmd and exec target', () => {
+    const main = buildContainerSpec(makeConfig(), PROJECT_DIR, true);
+    const shell = buildContainerSpec(
+      makeConfig(),
+      PROJECT_DIR,
+      true,
+      undefined,
+      {
+        mode: 'shell',
+      },
+    );
+    expect(shell.name).toBe(`${main.name}-shell`);
+    expect(shell.execTarget).toBe(main.name);
+    expect(shell.labels['ccpod.type']).toBe('shell');
+    expect(shell.cmd).toEqual(['/bin/bash']);
+    expect(shell.env).toContain('CCPOD_SHELL_MODE=1');
+    expect(main.env).not.toContain('CCPOD_SHELL_MODE=1');
   });
 
   it('does not add host.docker.internal in restricted + non-proxy mode', () => {
@@ -387,5 +425,41 @@ describe('buildContainerSpec — proxy auth mode', () => {
     );
     expect(allowedHostsEntry).toBeDefined();
     expect(allowedHostsEntry).not.toContain('host.docker.internal');
+  });
+
+  it('keeps every binding when several mappings target one container port', () => {
+    const spec = buildContainerSpec(
+      makeConfig({
+        ports: [
+          { container: 3000, host: 3000 },
+          { container: 3000, host: 4000, hostIp: '127.0.0.1' },
+        ],
+      }),
+      PROJECT_DIR,
+      true,
+    );
+    expect(spec.portBindings['3000/tcp']).toEqual([
+      { HostPort: '3000' },
+      { HostIp: '127.0.0.1', HostPort: '4000' },
+    ]);
+  });
+
+  it('passes the host uid/gid to the entrypoint on Linux only', () => {
+    const original = Object.getOwnPropertyDescriptor(process, 'platform');
+    try {
+      Object.defineProperty(process, 'platform', { value: 'linux' });
+      const linux = buildContainerSpec(makeConfig(), PROJECT_DIR, true);
+      if (process.getuid && process.getuid() !== 0) {
+        expect(linux.env).toContain(`CCPOD_HOST_UID=${process.getuid()}`);
+        expect(linux.env).toContain(`CCPOD_HOST_GID=${process.getgid?.()}`);
+      }
+      Object.defineProperty(process, 'platform', { value: 'darwin' });
+      const mac = buildContainerSpec(makeConfig(), PROJECT_DIR, true);
+      expect(mac.env.some((e) => e.startsWith('CCPOD_HOST_UID='))).toBe(false);
+    } finally {
+      if (original) {
+        Object.defineProperty(process, 'platform', original);
+      }
+    }
   });
 });

@@ -4,44 +4,74 @@ import { loadProfileConfig } from '../../../config/loader.ts';
 import { getLastSync } from '../../../profile/lock.ts';
 import { getProfileDir, listProfiles } from '../../../profile/manager.ts';
 
+interface ProfileRow {
+  description: string;
+  image: string;
+  imageDisplay: string;
+  name: string;
+  source: string;
+  state: string;
+  sync: string;
+  valid: boolean;
+}
+
+function describeProfile(name: string): ProfileRow {
+  const profileDir = getProfileDir(name);
+  try {
+    const cfg = loadProfileConfig(profileDir);
+    const lastSync = getLastSync(profileDir);
+    return {
+      description: cfg.description ?? '',
+      image: cfg.image.use,
+      imageDisplay: cfg.image.use,
+      name,
+      source:
+        cfg.config.source === 'git' ? `git (${cfg.config.sync})` : 'local',
+      state: cfg.state,
+      sync: lastSync ? lastSync.toLocaleDateString() : '-',
+      valid: true,
+    };
+  } catch {
+    return {
+      description: '',
+      image: '[invalid]',
+      imageDisplay: chalk.red('[invalid]'),
+      name,
+      source: '-',
+      state: '-',
+      sync: '-',
+      valid: false,
+    };
+  }
+}
+
 export default defineCommand({
+  args: {
+    json: { default: false, description: 'Output as JSON', type: 'boolean' },
+  },
   meta: { description: 'List all profiles', name: 'list' },
-  run() {
+  run({ args }) {
     const profiles = listProfiles();
+    if (args.json) {
+      // Always a JSON array (empty when there are no profiles) for scripting.
+      console.log(
+        JSON.stringify(
+          profiles.map((n) => {
+            const { imageDisplay: _display, ...row } = describeProfile(n);
+            return row;
+          }),
+          null,
+          2,
+        ),
+      );
+      return;
+    }
     if (profiles.length === 0) {
       console.log('No profiles found. Run `ccpod init` to create one.');
       return;
     }
 
-    const rows = profiles.map((name) => {
-      const profileDir = getProfileDir(name);
-      try {
-        const cfg = loadProfileConfig(profileDir);
-        const lastSync = getLastSync(profileDir);
-        const syncStr = lastSync ? lastSync.toLocaleDateString() : '-';
-        const source =
-          cfg.config.source === 'git' ? `git (${cfg.config.sync})` : 'local';
-        return {
-          description: cfg.description ?? '',
-          image: cfg.image.use,
-          imageDisplay: cfg.image.use,
-          name,
-          source,
-          state: cfg.state,
-          sync: syncStr,
-        };
-      } catch {
-        return {
-          description: '',
-          image: '[invalid]',
-          imageDisplay: chalk.red('[invalid]'),
-          name,
-          source: '-',
-          state: '-',
-          sync: '-',
-        };
-      }
-    });
+    const rows = profiles.map(describeProfile);
 
     const nameW = Math.max(4, ...rows.map((r) => r.name.length));
     const imageW = Math.max(5, ...rows.map((r) => r.image.length));

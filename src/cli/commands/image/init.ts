@@ -2,7 +2,6 @@ import { existsSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import chalk from 'chalk';
 import { defineCommand } from 'citty';
-import { loadProjectConfig } from '../../../config/loader.ts';
 import {
   downloadOfficialDockerfile,
   OFFICIAL_DOCKERFILE_URL,
@@ -10,10 +9,10 @@ import {
 } from '../../../image/downloader.ts';
 import {
   getProfileDir,
-  profileExists,
   updateProfileDockerfile,
 } from '../../../profile/manager.ts';
-import { validateProfileArg } from '../../validate.ts';
+import { rejectExtraPositionals } from '../../args.ts';
+import { resolveProfileName } from '../../profile-arg.ts';
 
 export default defineCommand({
   args: {
@@ -34,14 +33,8 @@ export default defineCommand({
     name: 'init',
   },
   async run({ args }) {
-    validateProfileArg(args.profile);
-    const projectConfig = loadProjectConfig(process.cwd());
-    const profileName = args.profile ?? projectConfig?.profile ?? 'default';
-
-    if (!profileExists(profileName)) {
-      console.error(`Profile '${profileName}' not found.`);
-      process.exit(1);
-    }
+    rejectExtraPositionals(args);
+    const profileName = resolveProfileName(args.profile);
 
     const profileDir = getProfileDir(profileName);
     const destPath = join(profileDir, 'Dockerfile');

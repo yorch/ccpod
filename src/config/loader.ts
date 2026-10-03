@@ -1,6 +1,6 @@
 import { existsSync, lstatSync, readFileSync, realpathSync } from 'node:fs';
 import { homedir } from 'node:os';
-import { dirname, join } from 'node:path';
+import { basename, dirname, join } from 'node:path';
 import { parse as parseYaml } from 'yaml';
 import type { ProfileConfig, ProjectConfig } from '../types/index.ts';
 import { profileConfigSchema, projectConfigSchema } from './schema.ts';
@@ -11,11 +11,23 @@ export function loadProfileConfig(profileDir: string): ProfileConfig {
     throw new Error(`Profile not found: ${profilePath}`);
   }
   const raw = parseYaml(readFileSync(profilePath, 'utf8'));
-  const profile = profileConfigSchema.parse(raw) as ProfileConfig;
+  const profile = profileConfigSchema.parse(raw);
   // config.path is used as a raw filesystem path downstream; without this a
   // `~/...` value is treated as a relative path and silently yields no config.
   if (profile.config.path) {
     profile.config.path = expandTilde(profile.config.path);
+  }
+  // The directory name is the profile's identity everywhere else (lookup,
+  // credentials, state). Container names, labels, the plugins volume and the
+  // state mount are derived from `name`, so a copied profile directory whose
+  // `name:` was never edited would silently share the original's credentials,
+  // state and container. Make the directory name win.
+  const dirName = basename(profileDir);
+  if (profile.name !== dirName) {
+    console.warn(
+      `Warning: ${profilePath} declares name '${profile.name}' but lives in '${dirName}'; using '${dirName}'.`,
+    );
+    profile.name = dirName;
   }
   return profile;
 }
@@ -79,5 +91,5 @@ export function loadProjectConfig(projectDir: string): ProjectConfig | null {
     return null;
   }
   const raw = parseYaml(readFileSync(configPath, 'utf8'));
-  return projectConfigSchema.parse(raw) as ProjectConfig;
+  return projectConfigSchema.parse(raw);
 }

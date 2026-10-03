@@ -109,3 +109,69 @@ describe('ccpod down --profile validation', () => {
     }
   });
 });
+
+describe('ccpod down scoping and failure handling', () => {
+  it('--all --profile X keeps the profile filter', async () => {
+    execResults = [{ exitCode: 0, stderr: '', stdout: '' }];
+    const logSpy = spyOn(console, 'log').mockImplementation(() => {});
+    try {
+      await downCommand.run?.({
+        args: { all: true, profile: 'work' },
+        rawArgs: [],
+      } as never);
+      const psArgs = dockerExecMock.mock.calls[0][0] as string[];
+      expect(psArgs).toContain('label=ccpod.profile=work');
+      // --all does not restrict to the current project
+      expect(psArgs.some((a) => a.startsWith('label=ccpod.project='))).toBe(
+        false,
+      );
+    } finally {
+      logSpy.mockRestore();
+    }
+  });
+
+  it('exits non-zero when docker ps fails instead of reporting nothing running', async () => {
+    execResults = [
+      {
+        exitCode: 1,
+        stderr: 'Cannot connect to the Docker daemon',
+        stdout: '',
+      },
+    ];
+    const exitSpy = spyOn(process, 'exit').mockImplementation((() => {
+      throw new Error('process.exit');
+    }) as never);
+    const errorSpy = spyOn(console, 'error').mockImplementation(() => {});
+    try {
+      await expect(
+        downCommand.run?.({
+          args: { all: false, profile: undefined },
+          rawArgs: [],
+        } as never),
+      ).rejects.toThrow('process.exit');
+      expect(errorSpy.mock.calls[0][0] as string).toMatch(/Cannot connect/);
+    } finally {
+      exitSpy.mockRestore();
+      errorSpy.mockRestore();
+    }
+  });
+
+  it('rejects an unexpected positional argument', async () => {
+    const exitSpy = spyOn(process, 'exit').mockImplementation((() => {
+      throw new Error('process.exit');
+    }) as never);
+    const errorSpy = spyOn(console, 'error').mockImplementation(() => {});
+    try {
+      await expect(
+        downCommand.run?.({
+          args: { _: ['work'], all: false, profile: undefined },
+          rawArgs: [],
+        } as never),
+      ).rejects.toThrow('process.exit');
+      expect(errorSpy.mock.calls[0][0] as string).toMatch(/--profile/);
+    } finally {
+      exitSpy.mockRestore();
+      errorSpy.mockRestore();
+    }
+  });
+});

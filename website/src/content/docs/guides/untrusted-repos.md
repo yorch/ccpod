@@ -97,12 +97,13 @@ A repo's `.ccpod.yml` is treated as untrusted. These profile flags default to `f
 | `allowProjectServices` | The repo starts its own sidecar containers. |
 | `allowProjectInit` | The repo runs its own init commands. |
 | `allowProjectHostMounts` | The repo's sidecars mount host paths. Only matters when `allowProjectServices` is also on. |
+| `allowProjectEnvForward` | A list of host variable names (for example `GITHUB_TOKEN`) the repo may forward into the container by name. Empty by default, so a repo cannot pull your secrets out of your shell. Keep it empty in the sandbox profile. |
 
-The repo can never change the network policy or allow-list, and it cannot set environment variables such as `ANTHROPIC_API_KEY` or `HTTPS_PROXY` that would redirect your credentials.
+The repo can never change the network policy or allow-list. It cannot set environment variables that would redirect your credentials or hijack the container (`ANTHROPIC_API_KEY`, `HTTPS_PROXY`, `PATH`, `LD_PRELOAD`, `NODE_OPTIONS`, and similar), and it cannot use `${VAR}` interpolation to read host variables. Symlinked `.claude/`, `CLAUDE.md` and `.claude/settings.json` in the repo are ignored, so they cannot point at files like `~/.ssh` or `~/.aws/credentials`.
 
 ## 7. Run it explicitly
 
-Select the profile on the command line rather than relying on anything inside the repo:
+Select the profile on the command line rather than relying on anything inside the repo. (If a repo's `.ccpod.yml` names a `profile:`, ccpod asks you to approve it the first time and remembers the answer; `--profile` never prompts and always wins.)
 
 ```sh
 cd path/to/untrusted-repo

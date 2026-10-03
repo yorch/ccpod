@@ -18,6 +18,7 @@ import {
   getProfileDir,
   listProfiles,
   profileExists,
+  resolveProfileDockerfile,
   updateProfileDockerfile,
   updateProfileImage,
 } from '../../../src/profile/manager.ts';
@@ -210,5 +211,22 @@ describe('updateProfileDockerfile', () => {
     );
     expect(content).toContain('use: myimage:latest');
     expect(content).toContain('dockerfile: /path/Dockerfile');
+  });
+});
+
+describe('resolveProfileDockerfile', () => {
+  it('anchors relative paths at the profile dir, not the cwd', () => {
+    expect(resolveProfileDockerfile('Dockerfile', 'work')).toBe(
+      join(testBase, 'profiles', 'work', 'Dockerfile'),
+    );
+  });
+
+  it('expands {{profile_dir}} and keeps absolute paths as-is', () => {
+    expect(
+      resolveProfileDockerfile('{{profile_dir}}/images/Dockerfile', 'work'),
+    ).toBe(join(testBase, 'profiles', 'work', 'images', 'Dockerfile'));
+    expect(resolveProfileDockerfile('/opt/Dockerfile', 'work')).toBe(
+      '/opt/Dockerfile',
+    );
   });
 });

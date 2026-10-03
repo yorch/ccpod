@@ -6,7 +6,13 @@ import { getProfileDir, profileExists } from '../../../profile/manager.ts';
 import { validateProfileArg } from '../../validate.ts';
 
 export default defineCommand({
-  args: { name: { description: 'Profile name', type: 'positional' } },
+  args: {
+    name: {
+      description: 'Profile name',
+      required: true,
+      type: 'positional',
+    },
+  },
   meta: {
     description: "Force-sync a profile's config source",
     name: 'update',

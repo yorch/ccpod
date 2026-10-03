@@ -14,13 +14,10 @@ review. Numbering is left stable (with gaps) so cross-references stay valid.
 
 Highest-leverage open items, in suggested order:
 
-1. **Security hardening** — R11 (CLI profile-name validation).
-2. **Container/runtime correctness** — R12 (image tag case), R13 (port-binding
-   collisions), R14 (`mountSshDir` path), R16 (image build-context), R17
-   (`down --all --profile` filter).
-3. **Config/CLI & auth correctness** — R5 (`run --` passthrough), R7 (updater
+1. **Container/runtime correctness** — R16 (image build-context).
+2. **Config/CLI & auth correctness** — R5 (`run --` passthrough), R7 (updater
    `ETXTBSY`), R18 (config-show masking), R21, R23, R24, R27.
-4. **DRY / maintainability, performance, and test-coverage** backlogs (below).
+3. **DRY / maintainability, performance, and test-coverage** backlogs (below).
 
 > **Addressed:** the trust-boundary trio (**R1–R3**) and dead-`claudeArgs`
 > (**R4**); the container-lifecycle cluster **Must-fix #3 / #7 / #8**, **R6**,
@@ -43,16 +40,11 @@ boundary documented in `AGENTS.md`. The R1–R3 escapes were closed (network is
 profile-owned, project `env` denylists redirect/TLS keys, main-container
 project/`.mcp.json` ports pinned to loopback), and the hardening batch **R8**
 (secrets off the `docker run` cmdline), **R9** (fail-closed restricted network),
-and **R10** (`install.sh` checksum) landed. Remaining items:
-
-- **R11. CLI profile names bypass `NAME_RE`; `profile delete` does recursive
-  deletes on unvalidated joined paths.** `src/profile/manager.ts:42,72-83`
-  (`getProfileDir`/`deleteProfile` raw-`join`), reached from `delete.ts`,
-  `create.ts`, and `--profile` in `run`/`state clear`. Only YAML/export/install
-  paths validate. `ccpod profile delete '../x'` `rmSync(recursive)`s a
-  traversed path (gated only by a `profile.yml` existing there). Self-inflicted
-  but contradicts the "enforced at parse time" invariant. Fix: apply `NAME_RE`
-  in `getProfileDir`/`deleteProfile` or at each CLI entry.
+and **R10** (`install.sh` checksum) landed. The 2026-10 review's security
+batch (project env hijack vars, symlinked project assets, `post-init.sh`
+bypass, project-selected profiles, entrypoint root `PATH`, proxy hardening,
+profile-relative `image.dockerfile`) is closed — see "Security invariants" in
+`AGENTS.md`. No open security items.
 
 ---
 
@@ -67,10 +59,6 @@ and **R10** (`install.sh` checksum) landed. Remaining items:
   they double-apply: `run -- --verbose` silently goes headless (`tty=false`)
   and passes `--verbose` twice; `run -- --model opus` hard-errors on the bare
   `opus`. Fix: derive the prompt from pre-`--` argv only.
-
-- **R17.** `ccpod down --all --profile X` silently ignores `--profile` and
-  removes every ccpod container (`src/cli/commands/down.ts:33` — filter only
-  added when `!args.all`). Warn or honor the filter.
 
 - **R18.** `config show` masks only env keys containing "key"/"token"
   (`src/cli/commands/config/show.ts:49`); `PASSWORD`/`SECRET`/`CREDENTIALS`
@@ -108,18 +96,6 @@ and `syncGitConfig` clones through a temp dir + atomic rename. **Must-fix #9**
 parent and is atomically renamed into place — and **M5** (`removeSidecarNetwork`
 now surfaces its exit code). Remaining open items:
 
-- **R13. `portBindings` keyed by container port drops colliding mappings.**
-  `src/container/builder.ts:63-66`. Colliding container ports overwrite
-  silently, and `.mcp.json` ports (appended last, `_setup.ts:185`) can override
-  a profile's declared host-port mapping. Fix: key by host:container pair, or
-  detect collisions.
-
-- **R14. `ssh.mountSshDir` is non-functional.** `src/container/builder.ts:50`
-  mounts host `~/.ssh` at `/root/.ssh:ro`, but `entrypoint.sh` drops to the
-  `node` user (`HOME=/home/node`), which reads `/home/node/.ssh` and can't
-  traverse root-owned `/root` → git-over-SSH fails publickey. Fix: mount at
-  `/home/node/.ssh` (and chown/relax perms appropriately).
-
 - **R16. `image build` and `run` build the same tag from different contexts.**
   `src/cli/commands/image/build.ts:66-68` uses `cwd`; `_setup.ts:163-167` uses
   `dirname(dockerfileAbs)`. `computeLocalImageTag` hashes Dockerfile content
@@ -127,12 +103,6 @@ now surfaces its exit code). Remaining open items:
   divergently-built image; editing `entrypoint.sh` also never triggers a
   rebuild on `run`. Fix: unify the context; include context-file digests in
   the tag.
-
-- **R12. Uppercase profile name breaks image build.** `src/image/hash.ts:16` +
-  `src/config/schema.ts` name regex allows `A-Z`, but `computeLocalImageTag`
-  embeds the name verbatim in a Docker tag, which must be lowercase →
-  `ccpod run`/`image build` fail with "repository name must be lowercase".
-  Fix: `.toLowerCase()` in the tag (hash already disambiguates).
 
 ### Auth / update
 

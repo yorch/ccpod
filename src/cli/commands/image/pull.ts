@@ -1,12 +1,10 @@
 import chalk from 'chalk';
 import { defineCommand } from 'citty';
-import {
-  loadProfileConfig,
-  loadProjectConfig,
-} from '../../../config/loader.ts';
+import { loadProfileConfig } from '../../../config/loader.ts';
 import { ensureImage } from '../../../image/manager.ts';
-import { getProfileDir, profileExists } from '../../../profile/manager.ts';
-import { validateProfileArg } from '../../validate.ts';
+import { getProfileDir } from '../../../profile/manager.ts';
+import { rejectExtraPositionals } from '../../args.ts';
+import { resolveProfileName } from '../../profile-arg.ts';
 
 export default defineCommand({
   args: {
@@ -22,14 +20,8 @@ export default defineCommand({
     name: 'pull',
   },
   async run({ args }) {
-    validateProfileArg(args.profile);
-    const projectConfig = loadProjectConfig(process.cwd());
-    const profileName = args.profile ?? projectConfig?.profile ?? 'default';
-
-    if (!profileExists(profileName)) {
-      console.error(`Profile '${profileName}' not found.`);
-      process.exit(1);
-    }
+    rejectExtraPositionals(args);
+    const profileName = resolveProfileName(args.profile);
 
     const profile = loadProfileConfig(getProfileDir(profileName));
     const image = profile.image.use;

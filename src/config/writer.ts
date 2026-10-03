@@ -9,6 +9,7 @@ import {
   readdirSync,
   renameSync,
   rmSync,
+  utimesSync,
   writeFileSync,
 } from 'node:fs';
 import { tmpdir } from 'node:os';
@@ -35,6 +36,26 @@ function secureParentDir(): string {
   // Enforce 0700 even if the directory pre-existed with looser permissions.
   chmodSync(dir, 0o700);
   return dir;
+}
+
+// True only for a real directory (not a symlink to one). The project's .claude/
+// is untrusted: a committed `.claude -> ~/.ssh` symlink would otherwise have
+// every file under the target copied into the container's config dir.
+export function isRegularDir(path: string, warn = true): boolean {
+  try {
+    const stat = lstatSync(path);
+    if (stat.isSymbolicLink()) {
+      if (warn) {
+        console.warn(
+          `Warning: ${path} is a symlink — ignoring it (project .claude/ must be a real directory).`,
+        );
+      }
+      return false;
+    }
+    return stat.isDirectory();
+  } catch {
+    return false;
+  }
 }
 
 function hashDir(dir: string, hash: ReturnType<typeof createHash>): void {
@@ -77,12 +98,18 @@ function copyTreeSkipSymlinks(src: string, dest: string): void {
   }
 }
 
+const RESERVED_ASSETS = new Set(['CLAUDE.md', 'settings.json', 'post-init.sh']);
+
 function copyAssets(srcDir: string, destDir: string): void {
   if (!existsSync(srcDir)) {
     return;
   }
   for (const entry of readdirSync(srcDir)) {
-    if (entry === 'CLAUDE.md' || entry === 'settings.json') {
+    // CLAUDE.md and settings.json are merged and written by ccpod itself;
+    // post-init.sh is generated from the (trust-gated) init commands. A copied
+    // post-init.sh would let an untrusted project run commands regardless of
+    // allowProjectInit.
+    if (RESERVED_ASSETS.has(entry)) {
       continue;
     }
     const src = join(srcDir, entry);
@@ -104,7 +131,10 @@ export function writeMergedConfig(
     claudeMd: mergedClaudeMd,
     initCommands,
     profileDirHash: hashProfileDir(profileConfigDir),
-    projectDirHash: projectClaudeDir ? hashProfileDir(projectClaudeDir) : '',
+    projectDirHash:
+      projectClaudeDir && isRegularDir(projectClaudeDir, false)
+        ? hashProfileDir(projectClaudeDir)
+        : '',
     settings: mergedSettings,
   });
   const hash = createHash('sha256').update(content).digest('hex').slice(0, 16);
@@ -114,14 +144,17 @@ export function writeMergedConfig(
   // The private per-uid parent already blocks cross-user pre-seeding; still
   // require the deterministic path itself to be a regular directory owned by us.
   if (validateOwnedDir(outDir)) {
+    // Refresh the mtime so a config in regular use is never swept as stale.
+    touch(outDir);
     return outDir;
   }
+  sweepStaleDirs(parentDir);
 
   const tmpOut = mkdtempSync(join(parentDir, 'tmp-'));
   try {
     // Profile assets first; project assets second so project wins on conflict
     copyAssets(profileConfigDir, tmpOut);
-    if (projectClaudeDir) {
+    if (projectClaudeDir && isRegularDir(projectClaudeDir, false)) {
       copyAssets(projectClaudeDir, tmpOut);
     }
 
@@ -155,6 +188,45 @@ export function writeMergedConfig(
   }
 
   return outDir;
+}
+
+const STALE_CONFIG_MS = 14 * 24 * 60 * 60 * 1000;
+const STALE_TMP_MS = 24 * 60 * 60 * 1000;
+
+function touch(path: string): void {
+  try {
+    const now = new Date();
+    utimesSync(path, now, now);
+  } catch {
+    // best effort
+  }
+}
+
+// Every change to settings or an asset mtime yields a new content-addressed
+// `ccpod-<hash>` dir, so old ones pile up. Remove ones unused for two weeks
+// (a reused dir is touched on every run) and abandoned `tmp-*` build dirs.
+// A running container keeps its bind mount alive even if the path is removed.
+function sweepStaleDirs(parentDir: string): void {
+  const now = Date.now();
+  try {
+    for (const entry of readdirSync(parentDir)) {
+      const maxAge = entry.startsWith('ccpod-')
+        ? STALE_CONFIG_MS
+        : entry.startsWith('tmp-')
+          ? STALE_TMP_MS
+          : null;
+      if (maxAge === null) {
+        continue;
+      }
+      const path = join(parentDir, entry);
+      const stat = lstatSync(path);
+      if (stat.isDirectory() && now - stat.mtimeMs > maxAge) {
+        rmSync(path, { force: true, recursive: true });
+      }
+    }
+  } catch {
+    // best effort
+  }
 }
 
 // Single-syscall existence + ownership check. Returns true if outDir is a

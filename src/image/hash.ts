@@ -13,5 +13,6 @@ export function computeLocalImageTag(
   dockerfile: string,
   cwd: string,
 ): string {
-  return `ccpod-local-${profileName}-${computeDockerfileHash(dockerfile, cwd)}:latest`;
+  // Docker repository names must be lowercase; profile names may not be.
+  return `ccpod-local-${profileName.toLowerCase()}-${computeDockerfileHash(dockerfile, cwd)}:latest`;
 }

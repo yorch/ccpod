@@ -1,11 +1,13 @@
-import { isAbsolute, normalize } from 'node:path';
+import { readFileSync } from 'node:fs';
+import { isAbsolute, join, normalize } from 'node:path';
 import chalk from 'chalk';
 import { defineCommand } from 'citty';
-import { ZodError } from 'zod';
-import { AuthProxy, generateSentinelApiKey } from '../../auth/proxy.ts';
 import { buildContainerSpec } from '../../container/builder.ts';
 import { runContainer } from '../../container/runner.ts';
 import { dockerExec } from '../../runtime/docker.ts';
+import { repeatedFlag } from '../args.ts';
+import { withAuthProxy } from '../auth-proxy.ts';
+import { exitWithError } from '../errors.ts';
 import { setupContainer } from './_setup.ts';
 
 function installSignalForwarding(containerName: string): () => void {
@@ -27,18 +29,40 @@ function installSignalForwarding(containerName: string): () => void {
   return detach;
 }
 
+const MAX_PROMPT_BYTES = 100_000;
+
+function readPromptFile(absPath: string, shown: string): string {
+  let text: string;
+  try {
+    text = readFileSync(absPath, 'utf8');
+  } catch (err) {
+    throw new Error(
+      `Cannot read --file '${shown}': ${err instanceof Error ? err.message : String(err)}`,
+    );
+  }
+  if (text.trim() === '') {
+    throw new Error(`--file '${shown}' is empty`);
+  }
+  // The prompt travels as a command-line argument to `docker run` (and so is
+  // visible in `ps` / `docker inspect`); Linux caps a single argument at 128 KiB.
+  if (Buffer.byteLength(text) > MAX_PROMPT_BYTES) {
+    throw new Error(
+      `--file '${shown}' is too large (${Buffer.byteLength(text)} bytes; max ${MAX_PROMPT_BYTES}). Put long instructions in CLAUDE.md or the project and keep the prompt short.`,
+    );
+  }
+  return text;
+}
+
 export default defineCommand({
   args: {
     env: {
-      array: true,
       description: 'Pass/override env var (KEY or KEY=VALUE)',
       type: 'string',
     },
-    file: { description: 'Headless mode: path to prompt file', type: 'string' },
-    'no-state': {
-      default: false,
-      description: 'Force ephemeral state for this run',
-      type: 'boolean',
+    file: {
+      description:
+        'Headless mode: read the prompt from this file (relative to the project)',
+      type: 'string',
     },
     profile: {
       description: 'Profile name (overrides .ccpod.yml)',
@@ -58,12 +82,20 @@ export default defineCommand({
       description: 'Resume a previous Claude session by ID',
       type: 'string',
     },
+    // Declared as `state` (default true) because citty parses `--no-<name>` as
+    // `<name>: false` — a literal `no-state` arg would never be set by it.
+    state: {
+      default: true,
+      description:
+        'Persist state per the profile; pass --no-state to force ephemeral state for this run',
+      type: 'boolean',
+    },
   },
   meta: {
     description: 'Run Claude Code in a container (interactive or headless)',
     name: 'run',
   },
-  async run({ args }) {
+  async run({ args, rawArgs }) {
     try {
       const cwd = process.cwd();
       console.log(chalk.dim('Loading config...'));
@@ -99,68 +131,72 @@ export default defineCommand({
         process.exit(1);
       }
 
-      const envArgs = ([] as string[]).concat(args.env ?? []);
+      const envArgs = repeatedFlag(rawArgs, 'env');
+      const promptText = fileArg
+        ? readPromptFile(join(cwd, fileArg), fileArg)
+        : promptArg;
+      const headless = promptText !== undefined;
       const claudeArgs = [
         ...(args.resume ? ['--resume', args.resume] : []),
-        ...(fileArg ? ['--file', `/workspace/${fileArg}`] : []),
         ...passthroughArgs,
-        ...(promptArg ? [promptArg] : []),
+        // Headless: `-p` runs a single non-interactive turn and prints the
+        // result; the prompt is the argument that follows.
+        ...(headless ? ['-p', promptText] : []),
       ];
 
       const { config, networkName } = await setupContainer(
         {
           claudeArgs,
           envArgs,
-          noState: args['no-state'],
+          noState: args.state === false,
           profile: args.profile,
           rebuild: args.rebuild,
-          requireAuth: !!(fileArg || promptArg),
+          requireAuth: headless,
         },
         cwd,
       );
 
-      const tty = !fileArg && !promptArg;
-      const spec = buildContainerSpec(config, cwd, tty, networkName);
-
-      // Proxy auth mode: start a local HTTP proxy that translates the
-      // sentinel API key into a real OAuth bearer token. The proxy holds
-      // the only OAuth session and serializes refreshes, eliminating the
-      // refresh-token rotation race between concurrent containers.
-      let authProxy: AuthProxy | null = null;
-      if (config.auth.type === 'proxy') {
-        console.log(chalk.dim('Starting auth proxy...'));
-        const sentinelKey = generateSentinelApiKey();
-        authProxy = new AuthProxy({ sentinelKey });
-        await authProxy.start();
-        // Inject the proxy URL and the sentinel API key into the container's
-        // secret env. Claude runs in API-key mode (no refresh token, no
-        // .credentials.json) and sends requests to the proxy, which validates
-        // the sentinel and replaces it with a real OAuth bearer token.
-        // Use host.docker.internal directly (not the proxy's bind address)
-        // so the container reaches the host regardless of whether the proxy
-        // is bound to 127.0.0.1 (macOS) or 0.0.0.0 (Linux).
-        spec.secretEnv.ANTHROPIC_BASE_URL = `http://host.docker.internal:${authProxy.resolvedPort}`;
-        spec.secretEnv.ANTHROPIC_API_KEY = sentinelKey;
-        console.log(
-          chalk.dim(`  Auth proxy listening on ${authProxy.address}`),
-        );
-      }
-
-      console.log(chalk.dim('Starting container...'));
+      const tty = !headless;
 
       // In TTY mode docker -it forwards Ctrl+C to the container natively;
       // only headless mode needs ccpod-side signal forwarding to stop the
       // container so it is not orphaned.
-      const detach = tty ? () => {} : installSignalForwarding(spec.name);
-      let exitCode: number;
-      try {
-        exitCode = await runContainer(spec);
-      } finally {
-        detach();
-        if (authProxy) {
-          await authProxy.stop();
+      const { exitCode, spec } = await withAuthProxy(
+        config,
+        true,
+        async (proxy) => {
+          const spec = buildContainerSpec(config, cwd, tty, networkName, {
+            ...(proxy ? { proxy } : {}),
+          });
+          console.log(chalk.dim('Starting container...'));
+          const detach = tty ? () => {} : installSignalForwarding(spec.name);
+          try {
+            return { exitCode: await runContainer(spec), spec };
+          } finally {
+            detach();
+          }
+        },
+      );
+
+      // Proxy mode: the proxy just stopped. If the user detached
+      // (Ctrl-P Ctrl-Q) rather than exiting, the container is still running
+      // but can no longer reach the API.
+      if (config.auth.type === 'proxy' && tty) {
+        const { stdout } = await dockerExec([
+          'inspect',
+          '--format',
+          '{{.State.Running}}',
+          spec.name,
+        ]);
+        if (stdout.trim() === 'true') {
+          console.warn(
+            chalk.yellow(
+              `\nWarning: container ${spec.name} is still running, but its auth proxy has stopped, so API calls from it will fail. Run 'ccpod down' to stop it.`,
+            ),
+          );
         }
       }
+
       if (tty && !args.resume) {
         const profileFlag = args.profile ? ` --profile ${args.profile}` : '';
         console.log(
@@ -171,18 +207,7 @@ export default defineCommand({
       }
       process.exit(exitCode);
     } catch (err) {
-      if (err instanceof ZodError) {
-        const lines = err.issues.map(
-          (i) => `  ${i.path.join('.') || '(root)'}: ${i.message}`,
-        );
-        console.error(
-          `${chalk.red('error:')} Config validation failed:\n${lines.join('\n')}`,
-        );
-      } else {
-        const msg = err instanceof Error ? err.message : String(err);
-        console.error(`${chalk.red('error:')} ${msg}`);
-      }
-      process.exit(1);
+      exitWithError(err);
     }
   },
 });

@@ -1,4 +1,4 @@
-import { existsSync, renameSync, rmSync } from 'node:fs';
+import { existsSync, mkdirSync, renameSync, rmSync } from 'node:fs';
 import chalk from 'chalk';
 import simpleGit from 'simple-git';
 import type { SyncStrategy } from '../types/index.ts';
@@ -24,7 +24,18 @@ export async function syncGitConfig(
     rmTmp();
     const git = simpleGit();
     try {
-      await git.clone(repo, tmpDir, ['--depth', '1', '--branch', ref]);
+      try {
+        await git.clone(repo, tmpDir, ['--depth', '1', '--branch', ref]);
+      } catch (cloneErr) {
+        // `--branch` only accepts branch and tag names. A commit SHA (which
+        // `config.ref` allows) needs init + fetch-by-ref instead.
+        rmTmp();
+        try {
+          await cloneAtRef(repo, tmpDir, ref);
+        } catch {
+          throw cloneErr;
+        }
+      }
     } catch (err) {
       rmTmp();
       throw err;
@@ -56,7 +67,32 @@ export async function syncGitConfig(
   // `origin/<ref>` remote-tracking ref and `reset --hard origin/<ref>` fails
   // with "unknown revision". `fetch` always updates FETCH_HEAD to the fetched
   // ref, which works for branches, tags, and SHAs alike.
-  await git.fetch('origin', ref, { '--depth': '1' });
-  await git.reset(['--hard', 'FETCH_HEAD']);
+  try {
+    await git.fetch('origin', ref, { '--depth': '1' });
+    await git.reset(['--hard', 'FETCH_HEAD']);
+  } catch (err) {
+    // Offline / remote unreachable: a usable cached config exists, so don't
+    // block the run on a refresh. No sync lock is written, so the next run
+    // tries again.
+    console.warn(
+      chalk.yellow(
+        `Warning: could not sync profile config (${err instanceof Error ? err.message : String(err)}); using the cached copy.`,
+      ),
+    );
+    return;
+  }
   writeSyncLock(profileDir);
+}
+
+async function cloneAtRef(
+  repo: string,
+  dir: string,
+  ref: string,
+): Promise<void> {
+  mkdirSync(dir, { recursive: true });
+  const git = simpleGit(dir);
+  await git.init();
+  await git.addRemote('origin', repo);
+  await git.fetch('origin', ref, { '--depth': '1' });
+  await git.checkout(['--detach', 'FETCH_HEAD']);
 }

@@ -1,3 +1,4 @@
+import deepmerge from 'deepmerge';
 import type {
   ProfileConfig,
   ProjectConfig,
@@ -121,23 +122,28 @@ export function mergeConfigs(
   project: ProjectConfig | null,
   overrides: { state?: 'ephemeral' | 'persistent' } = {},
 ): Omit<ResolvedConfig, 'mergedConfigDir'> {
+  // Fields that always come from the profile alone, whatever the project says.
+  const base = {
+    auth: profile.auth,
+    dockerfile: profile.image.dockerfile,
+    env: {},
+    image: profile.image.dockerfile ? 'build' : profile.image.use,
+    network: profile.network,
+    plugins: profile.plugins,
+    profileName: profile.name,
+    ssh: profile.ssh,
+    state: overrides.state ?? profile.state,
+    stateIsolation: profile.stateIsolation,
+  };
+
   if (profile.isolation) {
     return {
-      auth: profile.auth,
+      ...base,
       autoDetectMcp: profile.ports.autoDetectMcp,
       claudeArgs: profile.claudeArgs,
-      dockerfile: profile.image.dockerfile,
-      env: {},
-      image: profile.image.dockerfile ? 'build' : profile.image.use,
       init: profile.init,
-      network: profile.network,
-      plugins: profile.plugins,
       ports: parsePorts(profile.ports.list ?? []),
-      profileName: profile.name,
       services: profile.services,
-      ssh: profile.ssh,
-      state: overrides.state ?? profile.state,
-      stateIsolation: profile.stateIsolation,
     };
   }
 
@@ -153,7 +159,6 @@ export function mergeConfigs(
         'policy is controlled by the profile only — ignoring them.',
     );
   }
-  const network = profile.network;
 
   const autoDetectMcp =
     project?.ports?.autoDetectMcp ?? profile.ports.autoDetectMcp;
@@ -208,23 +213,7 @@ export function mergeConfigs(
   const init =
     strategy === 'override' ? projectInit : [...profile.init, ...projectInit];
 
-  return {
-    auth: profile.auth,
-    autoDetectMcp,
-    claudeArgs,
-    dockerfile: profile.image.dockerfile,
-    env: {},
-    image: profile.image.dockerfile ? 'build' : profile.image.use,
-    init,
-    network,
-    plugins: profile.plugins,
-    ports,
-    profileName: profile.name,
-    services,
-    ssh: profile.ssh,
-    state: overrides.state ?? profile.state,
-    stateIsolation: profile.stateIsolation,
-  };
+  return { ...base, autoDetectMcp, claudeArgs, init, ports, services };
 }
 
 function parsePorts(
@@ -232,17 +221,19 @@ function parsePorts(
   hostIp?: string,
 ): Array<{ host: number; container: number; hostIp?: string }> {
   return list.map((entry) => {
-    const [hostStr = entry, containerStr = entry] = entry.split(':');
+    const parts = entry.split(':');
+    if (parts.length > 2) {
+      throw new Error(
+        `Invalid port mapping "${entry}": expected "host:container" (or a single port)`,
+      );
+    }
+    const [hostStr = entry, containerStr = hostStr] = parts;
     const host = Number(hostStr);
     const container = Number(containerStr);
-    if (
-      !Number.isInteger(host) ||
-      host <= 0 ||
-      !Number.isInteger(container) ||
-      container <= 0
-    ) {
+    const valid = (n: number) => Number.isInteger(n) && n >= 1 && n <= 65535;
+    if (!valid(host) || !valid(container)) {
       throw new Error(
-        `Invalid port mapping "${entry}": expected "host:container" with positive integers`,
+        `Invalid port mapping "${entry}": expected "host:container" with integers in 1-65535`,
       );
     }
     return hostIp ? { container, host, hostIp } : { container, host };
@@ -254,8 +245,34 @@ export function mergeClaudes(
   projectContent: string,
   mode: 'append' | 'override',
 ): string {
-  if (mode === 'override') {
+  // With only one side present there is nothing to override or append to:
+  // return it as-is (override with no project file must not wipe the profile's
+  // instructions, and append must not leave a dangling separator).
+  if (!projectContent) {
+    return profileContent;
+  }
+  if (!profileContent || mode === 'override') {
     return projectContent;
   }
   return `${profileContent}\n\n---\n\n${projectContent}`;
+}
+
+// Array values that are all strings (allow lists etc.) are unioned and
+// de-duplicated; anything else is concatenated.
+function mergeArrays(dest: unknown[], src: unknown[]): unknown[] {
+  const combined = [...dest, ...src];
+  return combined.every((item) => typeof item === 'string')
+    ? [...new Set(combined as string[])]
+    : combined;
+}
+
+/**
+ * Deep-merge Claude settings layers, later layers winning on conflicts
+ * (permissions preset < profile settings.json < project settings.json).
+ */
+export function mergeSettings(...layers: object[]): object {
+  return layers.reduce<object>(
+    (acc, layer) => deepmerge(acc, layer, { arrayMerge: mergeArrays }),
+    {},
+  );
 }

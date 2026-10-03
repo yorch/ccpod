@@ -60,7 +60,7 @@ If no profile is specified and the `default` profile doesn't exist, `ccpod run` 
 
 ### 5. Write merged config
 
-`src/config/writer.ts` writes the merged Claude config tree to a deterministic temp dir: `/tmp/ccpod-<sha256(content)>/`. Same content → same path → skip rewrite. Mode `0o700` for dirs, `0o600` for files.
+`src/config/writer.ts` writes the merged Claude config tree to a deterministic, content-addressed dir under a private per-user parent: `${TMPDIR}/ccpod-u<uid>/ccpod-<sha256(content)>/`. Same content → same path → skip rewrite (and the dir's mtime is refreshed; dirs unused for 14 days are swept). The tree is assembled in a `mkdtemp` dir and atomically renamed into place. Mode `0o700` for dirs, `0o600` for files. Project symlinks are skipped and `post-init.sh` is generated only from trust-gated `init` commands.
 
 ### 6. Build container spec
 

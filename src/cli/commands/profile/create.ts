@@ -3,7 +3,13 @@ import { runWizard } from '../../../init/wizard.ts';
 import { validateProfileArg } from '../../validate.ts';
 
 export default defineCommand({
-  args: { name: { description: 'Profile name', type: 'positional' } },
+  args: {
+    name: {
+      description: 'Profile name',
+      required: true,
+      type: 'positional',
+    },
+  },
   meta: { description: 'Create a new profile', name: 'create' },
   async run({ args }) {
     if (!args.name) {

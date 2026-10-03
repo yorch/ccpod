@@ -23,7 +23,6 @@ const mcpConfigSchema = z
   })
   .passthrough();
 
-export type McpServer = z.infer<typeof mcpServerSchema>;
 export type McpConfig = z.infer<typeof mcpConfigSchema>;
 
 export function parseMcpJson(projectDir: string): McpConfig | null {

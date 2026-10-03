@@ -74,28 +74,45 @@ fi
 
 # ── Checksum verification ─────────────────────────────────────────────────────
 # Verify the download against SHASUMS256.txt from the same release (matches the
-# in-app updater). Returns: 0 verified/skipped, 1 checksum unavailable, 2 mismatch.
+# in-app updater). Returns: 0 verified, 1 release predates the checksum asset
+# (definite HTTP 404), 2 mismatch, 3 could not verify (network/HTTP error, no
+# sha256 tool, or asset missing from the file). Only 1 may proceed; set
+# CCPOD_INSTALL_SKIP_VERIFY=1 to override 3 explicitly.
 verify_checksum() {
   sums_url="https://github.com/${REPO}/releases/download/${TAG}/SHASUMS256.txt"
   sums_file="${TMP_PATH}.sums"
 
   if command -v curl >/dev/null 2>&1; then
-    curl -fsSL "$sums_url" -o "$sums_file" 2>/dev/null || { rm -f "$sums_file"; return 1; }
+    code=$(curl -sSL -o "$sums_file" -w '%{http_code}' "$sums_url" 2>/dev/null) || code=000
   else
-    wget -qO "$sums_file" "$sums_url" 2>/dev/null || { rm -f "$sums_file"; return 1; }
+    out=$(wget -S -qO "$sums_file" "$sums_url" 2>&1) || true
+    code=$(printf '%s\n' "$out" | awk '/HTTP\//{c=$2} END{print c}')
+  fi
+  if [ "$code" = "404" ]; then
+    rm -f "$sums_file"
+    return 1
+  fi
+  if [ "$code" != "200" ]; then
+    rm -f "$sums_file"
+    echo "error: could not download SHASUMS256.txt (HTTP ${code:-unknown})" >&2
+    return 3
   fi
 
-  expected=$(grep " ${ASSET}\$" "$sums_file" | awk '{print $1}' | head -n1)
+  # sha256sum prints "<hash>  <name>" (text) or "<hash> *<name>" (binary).
+  expected=$(grep -E "[ *]${ASSET}\$" "$sums_file" | awk '{print $1}' | head -n1)
   rm -f "$sums_file"
-  [ -n "$expected" ] || return 1
+  if [ -z "$expected" ]; then
+    echo "error: ${ASSET} not listed in SHASUMS256.txt" >&2
+    return 3
+  fi
 
   if command -v sha256sum >/dev/null 2>&1; then
     actual=$(sha256sum "$TMP_PATH" | awk '{print $1}')
   elif command -v shasum >/dev/null 2>&1; then
     actual=$(shasum -a 256 "$TMP_PATH" | awk '{print $1}')
   else
-    echo "warning: no sha256 tool found; skipping checksum verification" >&2
-    return 0
+    echo "error: no sha256sum/shasum found to verify the download" >&2
+    return 3
   fi
 
   if [ "$expected" != "$actual" ]; then
@@ -107,8 +124,8 @@ verify_checksum() {
   return 0
 }
 
-# Capture the status without `set -e` aborting on the non-zero "unavailable"
-# (1) and "mismatch" (2) returns — both are handled explicitly below.
+# Capture the status without `set -e` aborting on the non-zero returns — all
+# are handled explicitly below.
 set +e
 verify_checksum
 VERIFY_RC=$?
@@ -117,8 +134,16 @@ if [ "$VERIFY_RC" = "2" ]; then
   rm -f "$TMP_PATH"
   echo "error: checksum mismatch for ${ASSET}; refusing to install" >&2
   exit 1
+elif [ "$VERIFY_RC" = "3" ]; then
+  if [ "${CCPOD_INSTALL_SKIP_VERIFY:-}" = "1" ]; then
+    echo "warning: could not verify checksum; proceeding because CCPOD_INSTALL_SKIP_VERIFY=1" >&2
+  else
+    rm -f "$TMP_PATH"
+    echo "error: could not verify ${ASSET}; refusing to install (set CCPOD_INSTALL_SKIP_VERIFY=1 to override)" >&2
+    exit 1
+  fi
 elif [ "$VERIFY_RC" = "1" ]; then
-  echo "warning: could not verify checksum for ${TAG} (no SHASUMS256.txt); proceeding" >&2
+  echo "warning: ${TAG} predates checksum files (no SHASUMS256.txt); proceeding unverified" >&2
 fi
 
 chmod +x "$TMP_PATH"

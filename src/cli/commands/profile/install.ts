@@ -9,6 +9,7 @@ import {
   describeSource,
   detectSource,
   fetchProfileYaml,
+  summarizeProfileRisks,
 } from '../../../profile/installer.ts';
 import {
   ensureCcpodDirs,
@@ -26,7 +27,7 @@ export default defineCommand({
       type: 'positional',
     },
     yes: {
-      alias: 'y',
+      alias: ['y', 'force'],
       default: false,
       description: 'Skip confirmation prompts for remote sources',
       type: 'boolean',
@@ -94,6 +95,28 @@ export default defineCommand({
         console.error(`  ${path}${issue.message}`);
       }
       process.exit(1);
+    }
+
+    // Show what the profile can do before it is written — for every source
+    // type, since a pasted base64 blob or local file can be just as hostile.
+    const risks = summarizeProfileRisks(result.data);
+    if (risks.length > 0) {
+      console.log(chalk.bold('\nThis profile:'));
+      for (const line of risks) {
+        console.log(
+          chalk.yellow(line.startsWith('    ') ? line : `  - ${line}`),
+        );
+      }
+      if (!args.yes) {
+        const ok = await confirm({
+          default: false,
+          message: 'Install this profile?',
+        });
+        if (!ok) {
+          console.log('Aborted.');
+          return;
+        }
+      }
     }
 
     let profileName = result.data.name;
@@ -170,6 +193,6 @@ export default defineCommand({
     }
 
     console.log(chalk.green(`✓ Profile ${chalk.cyan(profileName)} installed.`));
-    console.log(chalk.dim(`  Run: ccpod run ${profileName}`));
+    console.log(chalk.dim(`  Run: ccpod run --profile ${profileName}`));
   },
 });

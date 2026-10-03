@@ -40,7 +40,7 @@ To wipe the state directory for a profile:
 
 ```sh
 ccpod state clear              # current profile (current project only if per-project isolation)
-ccpod state clear team         # specific profile
+ccpod state clear --profile team   # specific profile
 ccpod state clear --all        # all projects for the profile (per-project isolation)
 ```
 
@@ -59,7 +59,7 @@ stateIsolation: per-project
 
 Each project gets its own state directory at `~/.ccpod/state/<profile>/<projectHash>/`, where `<projectHash>` is derived from the project path. State from one project is not visible to another.
 
-Orphaned per-project state dirs (projects with no remaining containers) can be cleaned with `ccpod prune`.
+Orphaned per-project state dirs — those whose project directory no longer exists — can be cleaned with `ccpod prune`. Each state dir records its project path in a `.ccpod-project` marker; dirs without one, or whose project sits on an unmounted volume, are always kept.
 
 ## When to choose which
 

@@ -1,12 +1,16 @@
-import { existsSync, readFileSync } from 'node:fs';
-import { dirname, isAbsolute, join } from 'node:path';
+import { existsSync, lstatSync, readFileSync } from 'node:fs';
+import { dirname, join } from 'node:path';
 import chalk from 'chalk';
-import deepmerge from 'deepmerge';
+import { readHostOAuthCredentials } from '../../auth/keychain.ts';
 import { resolveAuth, resolveEnvForwarding } from '../../auth/resolver.ts';
 import { loadProfileConfig, loadProjectConfig } from '../../config/loader.ts';
-import { mergeClaudes, mergeConfigs } from '../../config/merger.ts';
+import {
+  mergeClaudes,
+  mergeConfigs,
+  mergeSettings,
+} from '../../config/merger.ts';
 import { expandPermissionsPreset } from '../../config/permissions.ts';
-import { writeMergedConfig } from '../../config/writer.ts';
+import { isRegularDir, writeMergedConfig } from '../../config/writer.ts';
 import { computeProjectHash } from '../../container/builder.ts';
 import { sidecarNetworkName, startSidecars } from '../../container/sidecars.ts';
 import { computeLocalImageTag } from '../../image/hash.ts';
@@ -15,15 +19,16 @@ import { runWizard } from '../../init/wizard.ts';
 import { extractHttpMcpPorts, parseMcpJson } from '../../mcp/parser.ts';
 import { syncGitConfig } from '../../profile/git-sync.ts';
 import {
-  expandProfilePath,
   getCredentialsDir,
   getProfileDir,
   profileExists,
+  resolveProfileDockerfile,
 } from '../../profile/manager.ts';
 import type { ResolvedConfig } from '../../types/index.ts';
+import { ensureProjectProfileTrusted } from '../project-trust.ts';
 import { validateProfileArg } from '../validate.ts';
 
-export interface ContainerSetupArgs {
+interface ContainerSetupArgs {
   claudeArgs?: string[];
   envArgs?: string[];
   noState?: boolean;
@@ -32,7 +37,7 @@ export interface ContainerSetupArgs {
   requireAuth?: boolean;
 }
 
-export interface ContainerSetupResult {
+interface ContainerSetupResult {
   config: ResolvedConfig;
   networkName: string | undefined;
 }
@@ -57,6 +62,12 @@ export async function setupContainer(
         `Profile '${profileName}' not found. Run 'ccpod init --profile ${profileName}'.`,
       );
     }
+  }
+
+  // The project (untrusted) picked this profile rather than the user via
+  // --profile: require remembered approval before honoring it.
+  if (!args.profile && projectConfig?.profile && profileName !== 'default') {
+    await ensureProjectProfileTrusted(cwd, profileName);
   }
 
   const profileDir = getProfileDir(profileName);
@@ -91,39 +102,7 @@ export async function setupContainer(
   const authEnv = resolveAuth(profile.auth);
 
   if (args.requireAuth) {
-    if (profile.auth.type === 'api-key' && Object.keys(authEnv).length === 0) {
-      throw new Error(
-        `Headless mode requires auth. Set ${profile.auth.keyEnv ?? 'ANTHROPIC_API_KEY'} or configure keyFile.`,
-      );
-    }
-    if (profile.auth.type === 'oauth') {
-      // The entrypoint copies ~/.claude/.credentials.json out of the
-      // credentials bind mount at startup; in headless mode there is no
-      // interactive prompt to recover from a missing one, so fail loudly here.
-      const credPath = join(
-        getCredentialsDir(profileName),
-        '.credentials.json',
-      );
-      if (!existsSync(credPath)) {
-        throw new Error(
-          `Headless mode with auth.type=oauth requires a prior interactive login. Run 'ccpod run' once to sign in, then re-run headlessly.`,
-        );
-      }
-    }
-    if (profile.auth.type === 'proxy') {
-      // Proxy mode reads OAuth credentials from the host Keychain/file at
-      // daemon start. Fail early if none are found so the user gets a clear
-      // message instead of a proxy startup error mid-run.
-      const { readHostOAuthCredentials } = await import(
-        '../../auth/keychain.ts'
-      );
-      const creds = readHostOAuthCredentials();
-      if (!creds) {
-        throw new Error(
-          `Headless mode with auth.type=proxy requires host OAuth credentials. Run 'claude /login' on the host first.`,
-        );
-      }
-    }
+    await assertHeadlessAuth(profile.auth, profileName, authEnv);
   }
 
   const env = {
@@ -131,6 +110,7 @@ export async function setupContainer(
       profile.env,
       profile.isolation ? [] : (projectConfig?.env ?? []),
       args.envArgs ?? [],
+      profile.allowProjectEnvForward,
     ),
     ...authEnv,
   };
@@ -143,7 +123,7 @@ export async function setupContainer(
   const profileClaudeMd = readIfExists(join(configSourceDir, 'CLAUDE.md'));
   const projectClaudeMd = profile.isolation
     ? null
-    : readIfExists(join(cwd, 'CLAUDE.md'));
+    : readProjectFileIfExists(join(cwd, 'CLAUDE.md'));
   const claudeMdMode = profile.isolation
     ? 'append'
     : (projectConfig?.config?.claudeMd ?? 'append');
@@ -152,31 +132,18 @@ export async function setupContainer(
       ? mergeClaudes(profileClaudeMd ?? '', projectClaudeMd ?? '', claudeMdMode)
       : '';
 
-  const presetSettings = expandPermissionsPreset(profile.permissions);
-  const profileSettings = deepmerge(
-    presetSettings,
-    readJsonIfExists(join(configSourceDir, 'settings.json')) ?? {},
-    {
-      arrayMerge: (dest: unknown[], src: unknown[]) => {
-        const combined = [...dest, ...src];
-        return combined.every((item) => typeof item === 'string')
-          ? [...new Set(combined as string[])]
-          : combined;
-      },
-    },
-  );
   const projectClaudeDir = join(cwd, '.claude');
-  const projectSettings = profile.isolation
-    ? {}
-    : (readJsonIfExists(join(projectClaudeDir, 'settings.json')) ?? {});
-  const mergedSettings = deepmerge(profileSettings, projectSettings, {
-    arrayMerge: (dest: unknown[], src: unknown[]) => {
-      const combined = [...dest, ...src];
-      return combined.every((item) => typeof item === 'string')
-        ? [...new Set(combined as string[])]
-        : combined;
-    },
-  }) as object;
+  // lstat of the file alone misses a symlinked .claude/ directory, so check
+  // the directory too before trusting anything inside it.
+  const projectSettings =
+    profile.isolation || !isRegularDir(projectClaudeDir)
+      ? {}
+      : (readJsonIfExists(join(projectClaudeDir, 'settings.json'), true) ?? {});
+  const mergedSettings = mergeSettings(
+    expandPermissionsPreset(profile.permissions),
+    readJsonIfExists(join(configSourceDir, 'settings.json')) ?? {},
+    projectSettings,
+  );
   const mergedConfigDir = writeMergedConfig(
     configSourceDir,
     mergedClaudeMd,
@@ -186,25 +153,7 @@ export async function setupContainer(
   );
 
   console.log(chalk.dim('Checking image...'));
-  let image = partial.image;
-  if (image === 'build') {
-    const rawDockerfile = partial.dockerfile ?? 'Dockerfile';
-    const dockerfile = expandProfilePath(rawDockerfile, profileName);
-    const dockerfileAbs = isAbsolute(dockerfile)
-      ? dockerfile
-      : join(cwd, dockerfile);
-    const tag = computeLocalImageTag(profileName, dockerfile, cwd);
-    const contextDir = dirname(dockerfileAbs);
-    await ensureLocalImage(
-      tag,
-      dockerfileAbs,
-      contextDir,
-      args.rebuild ?? false,
-    );
-    image = tag;
-  } else {
-    await ensureImage(image, args.rebuild ?? false);
-  }
+  const image = await resolveImage(partial, profileName, args.rebuild ?? false);
 
   const config: ResolvedConfig = {
     ...partial,
@@ -227,17 +176,90 @@ export async function setupContainer(
   return { config, networkName };
 }
 
+// Headless runs have no interactive prompt to recover from missing auth, so
+// fail early with an actionable message instead of mid-run.
+async function assertHeadlessAuth(
+  auth: ResolvedConfig['auth'],
+  profileName: string,
+  authEnv: Record<string, string>,
+): Promise<void> {
+  if (auth.type === 'api-key' && Object.keys(authEnv).length === 0) {
+    throw new Error(
+      `Headless mode requires auth. Set ${auth.keyEnv ?? 'ANTHROPIC_API_KEY'} or configure keyFile.`,
+    );
+  }
+  if (auth.type === 'oauth') {
+    // The entrypoint copies ~/.claude/.credentials.json out of the credentials
+    // bind mount at startup.
+    const credPath = join(getCredentialsDir(profileName), '.credentials.json');
+    if (!existsSync(credPath)) {
+      throw new Error(
+        `Headless mode with auth.type=oauth requires a prior interactive login. Run 'ccpod run' once to sign in, then re-run headlessly.`,
+      );
+    }
+  }
+  if (auth.type === 'proxy' && !readHostOAuthCredentials()) {
+    // Proxy mode reads OAuth credentials from the host Keychain/file at start.
+    throw new Error(
+      `Headless mode with auth.type=proxy requires host OAuth credentials. Run 'claude /login' on the host first.`,
+    );
+  }
+}
+
+// Returns the image reference to run: the configured image, or a locally
+// built tag when the profile points at a Dockerfile.
+async function resolveImage(
+  partial: Pick<ResolvedConfig, 'image' | 'dockerfile'>,
+  profileName: string,
+  rebuild: boolean,
+): Promise<string> {
+  if (partial.image !== 'build') {
+    await ensureImage(partial.image, rebuild);
+    return partial.image;
+  }
+  const dockerfileAbs = resolveProfileDockerfile(
+    partial.dockerfile ?? 'Dockerfile',
+    profileName,
+  );
+  const contextDir = dirname(dockerfileAbs);
+  const tag = computeLocalImageTag(profileName, dockerfileAbs, contextDir);
+  await ensureLocalImage(tag, dockerfileAbs, contextDir, rebuild);
+  return tag;
+}
+
 function readIfExists(path: string): string | null {
   return existsSync(path) ? readFileSync(path, 'utf8') : null;
 }
 
-function readJsonIfExists(path: string): object | null {
-  if (!existsSync(path)) {
+// Project files come from an untrusted checkout. Refuse symlinks (and anything
+// that isn't a regular file) so a repo can't point CLAUDE.md or
+// .claude/settings.json at e.g. ~/.aws/credentials and have it spliced into the
+// container's config — same rule as .mcp.json and .ccpod.yml.
+function readProjectFileIfExists(path: string): string | null {
+  let stat: ReturnType<typeof lstatSync>;
+  try {
+    stat = lstatSync(path);
+  } catch {
+    return null;
+  }
+  if (!stat.isFile()) {
+    console.warn(
+      `Warning: ${path} is not a regular file (symlink?) — ignoring it.`,
+    );
+    return null;
+  }
+  return readFileSync(path, 'utf8');
+}
+
+function readJsonIfExists(path: string, untrusted = false): object | null {
+  const raw = untrusted ? readProjectFileIfExists(path) : readIfExists(path);
+  if (raw === null) {
     return null;
   }
   try {
-    return JSON.parse(readFileSync(path, 'utf8')) as object;
+    return JSON.parse(raw) as object;
   } catch {
+    console.warn(`Warning: ${path} is not valid JSON — ignoring it.`);
     return null;
   }
 }

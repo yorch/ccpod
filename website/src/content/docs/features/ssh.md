@@ -33,7 +33,7 @@ ssh:
   mountSshDir: true
 ```
 
-Mounts your `~/.ssh` directory read-only at `/root/.ssh`. Use this when:
+Mounts your `~/.ssh` directory read-only at `/home/node/.ssh` (the `node` user's home — the user Claude and git run as). Use this when:
 
 - The host doesn't run an agent.
 - You need access to `~/.ssh/config` or `known_hosts` patterns.

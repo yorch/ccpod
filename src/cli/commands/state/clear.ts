@@ -2,37 +2,13 @@ import { rmSync } from 'node:fs';
 import { confirm } from '@inquirer/prompts';
 import chalk from 'chalk';
 import { defineCommand } from 'citty';
-import {
-  loadProfileConfig,
-  loadProjectConfig,
-} from '../../../config/loader.ts';
+import { loadProfileConfig } from '../../../config/loader.ts';
 import { computeProjectHash } from '../../../container/builder.ts';
-import {
-  getProfileDir,
-  getStateDir,
-  profileExists,
-} from '../../../profile/manager.ts';
-import { dockerExec } from '../../../runtime/docker.ts';
-import { validateProfileArg } from '../../validate.ts';
-
-async function hasRunningContainer(
-  profileName: string,
-  projectHash?: string,
-): Promise<boolean> {
-  const filterArgs = [
-    'ps',
-    '--filter',
-    `label=ccpod.profile=${profileName}`,
-    '--filter',
-    'status=running',
-  ];
-  if (projectHash) {
-    filterArgs.push('--filter', `label=ccpod.project=${projectHash}`);
-  }
-  filterArgs.push('--quiet');
-  const { stdout } = await dockerExec(filterArgs);
-  return stdout.trim().length > 0;
-}
+import { listCcpodContainers } from '../../../container/list.ts';
+import { getProfileDir, getStateDir } from '../../../profile/manager.ts';
+import { rejectExtraPositionals } from '../../args.ts';
+import { exitWithError } from '../../errors.ts';
+import { resolveProfileName } from '../../profile-arg.ts';
 
 export default defineCommand({
   args: {
@@ -42,6 +18,7 @@ export default defineCommand({
       type: 'boolean',
     },
     force: {
+      alias: ['y', 'yes'],
       default: false,
       description: 'Skip confirmation prompt',
       type: 'boolean',
@@ -53,14 +30,8 @@ export default defineCommand({
     name: 'clear',
   },
   async run({ args }) {
-    validateProfileArg(args.profile);
-    const projectConfig = loadProjectConfig(process.cwd());
-    const profileName = args.profile ?? projectConfig?.profile ?? 'default';
-
-    if (!profileExists(profileName)) {
-      console.error(`Profile '${profileName}' not found.`);
-      process.exit(1);
-    }
+    rejectExtraPositionals(args);
+    const profileName = resolveProfileName(args.profile);
 
     // Determine state isolation mode from the profile config
     const profile = loadProfileConfig(getProfileDir(profileName));
@@ -73,7 +44,17 @@ export default defineCommand({
       projectHash = computeProjectHash(process.cwd());
     }
 
-    if (await hasRunningContainer(profileName, projectHash)) {
+    let running: Awaited<ReturnType<typeof listCcpodContainers>>;
+    try {
+      running = await listCcpodContainers({
+        profile: profileName,
+        ...(projectHash ? { project: projectHash } : {}),
+      });
+    } catch (err) {
+      // Can't tell whether the state is in use — never delete it blind.
+      exitWithError(err);
+    }
+    if (running.length > 0) {
       const scope = projectHash ? 'this project' : 'this profile';
       console.error(
         `A ccpod container for '${profileName}' (${scope}) is still running. Stop it first with: ccpod down`,

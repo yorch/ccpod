@@ -1,50 +1,22 @@
-import { existsSync, readdirSync, rmSync } from 'node:fs';
-import { join } from 'node:path';
+import { existsSync, readdirSync, readFileSync, rmSync } from 'node:fs';
+import { dirname, join } from 'node:path';
 import chalk from 'chalk';
 import { defineCommand } from 'citty';
 import { LABEL_PROFILE, LABEL_PROJECT } from '../../container/builder.ts';
+import { listCcpodContainers } from '../../container/list.ts';
 import { removeVolume } from '../../plugins/volume.ts';
-import { getCcpodHome, profileExists } from '../../profile/manager.ts';
+import {
+  getCcpodHome,
+  PROJECT_MARKER_FILE,
+  profileExists,
+} from '../../profile/manager.ts';
 import { dockerExec } from '../../runtime/docker.ts';
+import { rejectExtraPositionals } from '../args.ts';
+import { exitWithError } from '../errors.ts';
 import { validateProfileArg } from '../validate.ts';
 
 const VOLUME_NAME_RE = /^ccpod-plugins-([a-zA-Z0-9_-]{1,64})$/;
 const PROJECT_HASH_RE = /^[a-f0-9]{16}$/;
-
-interface StaleContainer {
-  id: string;
-  name: string;
-  profile: string;
-  state: string;
-}
-
-async function listStaleContainers(
-  profile?: string,
-): Promise<StaleContainer[]> {
-  const filterArgs = ['-a', '--filter', `label=${LABEL_PROFILE}`];
-  if (profile) {
-    filterArgs.push('--filter', `label=${LABEL_PROFILE}=${profile}`);
-  }
-  const { exitCode, stdout, stderr } = await dockerExec([
-    'ps',
-    ...filterArgs,
-    '--format',
-    '{{.ID}}|{{.Names}}|{{.State}}|{{.Label "ccpod.profile"}}',
-  ]);
-  if (exitCode !== 0) {
-    console.warn(`Warning: docker ps failed: ${stderr}`);
-    return [];
-  }
-  return stdout
-    .split('\n')
-    .map((s) => s.trim())
-    .filter(Boolean)
-    .map((line) => {
-      const [id = '', name = '', state = '', prof = ''] = line.split('|');
-      return { id, name, profile: prof, state };
-    })
-    .filter((row) => row.id);
-}
 
 async function listOrphanedNetworks(): Promise<string[]> {
   const { exitCode, stdout, stderr } = await dockerExec([
@@ -146,9 +118,10 @@ async function listOrphanedVolumes(
     if (refs.trim() !== '') {
       continue;
     }
-    // If no profile filter, only consider orphaned if the profile no longer
-    // exists on disk. With a profile filter, the caller explicitly wants it.
-    if (!profile && profileExists(prof)) {
+    // Only a volume whose profile is gone from disk is orphaned. Not even
+    // --profile overrides this: step 1 of prune removes that profile's stopped
+    // containers, which would make a live profile's volume look unreferenced.
+    if (profileExists(prof)) {
       continue;
     }
     orphaned.push({ name: volName, profile: prof });
@@ -160,77 +133,83 @@ interface OrphanedStateDir {
   path: string;
   profile: string;
   projectHash: string;
+  projectPath: string;
 }
 
-async function listOrphanedStateDirs(
-  profile?: string,
-): Promise<OrphanedStateDir[]> {
+interface StateScan {
+  orphaned: OrphanedStateDir[];
+  // Dirs with no .ccpod-project marker (created by an older ccpod): their
+  // project is unknown, so they are never deleted automatically.
+  unknown: number;
+}
+
+// A per-project state dir is orphaned when the project it was created for no
+// longer exists on disk. Container existence is NOT evidence either way:
+// containers are not run with --rm, `ccpod down` and prune step 1 remove them,
+// and none of that means the user is done with the project's history.
+async function scanStateDirs(profile?: string): Promise<StateScan> {
   const stateBase = join(getCcpodHome(), 'state');
+  const result: StateScan = { orphaned: [], unknown: 0 };
   if (!existsSync(stateBase)) {
-    return [];
+    return result;
   }
 
-  // Get all ccpod containers' profile + project hash pairs.
-  // We need both to avoid over-matching: the same project hash can appear
-  // under different profiles, and a state dir for profA/hash should only
-  // be considered active if a profA container with that hash exists.
-  const { exitCode, stdout, stderr } = await dockerExec([
-    'ps',
-    '-a',
-    '--filter',
-    `label=${LABEL_PROFILE}`,
-    '--format',
-    `{{.Label "${LABEL_PROFILE}"}}|{{.Label "${LABEL_PROJECT}"}}`,
-  ]);
-  if (exitCode !== 0) {
-    console.warn(`Warning: docker ps failed: ${stderr}`);
-    return [];
-  }
-  // Set of "profile/projectHash" keys for active containers
+  // Still protect state in use right now (docker unreachable => stop).
+  const containers = await listCcpodContainers({
+    all: true,
+    ...(profile ? { profile } : {}),
+  });
   const activeKeys = new Set(
-    stdout
-      .split('\n')
-      .map((s) => s.trim())
-      .filter(Boolean)
-      .map((line) => {
-        const [prof = '', hash = ''] = line.split('|');
-        return `${prof}/${hash}`;
-      }),
+    containers.map((c) => `${c.profile}/${c.project}`),
   );
 
-  const orphaned: OrphanedStateDir[] = [];
-  let profileDirs: string[];
-  if (profile) {
-    profileDirs = [profile];
-  } else {
-    // Use withFileTypes to skip non-directories (files, symlinks) in state/
-    profileDirs = readdirSync(stateBase, { withFileTypes: true })
-      .filter((e) => e.isDirectory())
-      .map((e) => e.name);
-  }
+  const profileDirs = profile
+    ? [profile]
+    : readdirSync(stateBase, { withFileTypes: true })
+        .filter((e) => e.isDirectory())
+        .map((e) => e.name);
 
   for (const prof of profileDirs) {
     const profStateDir = join(stateBase, prof);
     if (!existsSync(profStateDir)) {
       continue;
     }
-    // Per-project state dirs are subdirectories named with a 16-char hex hash
-    const entries = readdirSync(profStateDir, { withFileTypes: true });
-    for (const entry of entries) {
+    for (const entry of readdirSync(profStateDir, { withFileTypes: true })) {
       if (!entry.isDirectory() || !PROJECT_HASH_RE.test(entry.name)) {
         continue;
       }
       if (activeKeys.has(`${prof}/${entry.name}`)) {
         continue;
       }
-      orphaned.push({
-        path: join(profStateDir, entry.name),
+      const dir = join(profStateDir, entry.name);
+      let projectPath: string;
+      try {
+        projectPath = readFileSync(
+          join(dir, PROJECT_MARKER_FILE),
+          'utf8',
+        ).trim();
+      } catch {
+        result.unknown++;
+        continue;
+      }
+      // Missing path counts only when its parent exists: a project on an
+      // unmounted external/network volume must not look deleted.
+      if (
+        projectPath === '' ||
+        existsSync(projectPath) ||
+        !existsSync(dirname(projectPath))
+      ) {
+        continue;
+      }
+      result.orphaned.push({
+        path: dir,
         profile: prof,
         projectHash: entry.name,
+        projectPath,
       });
     }
   }
-  return orphaned;
+  return result;
 }
 
 export default defineCommand({
@@ -241,6 +220,7 @@ export default defineCommand({
       type: 'boolean',
     },
     force: {
+      alias: ['y', 'yes'],
       default: false,
       description: 'Skip confirmation prompt',
       type: 'boolean',
@@ -256,13 +236,24 @@ export default defineCommand({
     name: 'prune',
   },
   async run({ args }) {
+    rejectExtraPositionals(args);
     validateProfileArg(args.profile);
 
     const dryRun = args['dry-run'];
     const action = dryRun ? 'Would remove' : 'Removing';
 
     // --- Stopped containers ---
-    const containers = await listStaleContainers(args.profile);
+    let containers: Awaited<ReturnType<typeof listCcpodContainers>>;
+    try {
+      containers = await listCcpodContainers({
+        all: true,
+        ...(args.profile ? { profile: args.profile } : {}),
+      });
+    } catch (err) {
+      // Everything below decides what to delete from docker's answer; if we
+      // can't get one, stop rather than guess.
+      exitWithError(err);
+    }
     const staleContainers = containers.filter(
       (c) =>
         c.state !== 'running' &&
@@ -298,8 +289,16 @@ export default defineCommand({
     }
 
     // --- Orphaned networks ---
-    const networks = await listOrphanedNetworks();
-    if (networks.length > 0) {
+    // Sidecar networks are per project, not per profile, so a profile-scoped
+    // prune must not touch them.
+    const networks = args.profile ? [] : await listOrphanedNetworks();
+    if (args.profile) {
+      console.log(
+        chalk.dim(
+          'Skipping networks (not profile-scoped; run without --profile).',
+        ),
+      );
+    } else if (networks.length > 0) {
       console.log(chalk.bold(`\n${networks.length} orphaned network(s)`));
       for (const name of networks) {
         if (dryRun) {
@@ -325,6 +324,7 @@ export default defineCommand({
 
     // --- Unreferenced plugin volumes ---
     const volumes = await listOrphanedVolumes(args.profile);
+    let volumeConfirmed = true;
     if (volumes.length > 0) {
       console.log(
         chalk.bold(`\n${volumes.length} unreferenced plugin volume(s)`),
@@ -337,13 +337,10 @@ export default defineCommand({
         });
         if (!ok) {
           console.log(chalk.dim('Skipped volumes.'));
-          console.log(
-            chalk.bold(`\n${dryRun ? 'Dry run complete.' : 'Prune complete.'}`),
-          );
-          return;
         }
+        volumeConfirmed = ok;
       }
-      for (const v of volumes) {
+      for (const v of volumeConfirmed ? volumes : []) {
         if (dryRun) {
           console.log(`  ${chalk.dim(action)} ${chalk.cyan(v.name)}`);
         } else {
@@ -363,25 +360,36 @@ export default defineCommand({
     }
 
     // --- Orphaned per-project state dirs ---
-    const stateDirs = await listOrphanedStateDirs(args.profile);
+    let stateScan: StateScan;
+    try {
+      stateScan = await scanStateDirs(args.profile);
+    } catch (err) {
+      exitWithError(err);
+    }
+    const stateDirs = stateScan.orphaned;
+    if (stateScan.unknown > 0) {
+      console.log(
+        chalk.dim(
+          `Kept ${stateScan.unknown} state dir(s) with no recorded project path (created by an older ccpod; they are tagged the next time their project runs).`,
+        ),
+      );
+    }
+    let stateConfirmed = true;
     if (stateDirs.length > 0) {
       console.log(chalk.bold(`\n${stateDirs.length} orphaned state dir(s)`));
       if (!dryRun && !args.force) {
         const { confirm } = await import('@inquirer/prompts');
         const ok = await confirm({
           default: false,
-          message: `Remove ${stateDirs.length} orphaned state dir(s)? This deletes conversation history for projects with no remaining containers.`,
+          message: `Remove ${stateDirs.length} orphaned state dir(s)? This deletes conversation history for projects whose directory no longer exists.`,
         });
         if (!ok) {
           console.log(chalk.dim('Skipped state dirs.'));
-          console.log(
-            chalk.bold(`\n${dryRun ? 'Dry run complete.' : 'Prune complete.'}`),
-          );
-          return;
         }
+        stateConfirmed = ok;
       }
-      for (const s of stateDirs) {
-        const label = `${s.profile}/${s.projectHash}`;
+      for (const s of stateConfirmed ? stateDirs : []) {
+        const label = `${s.profile}/${s.projectHash} (${s.projectPath})`;
         if (dryRun) {
           console.log(`  ${chalk.dim(action)} ${chalk.cyan(label)}`);
         } else {
@@ -397,7 +405,12 @@ export default defineCommand({
               `label=${LABEL_PROJECT}=${s.projectHash}`,
               '--quiet',
             ]);
-          if (recheckCode === 0 && recheckOut.trim() !== '') {
+          if (recheckCode !== 0) {
+            // Can't prove the state is unused — keep it.
+            console.log(chalk.dim('skipped (could not check containers)'));
+            continue;
+          }
+          if (recheckOut.trim() !== '') {
             console.log(chalk.dim('skipped (container started)'));
             continue;
           }

@@ -37,6 +37,19 @@ export function readHostOAuthCredentials(): OAuthCredentials | undefined {
 }
 
 /**
+ * Raw credential JSON from the host store (Keychain entry on macOS,
+ * ~/.claude/.credentials.json elsewhere), or undefined when absent/invalid.
+ * For callers that copy the credentials verbatim rather than parse them.
+ */
+export function readHostCredentialJsonRaw(): string | undefined {
+  const raw =
+    process.platform === 'darwin'
+      ? readFromKeychainRaw()
+      : readCredentialFileRaw();
+  return raw && parseCredentialJson(raw) ? raw : undefined;
+}
+
+/**
  * Write OAuth credentials back to the host's credential store.
  * Used by the proxy to persist refreshed tokens.
  */
@@ -127,16 +140,20 @@ function writeToKeychain(creds: OAuthCredentials): void {
   }
 }
 
-function readFromCredentialFile(): OAuthCredentials | undefined {
+function readCredentialFileRaw(): string | undefined {
   if (!existsSync(CREDENTIAL_FILE)) {
     return undefined;
   }
   try {
-    const raw = readFileSync(CREDENTIAL_FILE, 'utf8').trim();
-    return parseCredentialJson(raw);
+    return readFileSync(CREDENTIAL_FILE, 'utf8').trim();
   } catch {
     return undefined;
   }
+}
+
+function readFromCredentialFile(): OAuthCredentials | undefined {
+  const raw = readCredentialFileRaw();
+  return raw ? parseCredentialJson(raw) : undefined;
 }
 
 function writeToCredentialFile(creds: OAuthCredentials): void {

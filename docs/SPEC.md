@@ -75,7 +75,7 @@ The `~/.claude/` directory has three distinct categories requiring different per
 | F-26 | State persistence configurable via profile: `state: ephemeral` (default) or `state: persistent` |
 | F-27 | `persistent` mode: state stored in `~/.ccpod/state/<profile>/` on host, bind-mounted into container — survives container restarts |
 | F-28 | `ephemeral` mode: state lives only for the container lifetime — fresh slate each run |
-| F-29 | `ccpod state clear [profile]` — delete state directory (reset history/memory for a profile) |
+| F-29 | `ccpod state clear [--profile <name>]` — delete state directory (reset history/memory for a profile) |
 
 ### Authentication & Credentials
 
@@ -95,7 +95,7 @@ The `~/.claude/` directory has three distinct categories requiring different per
 | F-30 | Plugin state in named Docker volume: `ccpod-plugins-<profile>` |
 | F-31 | On container start: diff declared plugins vs installed → delta-install only |
 | F-32 | Fast on subsequent runs (no reinstall if nothing changed) |
-| F-33 | `ccpod plugins update [profile]` — flush volume and reinstall all |
+| F-33 | `ccpod plugins update --reset [--profile <name>]` — flush volume and reinstall all |
 
 ### Container Image
 
@@ -105,9 +105,9 @@ The `~/.claude/` directory has three distinct categories requiring different per
 | F-41 | Override with `image: my-registry/my-image:tag` in profile |
 | F-42 | `dockerfile:` path: if absolute, context dir = `dirname(dockerfile)`; if relative, context dir = `$PWD` |
 | F-42a | When `dockerfile:` is set, ccpod auto-builds on first run using tag `ccpod-local-<profile>-<sha256-of-dockerfile-contents>` (falls back to path hash if file not found); subsequent runs reuse that tag unless `--rebuild` is passed |
-| F-43 | `ccpod image build [profile]` — explicit local build |
-| F-44 | `ccpod image pull [profile]` — pull latest base or declared image |
-| F-45 | `ccpod image init [profile]` — download a Dockerfile into the profile directory for local customization; defaults to the official ccpod Dockerfile; `--from <url>` accepts any raw URL; updates `image.dockerfile` in profile.yml |
+| F-43 | `ccpod image build [--profile <name>]` — explicit local build |
+| F-44 | `ccpod image pull [--profile <name>]` — pull latest base or declared image |
+| F-45 | `ccpod image init [--profile <name>]` — download a Dockerfile into the profile directory for local customization; defaults to the official ccpod Dockerfile; `--from <url>` accepts any raw URL; updates `image.dockerfile` in profile.yml |
 
 ### Network Policy
 
@@ -271,12 +271,12 @@ ccpod profile delete <name>
 ccpod profile install <source>      Install a profile from a URL, git repo, or base64 blob
 ccpod profile export <name>         Print a portable base64-encoded profile blob
 
-ccpod plugins list [profile]
-ccpod plugins update [profile]
+ccpod plugins list [--profile <name>]
+ccpod plugins update --reset [--profile <name>]
 
-ccpod image build [profile]
-ccpod image init [profile]
-ccpod image pull [profile]
+ccpod image build [--profile <name>]
+ccpod image init [--profile <name>]
+ccpod image pull [--profile <name>]
 
 ccpod down                          Stop container + sidecars for $PWD
 ccpod down --all                    Stop every ccpod container on this machine
@@ -284,7 +284,7 @@ ccpod down --profile <name>         Limit teardown to a specific profile
 ccpod ps                            Show running ccpod containers
 ccpod ps --all                      Include stopped containers
 
-ccpod state clear [profile]         Delete state volume (reset history/memory)
+ccpod state clear [--profile <name>]         Delete state volume (reset history/memory)
 
 ccpod config show                   Resolved merged config (--json for machine output)
 ccpod config validate               Validate .ccpod.yml

@@ -1,14 +1,17 @@
 import { existsSync, readFileSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
+import { z } from 'zod';
 import { GITHUB_REPO } from '../constants.ts';
 import { getCcpodHome } from '../profile/manager.ts';
 
 const CHECK_INTERVAL_MS = 24 * 60 * 60 * 1000;
 
-interface UpdateCache {
-  checkedAt: string;
-  latestVersion: string;
-}
+// The cache file is user-editable, so validate it instead of trusting a cast.
+const updateCacheSchema = z.object({
+  checkedAt: z.string(),
+  latestVersion: z.string(),
+});
+type UpdateCache = z.infer<typeof updateCacheSchema>;
 
 function cachePath(): string {
   return join(getCcpodHome(), 'update-check.json');
@@ -20,7 +23,7 @@ function readCache(): UpdateCache | null {
     return null;
   }
   try {
-    return JSON.parse(readFileSync(path, 'utf8')) as UpdateCache;
+    return updateCacheSchema.parse(JSON.parse(readFileSync(path, 'utf8')));
   } catch {
     return null;
   }

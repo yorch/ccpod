@@ -31,7 +31,7 @@ In tests this can be redirected with `CCPOD_TEST_DIR`.
 
 | Name | Purpose | Lifetime |
 |---|---|---|
-| `ccpod-plugins-<profile>` | Installed Claude plugins | Persists across runs; recreated by `ccpod plugins update` |
+| `ccpod-plugins-<profile>` | Installed Claude plugins | Persists across runs; removed by `ccpod plugins update --reset`, `ccpod profile delete` and (when unreferenced) `ccpod prune` |
 
 Plus per-project networks for sidecars: `ccpod-net-<sha256($PWD)>`.
 

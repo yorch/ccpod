@@ -12,11 +12,28 @@ export const LABEL_TYPE = 'ccpod.type';
 export const LABEL_VERSION = 'ccpod.version';
 export const LABEL_WORKDIR = 'ccpod.workdir';
 
+export interface ProxyInjection {
+  baseUrl: string;
+  sentinelKey: string;
+}
+
+export type ContainerMode = 'claude' | 'shell';
+
+export interface BuildSpecOptions {
+  // Shell mode only: command to run instead of an interactive /bin/bash.
+  cmd?: string[];
+  mode?: ContainerMode;
+  proxy?: ProxyInjection;
+}
+
 export interface ContainerSpec {
   binds: string[];
   capAdd?: string[];
   cmd?: string[];
   env: string[];
+  // Shell mode only: name of the main (claude) container to `docker exec`
+  // into when it is already running, instead of starting a separate one.
+  execTarget?: string;
   image: string;
   labels: Record<string, string>;
   name: string;
@@ -58,7 +75,9 @@ export function buildContainerSpec(
   projectDir: string,
   tty: boolean,
   networkName?: string,
+  opts: BuildSpecOptions = {},
 ): ContainerSpec {
+  const mode = opts.mode ?? 'claude';
   const hash = computeProjectHash(projectDir);
   const credentialsDir = getCredentialsDir(config.profileName);
   const isProxyAuth = config.auth.type === 'proxy';
@@ -76,7 +95,7 @@ export function buildContainerSpec(
   }
 
   if (config.ssh.mountSshDir) {
-    binds.push(`${homedir()}/.ssh:/root/.ssh:ro`);
+    binds.push(`${homedir()}/.ssh:/home/node/.ssh:ro`);
   }
 
   binds.push(`ccpod-plugins-${config.profileName}:/ccpod/plugins`);
@@ -84,7 +103,7 @@ export function buildContainerSpec(
     const projectHash =
       config.stateIsolation === 'per-project' ? hash : undefined;
     binds.push(
-      `${getStateDir(config.profileName, projectHash)}:/ccpod/state:rw`,
+      `${getStateDir(config.profileName, projectHash, projectHash ? projectDir : undefined)}:/ccpod/state:rw`,
     );
   }
 
@@ -98,11 +117,15 @@ export function buildContainerSpec(
     Array<{ HostPort: string; HostIp?: string }>
   > = {};
   for (const { host, container, hostIp } of config.ports) {
-    portBindings[`${container}/tcp`] = [
+    // Several mappings can target one container port (profile + project +
+    // .mcp.json); Docker accepts a list of bindings per port.
+    const bindings = portBindings[`${container}/tcp`] ?? [];
+    bindings.push(
       hostIp
         ? { HostIp: hostIp, HostPort: String(host) }
         : { HostPort: String(host) },
-    ];
+    );
+    portBindings[`${container}/tcp`] = bindings;
   }
 
   // Resolved credential + forwarded env are secrets — carried in secretEnv and
@@ -121,8 +144,31 @@ export function buildContainerSpec(
       secretEnv[k] = v;
     }
   }
+  // Proxy injection happens here (after the CCPOD_*/DOCKER_* strip above) so
+  // callers never have to mutate a built spec. The container runs claude in
+  // API-key mode with the sentinel key; the proxy swaps in the real token.
+  if (opts.proxy) {
+    secretEnv.ANTHROPIC_BASE_URL = opts.proxy.baseUrl;
+    secretEnv.ANTHROPIC_API_KEY = opts.proxy.sentinelKey;
+  }
   const env: string[] = [];
   env.push(`CCPOD_STATE=${config.state}`);
+  if (mode === 'shell') {
+    env.push('CCPOD_SHELL_MODE=1');
+  }
+  // Native Linux bind mounts keep host ownership. Have the entrypoint run the
+  // `node` user as the host uid/gid so the project, state and config files stay
+  // yours (no chown of host dirs to a foreign uid). Docker Desktop / OrbStack on
+  // macOS translate ownership themselves, so nothing is needed there.
+  if (
+    process.platform === 'linux' &&
+    typeof process.getuid === 'function' &&
+    typeof process.getgid === 'function' &&
+    process.getuid() !== 0
+  ) {
+    env.push(`CCPOD_HOST_UID=${process.getuid()}`);
+    env.push(`CCPOD_HOST_GID=${process.getgid()}`);
+  }
 
   if (isProxyAuth) {
     env.push('CCPOD_PROXY_AUTH=1');
@@ -136,15 +182,11 @@ export function buildContainerSpec(
   if (config.network.policy === 'restricted') {
     capAdd.push('NET_ADMIN');
     env.push('CCPOD_NETWORK_POLICY=restricted');
-    // Proxy mode requires the container to reach the host-side auth proxy
-    // via host.docker.internal. Auto-add it to the allow-list so restricted
-    // + proxy mode works without manual configuration.
-    const allowList = [...config.network.allow];
-    if (isProxyAuth && !allowList.includes('host.docker.internal')) {
-      allowList.push('host.docker.internal');
-    }
-    if (allowList.length > 0) {
-      env.push(`CCPOD_ALLOWED_HOSTS=${allowList.join(',')}`);
+    // Proxy mode also needs the host-side auth proxy, but only on its one
+    // port — the entrypoint derives that from ANTHROPIC_BASE_URL (see
+    // CCPOD_PROXY_AUTH) instead of whitelisting the whole host gateway here.
+    if (config.network.allow.length > 0) {
+      env.push(`CCPOD_ALLOWED_HOSTS=${config.network.allow.join(',')}`);
     }
   }
 
@@ -168,22 +210,29 @@ export function buildContainerSpec(
     labels: {
       [LABEL_PROFILE]: config.profileName,
       [LABEL_PROJECT]: hash,
-      [LABEL_TYPE]: 'main',
+      [LABEL_TYPE]: mode === 'shell' ? 'shell' : 'main',
       [LABEL_VERSION]: VERSION,
       [LABEL_WORKDIR]: projectDir,
     },
     ...(capAdd.length > 0 ? { capAdd } : {}),
-    name: `ccpod-${config.profileName}-${hash}`,
+    name: `ccpod-${config.profileName}-${hash}${mode === 'shell' ? '-shell' : ''}`,
     networkMode: networkName ?? 'bridge',
     openStdin: tty,
-    portBindings,
+    // A shell container must not publish the main container's ports, or it
+    // would block a later `ccpod run` with "port is already allocated".
+    portBindings: mode === 'shell' ? {} : portBindings,
     ...(isProxyAuth ? { proxyAuth: true } : {}),
     secretEnv,
     tty,
     workingDir: '/workspace',
     ...(Object.keys(tmpfs).length > 0 ? { tmpfs } : {}),
-    ...(config.claudeArgs.length > 0
-      ? { cmd: ['claude', ...config.claudeArgs] }
-      : {}),
+    ...(mode === 'shell'
+      ? {
+          cmd: opts.cmd ?? ['/bin/bash'],
+          execTarget: `ccpod-${config.profileName}-${hash}`,
+        }
+      : config.claudeArgs.length > 0
+        ? { cmd: ['claude', ...config.claudeArgs] }
+        : {}),
   };
 }

@@ -2,9 +2,17 @@ import { detectRuntime } from './detector.ts';
 
 function runtimeContext(): { binary: string; env: NodeJS.ProcessEnv } {
   const runtime = detectRuntime();
+  const name = runtime.name === 'podman' ? 'podman' : 'docker';
   return {
-    binary: runtime.name === 'podman' ? 'podman' : 'docker',
-    env: { ...process.env, DOCKER_HOST: `unix://${runtime.socketPath}` },
+    // Resolve against ccpod's own PATH up front. `extraEnv` (resolved secrets
+    // and forwarded env) is merged into the child's environment, and Bun looks
+    // up a bare command name using the *child's* PATH — so a PATH entry in
+    // there could otherwise make `docker` resolve to a binary in the project dir.
+    binary: Bun.which(name) ?? name,
+    env: {
+      ...process.env,
+      DOCKER_HOST: runtime.dockerHost ?? `unix://${runtime.socketPath}`,
+    },
   };
 }
 
