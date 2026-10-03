@@ -20,10 +20,8 @@ Edit the profile's `config` block. The quickest route is to reuse your existing 
 ```yaml
 config:
   source: local
-  path: /Users/you/.claude
+  path: ~/.claude
 ```
-
-Use an absolute path (`/Users/you/...` on macOS, `/home/you/...` on Linux); `~` is not expanded in `config.path`.
 
 ccpod copies that directory into a temporary directory, mounts the copy read-only at `/ccpod/config`, and the container entrypoint copies it into the container's own `~/.claude/`. Your host copy is not modified, but everything in the directory is copied, including history and caches, which is why step 3 trims it.
 
@@ -49,7 +47,7 @@ Copy only what exists on your machine, then point the profile at it:
 ```yaml
 config:
   source: local
-  path: /Users/you/.my-claude-config
+  path: ~/.my-claude-config
 ```
 
 ## 4. Make it portable

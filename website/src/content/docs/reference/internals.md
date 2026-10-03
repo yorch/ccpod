@@ -250,7 +250,7 @@ load_profile_config(name)
   → detect source (local | git)
   → git: sync_if_needed(strategy) → read files
   → local: read files directly
-  → parse profile.yml (Zod validation)
+  → parse profile.yml (Zod validation; a leading `~` in config.path is expanded to $HOME)
 
 load_project_config($PWD)
   → find .ccpod.yml walking up from $PWD

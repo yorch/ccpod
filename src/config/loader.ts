@@ -11,7 +11,18 @@ export function loadProfileConfig(profileDir: string): ProfileConfig {
     throw new Error(`Profile not found: ${profilePath}`);
   }
   const raw = parseYaml(readFileSync(profilePath, 'utf8'));
-  return profileConfigSchema.parse(raw) as ProfileConfig;
+  const profile = profileConfigSchema.parse(raw) as ProfileConfig;
+  // config.path is used as a raw filesystem path downstream; without this a
+  // `~/...` value is treated as a relative path and silently yields no config.
+  if (profile.config.path) {
+    profile.config.path = expandTilde(profile.config.path);
+  }
+  return profile;
+}
+
+// Expands a leading `~` (alone or followed by `/`). `~user` forms are left as-is.
+function expandTilde(p: string): string {
+  return p.replace(/^~(?=\/|$)/, homedir());
 }
 
 // Stop walking up at the user's home directory. A .ccpod.yml found above $HOME

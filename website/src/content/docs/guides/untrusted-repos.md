@@ -21,7 +21,7 @@ description: Untrusted repos. Restricted network, no SSH, ephemeral state.
 
 config:
   source: local
-  path: /Users/you/.my-claude-config
+  path: ~/.my-claude-config
 
 image:
   use: ghcr.io/yorch/ccpod:latest
@@ -42,7 +42,7 @@ network:
     - api.anthropic.com
 ```
 
-Use an absolute path for `config.path` (`/Users/you/...` on macOS, `/home/you/...` on Linux). It can point at an empty directory if you do not want your usual settings and skills inside the sandbox, or at a trimmed copy of your config as described in [Move your `~/.claude` config into a profile](../migrate-claude-config/).
+`config.path` can point at an empty directory if you do not want your usual settings and skills inside the sandbox, or at a trimmed copy of your config as described in [Move your `~/.claude` config into a profile](../migrate-claude-config/).
 
 Each section below explains one of these choices.
 

@@ -7,7 +7,7 @@ import {
   symlinkSync,
   writeFileSync,
 } from 'node:fs';
-import { tmpdir } from 'node:os';
+import { homedir, tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { stringify as yamlStringify } from 'yaml';
 import {
@@ -38,6 +38,37 @@ describe('loadProfileConfig', () => {
     expect(profile.config.source).toBe('local');
     expect(profile.state).toBe('ephemeral'); // default applied
     expect(profile.ssh.agentForward).toBe(true); // default applied
+  });
+
+  it('expands a leading ~ in config.path', () => {
+    writeFileSync(
+      join(tmpDir, 'profile.yml'),
+      yamlStringify({
+        config: { path: '~/.my-claude-config', source: 'local' },
+        name: 'tilde',
+      }),
+    );
+    expect(loadProfileConfig(tmpDir).config.path).toBe(
+      join(homedir(), '.my-claude-config'),
+    );
+  });
+
+  it('expands a bare ~ in config.path', () => {
+    writeFileSync(
+      join(tmpDir, 'profile.yml'),
+      yamlStringify({ config: { path: '~', source: 'local' }, name: 'tilde' }),
+    );
+    expect(loadProfileConfig(tmpDir).config.path).toBe(homedir());
+  });
+
+  it('leaves absolute, relative, and ~user config.path values unchanged', () => {
+    for (const path of ['/tmp/cfg', 'rel/cfg', '~other/cfg']) {
+      writeFileSync(
+        join(tmpDir, 'profile.yml'),
+        yamlStringify({ config: { path, source: 'local' }, name: 'p' }),
+      );
+      expect(loadProfileConfig(tmpDir).config.path).toBe(path);
+    }
   });
 
   it('throws when profile.yml is missing', () => {
