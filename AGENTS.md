@@ -15,8 +15,8 @@ bun run dev              # run CLI without building
 bun run build            # compile to dist/ccpod binary
 bun run typecheck        # tsc --noEmit
 bun run check            # biome format + lint (writes fixes)
-bun test                 # all tests
-bun test tests/unit/config/merger.test.ts  # single test file
+bun test --isolate       # all tests (same as `bun run test`)
+bun test tests/unit/config/merger.test.ts --isolate  # single test file
 ```
 
 ### Website commands
@@ -139,6 +139,12 @@ Docker volumes:
 
 ### Testing
 
+Always run tests with `--isolate` (each test file gets a fresh global/module registry; needs a recent Bun, 1.4+). Several files use `mock.module()` for Docker/filesystem isolation, and without isolation those mocks leak into other files, so results depend on file order — `bun test tests/unit --isolate --randomize` (or without `--isolate` to see what would leak) is a good check that a new test doesn't rely on leftovers. When mocking a module, spread its real exports (`...(await import(path))`) and override only what you need, so other importers keep working.
+
+`AuthProxy` is tested end to end against local fake API/OAuth servers (`tests/unit/auth/proxy.upstream.test.ts`) via its `apiUpstream` / `tokenEndpoint` / `readCredentials` / `writeCredentials` options — never against the real network or the host Keychain.
+
+The Docker image is only published from `main`, so PRs that touch `docker/` run `.github/workflows/docker-check.yml` (build for amd64, no push, then smoke-test `claude`/`bun`/`uv`). `uv` (the `FROM` tag) and `bun` (`ARG BUN_VERSION`) are pinned in `docker/Dockerfile`; `claude` is deliberately unpinned because it auto-updates.
+
 Tests live in `tests/unit/` and `tests/integration/`. Unit tests use `bun:test`; `mock.module()` is used for Docker subprocess isolation in container tests.
 
 ## Workflow
@@ -162,7 +168,7 @@ The workflow is idempotent: if the current version's release was tagged on an ea
 
 Before every commit:
 
-1. **Quality gates** — `bun run typecheck && bun test tests/unit/ && bun run check` must all pass
+1. **Quality gates** — `bun run typecheck && bun test tests/unit/ --isolate && bun run check` must all pass
 2. **Docs** — update `CLAUDE.md`, `website/src/content/docs/reference/internals.md`, or any affected docs to reflect the change
 3. **Code review** — spawn a fresh subagent (the harness's built-in code reviewer, e.g. `code-reviewer` or `general-purpose`) to review the diff against the rest of the codebase; address any real bugs or meaningful risks before committing
 

@@ -1,6 +1,7 @@
 import { randomBytes, timingSafeEqual } from 'node:crypto';
 import {
   createServer,
+  request as httpRequest,
   type IncomingMessage,
   type Server,
   type ServerResponse,
@@ -15,8 +16,8 @@ import {
 
 // Claude Code's public OAuth client ID (from the CLI's source).
 const OAUTH_CLIENT_ID = '9d1c250a-e61b-44d9-88ed-5944d1962f5e';
-const TOKEN_ENDPOINT = 'https://platform.claude.com/v1/oauth/token';
-const API_UPSTREAM = 'https://api.anthropic.com';
+const DEFAULT_TOKEN_ENDPOINT = 'https://platform.claude.com/v1/oauth/token';
+const DEFAULT_API_UPSTREAM = 'https://api.anthropic.com';
 
 // Refresh the access token this long before it expires (1 hour margin).
 const REFRESH_MARGIN_MS = 60 * 60 * 1000;
@@ -43,6 +44,9 @@ const STRIP_HEADERS = new Set([
 ]);
 
 interface AuthProxyOptions {
+  // Upstream API base URL and OAuth token endpoint. Default to Anthropic's;
+  // overridable (http:// allowed) so tests can point at local servers.
+  apiUpstream?: string;
   hostname?: string;
   port?: number;
   // Credential source; defaults to the host Keychain / ~/.claude file.
@@ -50,6 +54,9 @@ interface AuthProxyOptions {
   // The sentinel API key that the proxy expects in x-api-key. If set,
   // requests without a matching x-api-key are rejected with 401.
   sentinelKey?: string;
+  tokenEndpoint?: string;
+  // Persists refreshed credentials; defaults to the host Keychain / file.
+  writeCredentials?: (creds: OAuthCredentials) => void;
 }
 
 interface TokenCache {
@@ -83,6 +90,9 @@ export class AuthProxy {
   private readonly hostname: string;
   private readonly sentinelKey: string | undefined;
   private readonly readCredentials: () => OAuthCredentials | undefined;
+  private readonly writeCredentials: (creds: OAuthCredentials) => void;
+  private readonly apiUpstream: string;
+  private readonly tokenEndpoint: string;
   private refreshTimer: ReturnType<typeof setTimeout> | null = null;
   private refreshRetryCount = 0;
   private stopped = false;
@@ -100,6 +110,9 @@ export class AuthProxy {
       (process.platform === 'darwin' ? '127.0.0.1' : '0.0.0.0');
     this.sentinelKey = opts.sentinelKey;
     this.readCredentials = opts.readCredentials ?? readHostOAuthCredentials;
+    this.writeCredentials = opts.writeCredentials ?? writeHostOAuthCredentials;
+    this.apiUpstream = opts.apiUpstream ?? DEFAULT_API_UPSTREAM;
+    this.tokenEndpoint = opts.tokenEndpoint ?? DEFAULT_TOKEN_ENDPOINT;
   }
 
   get address(): string {
@@ -234,7 +247,7 @@ export class AuthProxy {
         // A Keychain permission prompt or disk error should not fail the
         // request — the token will be persisted on the next successful write.
         try {
-          writeHostOAuthCredentials(newCreds);
+          this.writeCredentials(newCreds);
         } catch (err) {
           console.warn(
             `[ccpod-auth-proxy] credential write-back failed (non-fatal): ${err}`,
@@ -331,7 +344,7 @@ export class AuthProxy {
     rateLimitTier: string | undefined,
   ): Promise<OAuthCredentials> {
     return new Promise<OAuthCredentials>((resolve, reject) => {
-      const url = new URL(TOKEN_ENDPOINT);
+      const url = new URL(this.tokenEndpoint);
       const opts: RequestOptions = {
         headers: {
           Accept: 'application/json',
@@ -341,9 +354,10 @@ export class AuthProxy {
         hostname: url.hostname,
         method: 'POST',
         path: url.pathname,
+        ...(url.port ? { port: Number(url.port) } : {}),
       };
 
-      const req = httpsRequest(opts, (resp) => {
+      const req = requestFor(url)(opts, (resp) => {
         const chunks: Buffer[] = [];
         resp.on('data', (chunk: Buffer) => chunks.push(chunk));
         resp.on('end', () => {
@@ -447,7 +461,7 @@ export class AuthProxy {
     }
 
     // Forward to upstream, stripping x-api-key and adding Authorization
-    const upstreamUrl = new URL(req.url ?? '/', API_UPSTREAM);
+    const upstreamUrl = new URL(req.url ?? '/', this.apiUpstream);
     const headers = this.buildUpstreamHeaders(req, accessToken);
 
     await this.forwardRequest(
@@ -473,6 +487,7 @@ export class AuthProxy {
       hostname: url.hostname,
       method,
       path: url.pathname + url.search,
+      ...(url.port ? { port: Number(url.port) } : {}),
     };
 
     return new Promise<void>((resolve) => {
@@ -480,14 +495,20 @@ export class AuthProxy {
       // waiting for the upstream response or during body streaming.
       let onClientClose: (() => void) | null = null;
 
-      const upstreamReq = httpsRequest(opts, (upstreamResp) => {
+      const upstreamReq = requestFor(url)(opts, (upstreamResp) => {
         // On 401, try refreshing the token and retry once
         if (upstreamResp.statusCode === 401 && retryCount === 0) {
           upstreamResp.resume(); // drain
           // Keep the close listener attached through the retry window
           // so a client disconnect during refresh is caught by the next
           // forwardRequest's upstreamReq.destroy().
-          this.refreshToken()
+          // If another request already rotated the token since this one was
+          // sent, the 401 is just staleness: retry with the current token
+          // instead of burning another refresh (and a refresh-token rotation).
+          const sentToken = headers.authorization?.replace(/^Bearer /, '');
+          const alreadyRotated =
+            this.cache !== null && this.cache.creds.accessToken !== sentToken;
+          (alreadyRotated ? Promise.resolve() : this.refreshToken())
             .then(() => {
               const cached = this.cache?.creds.accessToken;
               if (!cached) {
@@ -640,6 +661,13 @@ export class AuthProxy {
       }),
     );
   }
+}
+
+// https for the real endpoints; http only ever appears via the test overrides.
+function requestFor(url: URL): typeof httpsRequest {
+  return url.protocol === 'http:'
+    ? (httpRequest as unknown as typeof httpsRequest)
+    : httpsRequest;
 }
 
 function constantTimeEqual(a: string, b: string): boolean {

@@ -40,3 +40,40 @@ export function rejectExtraPositionals(
     exitWithError(new Error(`Unexpected argument '${extra[0]}' — ${hint}.`));
   }
 }
+
+/**
+ * Split argv at the first `--`: everything before is ccpod's, everything after
+ * belongs to the child command and must never be interpreted by ccpod.
+ */
+export function splitPassthrough(rawArgs: string[]): {
+  before: string[];
+  passthrough: string[];
+} {
+  const sep = rawArgs.indexOf('--');
+  return sep < 0
+    ? { before: rawArgs, passthrough: [] }
+    : { before: rawArgs.slice(0, sep), passthrough: rawArgs.slice(sep + 1) };
+}
+
+/**
+ * The first real positional among `before` (args preceding `--`), skipping
+ * flags and the values of the given value-taking flags. citty's own
+ * positional also swallows the first token AFTER `--` (so `run -- --verbose`
+ * looked like a headless prompt "--verbose"); this only ever looks before it.
+ */
+export function leadingPositional(
+  before: string[],
+  valueFlags: string[],
+): string | undefined {
+  for (let i = 0; i < before.length; i++) {
+    const a = before[i] ?? '';
+    if (a.startsWith('-')) {
+      if (valueFlags.includes(a)) {
+        i++; // skip the flag's value
+      }
+      continue;
+    }
+    return a;
+  }
+  return undefined;
+}

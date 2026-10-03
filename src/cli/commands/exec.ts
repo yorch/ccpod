@@ -1,5 +1,5 @@
 import { defineCommand } from 'citty';
-import { repeatedFlag } from '../args.ts';
+import { repeatedFlag, splitPassthrough } from '../args.ts';
 import { exitWithError } from '../errors.ts';
 import { runSession } from '../session.ts';
 
@@ -32,8 +32,7 @@ export default defineCommand({
     name: 'exec',
   },
   async run({ args, rawArgs }) {
-    const sep = process.argv.indexOf('--');
-    const cmd = sep >= 0 ? process.argv.slice(sep + 1) : [];
+    const { passthrough: cmd } = splitPassthrough(rawArgs);
     if (cmd.length === 0) {
       exitWithError(
         new Error('No command given. Usage: ccpod exec -- <command> [args...]'),

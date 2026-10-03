@@ -18,7 +18,18 @@ beforeAll(async () => {
   if (pull.exitCode !== 0) {
     throw new Error(`Failed to pull alpine: ${pull.stderr}`);
   }
-}, 60_000);
+  // The first `docker run` on a fresh CI runner also pays one-time costs
+  // (snapshot unpack, network setup) beyond the pull; do it here so the timed
+  // tests below measure only their own run.
+  const warm = await dockerExec(['run', '--rm', 'alpine', 'true']);
+  if (warm.exitCode !== 0) {
+    throw new Error(`Failed to start alpine: ${warm.stderr}`);
+  }
+}, 120_000);
+
+// Container runs get a generous per-test timeout: they depend on the runner's
+// Docker daemon, not on our code, and a 5s default flaked in CI.
+const RUN_TIMEOUT_MS = 30_000;
 
 afterAll(async () => {
   // Clean up test volume if left behind
@@ -46,29 +57,37 @@ describe('dockerExec', () => {
 });
 
 describe('dockerSpawn (container run)', () => {
-  it('runs alpine and exits with correct code', async () => {
-    const exitCode = await dockerSpawn([
-      'run',
-      '--rm',
-      'alpine',
-      'sh',
-      '-c',
-      'exit 0',
-    ]);
-    expect(exitCode).toBe(0);
-  });
+  it(
+    'runs alpine and exits with correct code',
+    async () => {
+      const exitCode = await dockerSpawn([
+        'run',
+        '--rm',
+        'alpine',
+        'sh',
+        '-c',
+        'exit 0',
+      ]);
+      expect(exitCode).toBe(0);
+    },
+    RUN_TIMEOUT_MS,
+  );
 
-  it('propagates non-zero exit code', async () => {
-    const exitCode = await dockerSpawn([
-      'run',
-      '--rm',
-      'alpine',
-      'sh',
-      '-c',
-      'exit 42',
-    ]);
-    expect(exitCode).toBe(42);
-  });
+  it(
+    'propagates non-zero exit code',
+    async () => {
+      const exitCode = await dockerSpawn([
+        'run',
+        '--rm',
+        'alpine',
+        'sh',
+        '-c',
+        'exit 42',
+      ]);
+      expect(exitCode).toBe(42);
+    },
+    RUN_TIMEOUT_MS,
+  );
 });
 
 describe('volume lifecycle', () => {
