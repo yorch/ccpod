@@ -20,6 +20,8 @@ export interface ProxyInjection {
 export type ContainerMode = 'claude' | 'shell';
 
 export interface BuildSpecOptions {
+  // Shell mode only: command to run instead of an interactive /bin/bash.
+  cmd?: string[];
   mode?: ContainerMode;
   proxy?: ProxyInjection;
 }
@@ -93,7 +95,7 @@ export function buildContainerSpec(
   }
 
   if (config.ssh.mountSshDir) {
-    binds.push(`${homedir()}/.ssh:/root/.ssh:ro`);
+    binds.push(`${homedir()}/.ssh:/home/node/.ssh:ro`);
   }
 
   binds.push(`ccpod-plugins-${config.profileName}:/ccpod/plugins`);
@@ -101,7 +103,7 @@ export function buildContainerSpec(
     const projectHash =
       config.stateIsolation === 'per-project' ? hash : undefined;
     binds.push(
-      `${getStateDir(config.profileName, projectHash)}:/ccpod/state:rw`,
+      `${getStateDir(config.profileName, projectHash, projectHash ? projectDir : undefined)}:/ccpod/state:rw`,
     );
   }
 
@@ -115,11 +117,15 @@ export function buildContainerSpec(
     Array<{ HostPort: string; HostIp?: string }>
   > = {};
   for (const { host, container, hostIp } of config.ports) {
-    portBindings[`${container}/tcp`] = [
+    // Several mappings can target one container port (profile + project +
+    // .mcp.json); Docker accepts a list of bindings per port.
+    const bindings = portBindings[`${container}/tcp`] ?? [];
+    bindings.push(
       hostIp
         ? { HostIp: hostIp, HostPort: String(host) }
         : { HostPort: String(host) },
-    ];
+    );
+    portBindings[`${container}/tcp`] = bindings;
   }
 
   // Resolved credential + forwarded env are secrets — carried in secretEnv and
@@ -149,6 +155,19 @@ export function buildContainerSpec(
   env.push(`CCPOD_STATE=${config.state}`);
   if (mode === 'shell') {
     env.push('CCPOD_SHELL_MODE=1');
+  }
+  // Native Linux bind mounts keep host ownership. Have the entrypoint run the
+  // `node` user as the host uid/gid so the project, state and config files stay
+  // yours (no chown of host dirs to a foreign uid). Docker Desktop / OrbStack on
+  // macOS translate ownership themselves, so nothing is needed there.
+  if (
+    process.platform === 'linux' &&
+    typeof process.getuid === 'function' &&
+    typeof process.getgid === 'function' &&
+    process.getuid() !== 0
+  ) {
+    env.push(`CCPOD_HOST_UID=${process.getuid()}`);
+    env.push(`CCPOD_HOST_GID=${process.getgid()}`);
   }
 
   if (isProxyAuth) {
@@ -209,7 +228,7 @@ export function buildContainerSpec(
     ...(Object.keys(tmpfs).length > 0 ? { tmpfs } : {}),
     ...(mode === 'shell'
       ? {
-          cmd: ['/bin/bash'],
+          cmd: opts.cmd ?? ['/bin/bash'],
           execTarget: `ccpod-${config.profileName}-${hash}`,
         }
       : config.claudeArgs.length > 0

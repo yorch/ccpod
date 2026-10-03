@@ -9,6 +9,7 @@ import {
   projectConfigSchema,
 } from '../../../config/schema.ts';
 import { getProfileDir, profileExists } from '../../../profile/manager.ts';
+import { rejectExtraPositionals } from '../../args.ts';
 import { validateProfileArg } from '../../validate.ts';
 
 export default defineCommand({
@@ -20,6 +21,7 @@ export default defineCommand({
     name: 'validate',
   },
   run({ args }) {
+    rejectExtraPositionals(args);
     const cwd = process.cwd();
     validateProfileArg(args.profile);
     let allOk = true;

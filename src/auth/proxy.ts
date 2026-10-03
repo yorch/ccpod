@@ -42,7 +42,7 @@ const STRIP_HEADERS = new Set([
   'content-length',
 ]);
 
-export interface AuthProxyOptions {
+interface AuthProxyOptions {
   hostname?: string;
   port?: number;
   // Credential source; defaults to the host Keychain / ~/.claude file.

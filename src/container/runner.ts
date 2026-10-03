@@ -81,7 +81,19 @@ export async function shellContainer(
   const { state, target } = await resolveShellTarget(spec, deps);
   if (target) {
     const cmd = spec.cmd ?? ['/bin/bash'];
-    return deps.dockerSpawn(['exec', '-it', target, ...cmd]);
+    // The image's final USER is root (the entrypoint drops to node); exec
+    // bypasses the entrypoint, so drop privileges explicitly or files created
+    // in /workspace end up root-owned.
+    return deps.dockerSpawn([
+      'exec',
+      spec.tty ? '-it' : '-i',
+      '-u',
+      'node',
+      '-e',
+      'HOME=/home/node',
+      target,
+      ...cmd,
+    ]);
   }
 
   await removeForFreshRun(spec.name, state, deps);
@@ -102,7 +114,7 @@ const CONTAINER_LIFECYCLES = [
 ] as const;
 export type ContainerLifecycle = (typeof CONTAINER_LIFECYCLES)[number];
 
-export async function containerState(
+async function containerState(
   name: string,
   dockerExecFn: DockerExecFn,
 ): Promise<ContainerLifecycle> {

@@ -27,7 +27,7 @@ export default defineCommand({
       type: 'positional',
     },
     yes: {
-      alias: 'y',
+      alias: ['y', 'force'],
       default: false,
       description: 'Skip confirmation prompts for remote sources',
       type: 'boolean',

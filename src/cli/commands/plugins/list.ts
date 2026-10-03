@@ -1,16 +1,16 @@
 import chalk from 'chalk';
 import { defineCommand } from 'citty';
-import { loadProjectConfig } from '../../../config/loader.ts';
 import {
   listVolumeEntries,
   pluginsVolumeName,
   volumeExists,
 } from '../../../plugins/volume.ts';
-import { profileExists } from '../../../profile/manager.ts';
-import { validateProfileArg } from '../../validate.ts';
+import { rejectExtraPositionals } from '../../args.ts';
+import { resolveProfileName } from '../../profile-arg.ts';
 
 export default defineCommand({
   args: {
+    json: { default: false, description: 'Output as JSON', type: 'boolean' },
     profile: {
       description: "Profile name (default: from .ccpod.yml or 'default')",
       type: 'string',
@@ -21,26 +21,32 @@ export default defineCommand({
     name: 'list',
   },
   async run({ args }) {
-    validateProfileArg(args.profile);
-    const projectConfig = loadProjectConfig(process.cwd());
-    const profileName = args.profile ?? projectConfig?.profile ?? 'default';
-
-    if (!profileExists(profileName)) {
-      console.error(`Profile '${profileName}' not found.`);
-      process.exit(1);
-    }
+    rejectExtraPositionals(args);
+    const profileName = resolveProfileName(args.profile);
 
     const volName = pluginsVolumeName(profileName);
     const exists = await volumeExists(volName);
 
     if (!exists) {
+      if (args.json) {
+        console.log(
+          JSON.stringify({
+            plugins: [],
+            profile: profileName,
+            volume: volName,
+          }),
+        );
+        return;
+      }
       console.log(
         `No plugins volume for profile '${profileName}'. Run 'ccpod run' to create it.`,
       );
       return;
     }
 
-    console.log(chalk.dim(`Volume: ${volName}\n`));
+    if (!args.json) {
+      console.log(chalk.dim(`Volume: ${volName}\n`));
+    }
 
     let entries: string[];
     try {
@@ -60,6 +66,16 @@ export default defineCommand({
     }
 
     const visible = entries.filter((e) => !e.startsWith('.'));
+    if (args.json) {
+      console.log(
+        JSON.stringify({
+          plugins: visible,
+          profile: profileName,
+          volume: volName,
+        }),
+      );
+      return;
+    }
     if (visible.length === 0) {
       console.log('No plugins installed yet.');
     } else {

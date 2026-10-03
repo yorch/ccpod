@@ -260,6 +260,10 @@ describe('shellContainer', () => {
     expect(spawnMock.mock.calls[0]?.[0]).toEqual([
       'exec',
       '-it',
+      '-u',
+      'node',
+      '-e',
+      'HOME=/home/node',
       'ccpod-default-abc123',
       '/bin/bash',
     ]);

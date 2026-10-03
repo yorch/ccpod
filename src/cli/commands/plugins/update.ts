@@ -1,13 +1,12 @@
 import chalk from 'chalk';
 import { defineCommand } from 'citty';
-import { loadProjectConfig } from '../../../config/loader.ts';
 import {
   pluginsVolumeName,
   removeVolume,
   volumeExists,
 } from '../../../plugins/volume.ts';
-import { profileExists } from '../../../profile/manager.ts';
-import { validateProfileArg } from '../../validate.ts';
+import { rejectExtraPositionals } from '../../args.ts';
+import { resolveProfileName } from '../../profile-arg.ts';
 
 export default defineCommand({
   args: {
@@ -23,14 +22,8 @@ export default defineCommand({
     name: 'update',
   },
   async run({ args }) {
-    validateProfileArg(args.profile);
-    const projectConfig = loadProjectConfig(process.cwd());
-    const profileName = args.profile ?? projectConfig?.profile ?? 'default';
-
-    if (!profileExists(profileName)) {
-      console.error(`Profile '${profileName}' not found.`);
-      process.exit(1);
-    }
+    rejectExtraPositionals(args);
+    const profileName = resolveProfileName(args.profile);
 
     const volName = pluginsVolumeName(profileName);
 
@@ -41,7 +34,7 @@ export default defineCommand({
       console.log(chalk.dim(`Volume: ${volName}`));
       console.log(
         chalk.dim(
-          '\nTo install specific plugins on next run, set CCPOD_PLUGINS_TO_INSTALL=plugin1,plugin2 in your profile env.',
+          '\nTo install specific plugins on next run, list them under `plugins:` in the profile.',
         ),
       );
       return;

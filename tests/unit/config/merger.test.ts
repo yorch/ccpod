@@ -1,5 +1,9 @@
 import { describe, expect, it } from 'bun:test';
-import { mergeClaudes, mergeConfigs } from '../../../src/config/merger.ts';
+import {
+  mergeClaudes,
+  mergeConfigs,
+  mergeSettings,
+} from '../../../src/config/merger.ts';
 import type { ProfileConfig } from '../../../src/types/index.ts';
 
 function makeProfile(overrides: Partial<ProfileConfig> = {}): ProfileConfig {
@@ -488,5 +492,31 @@ describe('mergeClaudes', () => {
   it('append with only one side present has no dangling separator', () => {
     expect(mergeClaudes('# Profile', '', 'append')).toBe('# Profile');
     expect(mergeClaudes('', '# Project', 'append')).toBe('# Project');
+  });
+});
+
+describe('mergeSettings', () => {
+  it('later layers win; string arrays are unioned and de-duplicated', () => {
+    const merged = mergeSettings(
+      { permissions: { allow: ['Read', 'Bash(ls)'] }, theme: 'dark' },
+      { permissions: { allow: ['Bash(ls)', 'Edit'] } },
+      { theme: 'light' },
+    ) as { permissions: { allow: string[] }; theme: string };
+    expect(merged.theme).toBe('light');
+    expect(merged.permissions.allow).toEqual(['Read', 'Bash(ls)', 'Edit']);
+  });
+
+  it('concatenates non-string arrays instead of de-duplicating', () => {
+    const merged = mergeSettings(
+      { hooks: [{ a: 1 }] },
+      { hooks: [{ a: 1 }] },
+    ) as { hooks: unknown[] };
+    expect(merged.hooks).toHaveLength(2);
+  });
+
+  it('does not mutate its inputs', () => {
+    const a = { x: { y: [1] } };
+    mergeSettings(a, { x: { y: [2] } });
+    expect(a).toEqual({ x: { y: [1] } });
   });
 });

@@ -9,7 +9,7 @@ Merging happens across three independent axes — each has its own control:
 
 | Axis | Controlled by | Configurable? |
 |---|---|---|
-| ccpod settings (ports, services, env, claudeArgs) | `merge` in `.ccpod.yml` | yes |
+| ccpod settings (ports, services, env, claudeArgs, init) | `merge` in `.ccpod.yml` | yes |
 | `CLAUDE.md` content | `config.claudeMd` in `.ccpod.yml` | yes |
 | `.claude/settings.json` | — | no — always deep-merged, project wins on conflicts |
 
@@ -34,12 +34,12 @@ When the profile sets `isolation: true`, **all project config is ignored** — m
 | `settings.json` | Deep merge. Project wins on conflicting keys. |
 | `CLAUDE.md` | Profile content first, then project appended. Set `config.claudeMd: override` to replace. |
 | `skills/` | Union. Symlinks are skipped. |
-| `enabledPlugins` | Union. Project can add but not remove profile plugins (use `merge: override` to remove). |
+| `enabledPlugins` (in `settings.json`) | Deep-merged with the rest of `settings.json`. The `plugins:` install list lives in the profile only. |
 | `hooks/` | Arrays merged by event type. |
 | `marketplaces` | Object spread; project keys win. |
-| `services` | Merged by key. Project can add or replace specific sidecars. |
-| `env` (forwarded var names) | Union of both lists. |
-| `ports.list` | Concatenated. |
+| `services` | Merged by key — only if the profile sets `allowProjectServices: true`; otherwise project services are ignored. |
+| `env` | Union of both lists. Project bare names (host-var forwarding) need `allowProjectEnvForward` in the profile. |
+| `ports.list` | Concatenated; project ports bind to `127.0.0.1` only. |
 | `network` | Ignored. The policy and allow-list are profile-owned; a project that declares `network:` gets a warning. See [Network Policy](../../features/network/). |
 
 ## CLI overrides
@@ -52,7 +52,7 @@ Run-level flags take final precedence:
 | `--env KEY=VALUE` | Inject an env var (or override one already forwarded). |
 | `--rebuild` | Force image rebuild / repull regardless of cache. |
 | `--no-state` | Force `state: ephemeral` for this run only. |
-| `--file <path>` | Headless mode via file. Path is normalized; absolute paths and `..` traversals are rejected. |
+| `--file <path>` | Headless mode: the prompt is read from this file (relative to the project; absolute paths and `..` are rejected) and run with `claude -p`. |
 | `"prompt text"` | Headless mode via inline prompt. Mutually exclusive with `--file`. |
 | `-- <args>` | Flags appended verbatim to the `claude` command. Appended after `claudeArgs` from profile/project. |
 
@@ -62,4 +62,4 @@ Run-level flags take final precedence:
 ccpod config show
 ```
 
-The output shows the fully resolved `ResolvedConfig`: image, env (resolved key→value), ports, services, mounts, and the final merged config dir under `/tmp/ccpod-<hash>/`.
+The output shows the fully resolved `ResolvedConfig`: image, env (keys only), ports, services, and the the `allowProject*` flags and which project entries were ignored. (The merged config directory itself lives under a private per-user dir, `${TMPDIR}/ccpod-u<uid>/`.)

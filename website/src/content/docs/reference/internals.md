@@ -135,7 +135,7 @@ Four mount points feed `~/.claude/` inside the container. `docker/entrypoint.sh`
 ```
 Host mounts                     Inside container         ~/.claude/ result
 ─────────────────               ─────────────────        ─────────────────────
-/tmp/ccpod-<hash>/   ──ro──►   /ccpod/config/      ──►  settings.json (copied)
+${TMPDIR}/ccpod-u<uid>/ccpod-<hash>/ ──ro──►   /ccpod/config/      ──►  settings.json (copied)
   settings.json                                          CLAUDE.md     (copied)
   CLAUDE.md                                              skills/       (copied)
   hooks/                                                 hooks/        (copied)
@@ -152,88 +152,18 @@ ccpod-plugins-<p>   (volume) ► /ccpod/plugins/     ──►  plugins/  ← sy
 $PWD                 ──rw──►   /workspace/
 ```
 
-Abridged `entrypoint.sh` (full source: [`docker/entrypoint.sh`](https://github.com/yorch/ccpod/blob/main/docker/entrypoint.sh)):
+`docker/entrypoint.sh` (full source: [`docker/entrypoint.sh`](https://github.com/yorch/ccpod/blob/main/docker/entrypoint.sh)) runs as root for setup, then drops to the `node` user with `gosu`. In order:
 
-```sh
-#!/bin/sh
-set -e
-
-# Entrypoint runs as root for setup (iptables, file seeding), then drops to
-# the 'node' user (uid 1000) before exec'ing claude. This satisfies Claude
-# Code's refusal to run --dangerously-skip-permissions as root.
-NODE_HOME=/home/node
-CLAUDE_DIR="${CLAUDE_CONFIG_DIR:-${NODE_HOME}/.claude}"
-mkdir -p "${CLAUDE_DIR}"
-
-# 1. Seed config (CLAUDE.md, settings.json, skills/, hooks/, extensions/, …) — ro source → rw dest
-if [ -d /ccpod/config ]; then
-  cp -r /ccpod/config/. "${CLAUDE_DIR}/"
-fi
-
-# 2. Restore persisted auth files
-if [ -f /ccpod/credentials/.credentials.json ]; then
-  cp -f /ccpod/credentials/.credentials.json "${CLAUDE_DIR}/.credentials.json"
-fi
-if [ -f /ccpod/credentials/.claude.json ]; then
-  cp -f /ccpod/credentials/.claude.json "${NODE_HOME}/.claude.json"
-fi
-
-# 3. Plugins — symlink named volume so installs persist across runs
-mkdir -p /ccpod/plugins
-rm -rf "${CLAUDE_DIR}/plugins"
-ln -sf /ccpod/plugins "${CLAUDE_DIR}/plugins"
-
-# 4. State — symlink named volume or tmpfs mount
-mkdir -p /ccpod/state/projects /ccpod/state/todos /ccpod/state/statsig
-for dir in projects todos statsig; do
-  rm -rf "${CLAUDE_DIR}/${dir}"
-  ln -sf "/ccpod/state/${dir}" "${CLAUDE_DIR}/${dir}"
-done
-
-# Fix ownership so the node user can read/write everything
-chown -R node:node "${CLAUDE_DIR}" "${NODE_HOME}" /ccpod/plugins /ccpod/state /ccpod/credentials 2>/dev/null || true
-
-# 5. Run user-defined init commands (as node user, in /workspace)
-if [ -f /ccpod/config/post-init.sh ]; then
-  HOME="${NODE_HOME}" PATH="${PATH}" gosu node sh -c 'cd /workspace && sh /ccpod/config/post-init.sh'
-fi
-
-# 6. Delta-install missing plugins (comma-separated list from env)
-if [ -n "${CCPOD_PLUGINS_TO_INSTALL}" ]; then
-  for plugin in $(printf '%s' "${CCPOD_PLUGINS_TO_INSTALL}" | tr ',' '\n'); do
-    if [ -n "${plugin}" ] && [ ! -d "${CLAUDE_DIR}/plugins/${plugin}" ]; then
-      HOME="${NODE_HOME}" PATH="${PATH}" gosu node claude plugin install "${plugin}" 2>/dev/null || true
-    fi
-  done
-fi
-
-# 7. Network restriction — iptables OUTPUT rules when policy=restricted
-#    (requires --cap-add NET_ADMIN; ccpod adds this automatically)
-if [ "${CCPOD_NETWORK_POLICY}" = "restricted" ]; then
-  iptables -A OUTPUT -o lo -j ACCEPT
-  iptables -A OUTPUT -m conntrack --ctstate ESTABLISHED,RELATED -j ACCEPT
-  iptables -A OUTPUT -p udp --dport 53 -j ACCEPT
-  iptables -A OUTPUT -p tcp --dport 53 -j ACCEPT
-  for host in $(printf '%s' "${CCPOD_ALLOWED_HOSTS:-}" | tr ',' '\n'); do ...done
-  iptables -A OUTPUT -j DROP
-fi
-
-# Shell mode (ccpod shell): exec directly so bash gets TTY process group control.
-if [ "${CCPOD_SHELL_MODE}" = "1" ]; then
-  exec env HOME="${NODE_HOME}" PATH="${PATH}" gosu node "$@"
-fi
-
-# Normal mode: run as background job so signals forward cleanly.
-# On exit, write credentials back so they survive container removal.
-HOME="${NODE_HOME}" PATH="${PATH}" gosu node "$@" &
-CHILD_PID=$!
-trap "kill -TERM $CHILD_PID 2>/dev/null" TERM INT HUP
-wait $CHILD_PID || STATUS=$?
-STATUS=${STATUS:-0}
-cp -f "${CLAUDE_DIR}/.credentials.json" /ccpod/credentials/.credentials.json 2>/dev/null || true
-cp -f "${NODE_HOME}/.claude.json" /ccpod/credentials/.claude.json 2>/dev/null || true
-exit $STATUS
-```
+0. **Root `PATH` and `gosu`.** Root-side commands run with a fixed, root-owned `PATH`; `gosu` is resolved once under it. The image/profile `PATH` (`USER_PATH`) is only given to the `node` user, so nothing `node` can write is ever executed as root.
+1. **Host uid remap (Linux).** If `CCPOD_HOST_UID`/`CCPOD_HOST_GID` are set (ccpod sets them on native Linux), `node` is remapped to the host user's ids so bind-mounted dirs keep your ownership.
+2. **Seed config.** `/ccpod/config` (read-only) is copied into `~/.claude`.
+3. **Restore auth files** (`.credentials.json`, `.claude.json`) from `/ccpod/credentials` — skipped in proxy mode.
+4. **Plugins and state.** `~/.claude/plugins` and `projects/todos/statsig` become symlinks into `/ccpod/plugins` and `/ccpod/state`.
+5. **Ownership.** `chown -R node:node` on the Claude dir, `$HOME`, `/ccpod/plugins` and `/ccpod/state` — never `/ccpod/credentials`, which only root touches.
+6. **Init commands.** If `/ccpod/config/post-init.sh` exists (generated only from trust-gated `init:` commands) it runs as `node` in `/workspace`.
+7. **Delta plugin install** from `CCPOD_PLUGINS_TO_INSTALL`.
+8. **Network restriction** (`CCPOD_NETWORK_POLICY=restricted`, needs `NET_ADMIN`, applied after steps 6–7). Fails closed: loopback/established/default-deny rules for IPv4 and (when the kernel has IPv6) `ip6tables`; DNS only to the `/etc/resolv.conf` nameservers; declared hosts resolved to IPs; in proxy mode, only the auth proxy's single port on the host gateway (parsed from `ANTHROPIC_BASE_URL`).
+9. **Launch.** Shell mode (`CCPOD_SHELL_MODE=1`) `exec`s directly so bash gets TTY job control. Normal mode runs the command as a background job with signal forwarding, then copies the auth files back to `/ccpod/credentials` before exiting with the command's status.
 
 **Credential persistence:** two auth files survive container removal via the bind-mounted credentials dir:
 
@@ -266,7 +196,7 @@ merge(profile_assets, project_overrides, strategy):
   hooks/         → mergeArraysByEventType(profile, project)
   marketplaces   → { ...profile_markets, ...project_markets }
 
-write_merged_config(result) → /tmp/ccpod-<sha256(content)>/
+write_merged_config(result) → ${TMPDIR}/ccpod-u<uid>/ccpod-<sha256(content)>/
   // deterministic path: same content = same dir = skip re-write
 ```
 
@@ -328,7 +258,7 @@ By default, persistent state is shared across all projects using the same profil
 
 When `stateIsolation: per-project` is set, each project gets its own state directory at `~/.ccpod/state/<profile>/<projectHash>/`, where `<projectHash>` is the first 16 hex chars of SHA-256 over the canonical project path (same hash used for container names and network names). This prevents cross-project state leakage — conversation history, todos, and project metadata from one project are not visible to another project using the same profile.
 
-`ccpod state clear` clears the current project's state by default; `--all` clears all state for the profile. `ccpod prune` cleans orphaned per-project state dirs (those with no remaining containers).
+`ccpod state clear` clears the current project's state by default; `--all` clears all state for the profile. `ccpod prune` cleans orphaned per-project state dirs — those whose recorded project path (`.ccpod-project` marker) no longer exists; dirs without a marker are kept.
 
 ### Profile name validation
 

@@ -122,7 +122,7 @@ describe('buildContainerSpec', () => {
       PROJECT_DIR,
       true,
     );
-    expect(spec.binds.some((b) => b.includes('/.ssh:/root/.ssh:ro'))).toBe(
+    expect(spec.binds.some((b) => b.includes('/.ssh:/home/node/.ssh:ro'))).toBe(
       true,
     );
   });
@@ -425,5 +425,41 @@ describe('buildContainerSpec — proxy auth mode', () => {
     );
     expect(allowedHostsEntry).toBeDefined();
     expect(allowedHostsEntry).not.toContain('host.docker.internal');
+  });
+
+  it('keeps every binding when several mappings target one container port', () => {
+    const spec = buildContainerSpec(
+      makeConfig({
+        ports: [
+          { container: 3000, host: 3000 },
+          { container: 3000, host: 4000, hostIp: '127.0.0.1' },
+        ],
+      }),
+      PROJECT_DIR,
+      true,
+    );
+    expect(spec.portBindings['3000/tcp']).toEqual([
+      { HostPort: '3000' },
+      { HostIp: '127.0.0.1', HostPort: '4000' },
+    ]);
+  });
+
+  it('passes the host uid/gid to the entrypoint on Linux only', () => {
+    const original = Object.getOwnPropertyDescriptor(process, 'platform');
+    try {
+      Object.defineProperty(process, 'platform', { value: 'linux' });
+      const linux = buildContainerSpec(makeConfig(), PROJECT_DIR, true);
+      if (process.getuid && process.getuid() !== 0) {
+        expect(linux.env).toContain(`CCPOD_HOST_UID=${process.getuid()}`);
+        expect(linux.env).toContain(`CCPOD_HOST_GID=${process.getgid?.()}`);
+      }
+      Object.defineProperty(process, 'platform', { value: 'darwin' });
+      const mac = buildContainerSpec(makeConfig(), PROJECT_DIR, true);
+      expect(mac.env.some((e) => e.startsWith('CCPOD_HOST_UID='))).toBe(false);
+    } finally {
+      if (original) {
+        Object.defineProperty(process, 'platform', original);
+      }
+    }
   });
 });

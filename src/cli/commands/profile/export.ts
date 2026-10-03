@@ -5,7 +5,11 @@ import { validateProfileArg } from '../../validate.ts';
 
 export default defineCommand({
   args: {
-    name: { description: 'Profile name', type: 'positional' },
+    name: {
+      description: 'Profile name',
+      required: true,
+      type: 'positional',
+    },
   },
   meta: {
     description: 'Export a profile as a shareable base64 string',

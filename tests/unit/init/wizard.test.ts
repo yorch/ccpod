@@ -1,7 +1,10 @@
 import { describe, expect, it } from 'bun:test';
 import { parse as yamlParse } from 'yaml';
 import type { ProfileConfigInput } from '../../../src/config/schema.ts';
-import { buildAnnotatedProfileYaml, q } from '../../../src/init/wizard.ts';
+import {
+  buildAnnotatedProfileYaml,
+  yamlQuote,
+} from '../../../src/init/profile-yaml.ts';
 
 const baseProfile: ProfileConfigInput = {
   auth: { keyEnv: 'ANTHROPIC_API_KEY', type: 'api-key' },
@@ -21,40 +24,40 @@ const baseProfile: ProfileConfigInput = {
   state: 'ephemeral',
 };
 
-describe('q()', () => {
+describe('yamlQuote()', () => {
   it('passes plain strings through unchanged', () => {
-    expect(q('simple')).toBe('simple');
-    expect(q('api-key')).toBe('api-key');
-    expect(q('ANTHROPIC_API_KEY')).toBe('ANTHROPIC_API_KEY');
+    expect(yamlQuote('simple')).toBe('simple');
+    expect(yamlQuote('api-key')).toBe('api-key');
+    expect(yamlQuote('ANTHROPIC_API_KEY')).toBe('ANTHROPIC_API_KEY');
   });
 
   it('quotes strings with spaces', () => {
-    expect(q('path with spaces')).toBe('"path with spaces"');
+    expect(yamlQuote('path with spaces')).toBe('"path with spaces"');
   });
 
   it('quotes strings with YAML special chars', () => {
-    expect(q('ghcr.io/yorch/ccpod:latest')).toBe(
+    expect(yamlQuote('ghcr.io/yorch/ccpod:latest')).toBe(
       '"ghcr.io/yorch/ccpod:latest"',
     );
-    expect(q('key: value')).toBe('"key: value"');
-    expect(q('[array]')).toBe('"[array]"');
+    expect(yamlQuote('key: value')).toBe('"key: value"');
+    expect(yamlQuote('[array]')).toBe('"[array]"');
   });
 
   it('escapes embedded double quotes', () => {
-    expect(q('say "hello"')).toBe('"say \\"hello\\""');
+    expect(yamlQuote('say "hello"')).toBe('"say \\"hello\\""');
   });
 
   it('escapes backslashes when quoting is triggered', () => {
     // space triggers quoting; backslash in value must be double-escaped
-    expect(q('C:\\path with spaces')).toBe('"C:\\\\path with spaces"');
+    expect(yamlQuote('C:\\path with spaces')).toBe('"C:\\\\path with spaces"');
     // colon triggers quoting; backslash must be escaped before quote-escaping
-    expect(q('key: C:\\value')).toBe('"key: C:\\\\value"');
+    expect(yamlQuote('key: C:\\value')).toBe('"key: C:\\\\value"');
   });
 
   it('quotes strings starting with YAML indicator characters', () => {
-    expect(q('!important')).toBe('"!important"');
-    expect(q('*alias')).toBe('"*alias"');
-    expect(q('-flag')).toBe('"-flag"');
+    expect(yamlQuote('!important')).toBe('"!important"');
+    expect(yamlQuote('*alias')).toBe('"*alias"');
+    expect(yamlQuote('-flag')).toBe('"-flag"');
   });
 });
 

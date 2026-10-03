@@ -7,6 +7,7 @@ import {
   rmSync,
   statSync,
   symlinkSync,
+  utimesSync,
   writeFileSync,
 } from 'node:fs';
 import { tmpdir } from 'node:os';
@@ -280,5 +281,28 @@ describe('writeMergedConfig', () => {
     const out = run(profileDir, '', {});
     expect(existsSync(join(out, 'skills', 'real.md'))).toBe(true);
     expect(existsSync(join(out, 'skills', 'link.md'))).toBe(false);
+  });
+
+  it('sweeps merged-config dirs unused for over two weeks, keeps recent ones', () => {
+    const profileDir = makeTempDir();
+    const old = run(profileDir, 'old', {});
+    const recent = run(profileDir, 'recent', {});
+    const month = new Date(Date.now() - 30 * 24 * 60 * 60 * 1000);
+    utimesSync(old, month, month);
+    // A new (cache-miss) write triggers the sweep.
+    const fresh = run(profileDir, 'fresh', {});
+    expect(existsSync(old)).toBe(false);
+    expect(existsSync(recent)).toBe(true);
+    expect(existsSync(fresh)).toBe(true);
+  });
+
+  it('a cache hit refreshes the dir mtime so it is not swept', () => {
+    const profileDir = makeTempDir();
+    const dir = run(profileDir, 'kept', {});
+    const month = new Date(Date.now() - 30 * 24 * 60 * 60 * 1000);
+    utimesSync(dir, month, month);
+    expect(run(profileDir, 'kept', {})).toBe(dir);
+    run(profileDir, 'another', {});
+    expect(existsSync(dir)).toBe(true);
   });
 });

@@ -21,6 +21,27 @@ GOSU="$(command -v gosu)" || { echo "ccpod: gosu not found" >&2; exit 1; }
 CLAUDE_DIR="${CLAUDE_CONFIG_DIR:-${NODE_HOME}/.claude}"
 mkdir -p "${CLAUDE_DIR}"
 
+# 0. Native Linux: run `node` as the host user's uid/gid (CCPOD_HOST_UID/GID)
+# so bind-mounted dirs (project, ~/.ccpod/state) stay owned by the host user
+# instead of being chown-ed to whatever uid 1000 is on the host. usermod also
+# re-owns /home/node. Skipped when unset (macOS) or already matching.
+case "${CCPOD_HOST_UID}:${CCPOD_HOST_GID}" in
+  *[!0-9:]*|:*|*:) ;;  # not numeric / incomplete: leave node as-is
+  *)
+    if [ "${CCPOD_HOST_UID}" != "0" ] && \
+       { [ "${CCPOD_HOST_UID}" != "$(id -u node)" ] || [ "${CCPOD_HOST_GID}" != "$(id -g node)" ]; }; then
+      groupmod -o -g "${CCPOD_HOST_GID}" node 2>/dev/null || true
+      # usermod also chown-s the home dir and exits non-zero if part of it is
+      # a read-only bind mount (e.g. ~/.ssh) even though the id change itself
+      # succeeded, so judge success by the resulting ids, not the exit code.
+      usermod -o -u "${CCPOD_HOST_UID}" -g "${CCPOD_HOST_GID}" node 2>/dev/null || true
+      if [ "$(id -u node)" != "${CCPOD_HOST_UID}" ]; then
+        echo "ccpod: warning: could not remap node to uid ${CCPOD_HOST_UID}" >&2
+      fi
+    fi
+    ;;
+esac
+
 # 1. Seed config (CLAUDE.md, settings.json, skills/, extensions/) — ro source → rw dest
 if [ -d /ccpod/config ]; then
   cp -r /ccpod/config/. "${CLAUDE_DIR}/"
@@ -55,7 +76,8 @@ done
 # Fix ownership so the node user can read/write everything. /ccpod/credentials
 # is deliberately excluded: only root reads/writes it (cp in above, cp out at
 # exit), and it is a host bind mount — chown-ing it would hand a 0700 host
-# directory of OAuth tokens to uid 1000, which may be a different local user.
+# directory of OAuth tokens to another uid. (With step 0, `node` already is the
+# host uid on Linux, so chown-ing the state bind mount is a no-op there.)
 chown -R node:node "${CLAUDE_DIR}" "${NODE_HOME}" /ccpod/plugins /ccpod/state 2>/dev/null || true
 
 # 5. Run user-defined init commands (as node user, in /workspace)

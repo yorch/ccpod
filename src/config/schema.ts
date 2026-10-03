@@ -10,7 +10,7 @@ const portsConfigSchema = z
   })
   .default({ autoDetectMcp: true, list: [] });
 
-const serviceConfigSchema = z.object({
+export const serviceConfigSchema = z.object({
   env: z.record(z.string(), z.string()).optional(),
   image: z.string(),
   ports: z.array(z.string()).optional(),
@@ -162,4 +162,3 @@ export const projectConfigSchema = z.object({
 });
 
 export type ProfileConfigInput = z.input<typeof profileConfigSchema>;
-export type ProjectConfigInput = z.input<typeof projectConfigSchema>;

@@ -1,15 +1,14 @@
 import chalk from 'chalk';
 import { defineCommand } from 'citty';
-import {
-  computeProjectHash,
-  LABEL_PROFILE,
-  LABEL_PROJECT,
-} from '../../container/builder.ts';
+import { computeProjectHash, LABEL_PROJECT } from '../../container/builder.ts';
+import { listCcpodContainers } from '../../container/list.ts';
 import {
   removeSidecarNetwork,
   sidecarNetworkName,
 } from '../../container/sidecars.ts';
 import { dockerExec } from '../../runtime/docker.ts';
+import { rejectExtraPositionals } from '../args.ts';
+import { exitWithError } from '../errors.ts';
 import { validateProfileArg } from '../validate.ts';
 
 export default defineCommand({
@@ -26,35 +25,21 @@ export default defineCommand({
     name: 'down',
   },
   async run({ args }) {
+    rejectExtraPositionals(args);
     const currentProjectHash = computeProjectHash(process.cwd());
 
     validateProfileArg(args.profile);
 
-    const filterArgs: string[] = args.all
-      ? ['--filter', `label=${LABEL_PROFILE}`]
-      : ['--filter', `label=${LABEL_PROJECT}=${currentProjectHash}`];
-
-    if (!args.all && args.profile) {
-      filterArgs.push('--filter', `label=${LABEL_PROFILE}=${args.profile}`);
+    let rows: Awaited<ReturnType<typeof listCcpodContainers>>;
+    try {
+      rows = await listCcpodContainers({
+        all: true,
+        ...(args.profile ? { profile: args.profile } : {}),
+        ...(args.all ? {} : { project: currentProjectHash }),
+      });
+    } catch (err) {
+      exitWithError(err);
     }
-
-    const { stdout } = await dockerExec([
-      'ps',
-      '-a',
-      '--format',
-      `{{.ID}}|{{.Names}}|{{.State}}|{{.Label "${LABEL_PROJECT}"}}`,
-      ...filterArgs,
-    ]);
-    const rows = stdout
-      .split('\n')
-      .map((s) => s.trim())
-      .filter(Boolean)
-      .map((line) => {
-        const [id = '', name = '', state = '', projectHash = ''] =
-          line.split('|');
-        return { id, name, projectHash, state };
-      })
-      .filter((row) => row.id);
 
     if (rows.length === 0) {
       console.log(
@@ -66,8 +51,8 @@ export default defineCommand({
     const touchedProjectHashes = new Set<string>();
 
     for (const row of rows) {
-      if (row.projectHash) {
-        touchedProjectHashes.add(row.projectHash);
+      if (row.project) {
+        touchedProjectHashes.add(row.project);
       }
       const displayName = row.name || row.id.slice(0, 12);
       // `.State` is the machine-readable lifecycle field: running, paused,

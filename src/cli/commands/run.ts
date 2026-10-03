@@ -5,6 +5,7 @@ import { defineCommand } from 'citty';
 import { buildContainerSpec } from '../../container/builder.ts';
 import { runContainer } from '../../container/runner.ts';
 import { dockerExec } from '../../runtime/docker.ts';
+import { repeatedFlag } from '../args.ts';
 import { withAuthProxy } from '../auth-proxy.ts';
 import { exitWithError } from '../errors.ts';
 import { setupContainer } from './_setup.ts';
@@ -55,7 +56,6 @@ function readPromptFile(absPath: string, shown: string): string {
 export default defineCommand({
   args: {
     env: {
-      array: true,
       description: 'Pass/override env var (KEY or KEY=VALUE)',
       type: 'string',
     },
@@ -95,7 +95,7 @@ export default defineCommand({
     description: 'Run Claude Code in a container (interactive or headless)',
     name: 'run',
   },
-  async run({ args }) {
+  async run({ args, rawArgs }) {
     try {
       const cwd = process.cwd();
       console.log(chalk.dim('Loading config...'));
@@ -131,7 +131,7 @@ export default defineCommand({
         process.exit(1);
       }
 
-      const envArgs = ([] as string[]).concat(args.env ?? []);
+      const envArgs = repeatedFlag(rawArgs, 'env');
       const promptText = fileArg
         ? readPromptFile(join(cwd, fileArg), fileArg)
         : promptArg;

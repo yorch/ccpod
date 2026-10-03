@@ -1,80 +1,26 @@
+import type { z } from 'zod';
+import type {
+  profileConfigSchema,
+  projectConfigSchema,
+  serviceConfigSchema,
+} from '../config/schema.ts';
+
 export type SyncStrategy = 'always' | 'daily' | 'pin';
-type MergeStrategy = 'deep' | 'override';
 type StateMode = 'ephemeral' | 'persistent';
 type StateIsolation = 'per-profile' | 'per-project';
-type NetworkPolicy = 'full' | 'restricted';
-type AuthType = 'api-key' | 'oauth' | 'proxy';
-type ClaudeMdMerge = 'append' | 'override';
 export type PermissionsPreset = 'conservative' | 'moderate' | 'permissive';
 
-interface PortsConfig {
-  autoDetectMcp: boolean;
-  list: string[];
-}
+// Derived from the Zod schemas so the types cannot drift from validation.
+export type ProfileConfig = z.output<typeof profileConfigSchema>;
+// What a project .ccpod.yml may contain. The input type is used so callers can
+// build one without spelling out schema defaults; parsed output is assignable.
+export type ProjectConfig = z.input<typeof projectConfigSchema>;
+export type ServiceConfig = z.infer<typeof serviceConfigSchema>;
 
-export interface ProfileConfig {
-  allowProjectEnvForward: string[];
-  allowProjectHostMounts: boolean;
-  allowProjectInit: boolean;
-  allowProjectServices: boolean;
-  auth: {
-    type: AuthType;
-    keyEnv?: string;
-    keyFile?: string;
-  };
-  claudeArgs: string[];
-  config: {
-    source: 'local' | 'git';
-    path?: string;
-    repo?: string;
-    sync?: SyncStrategy;
-    ref?: string;
-  };
-  description?: string;
-  env: string[];
-  image: {
-    use: string;
-    dockerfile?: string;
-  };
-  init: string[];
-  isolation: boolean;
-  name: string;
-  network: {
-    policy: NetworkPolicy;
-    allow: string[];
-  };
-  permissions?: PermissionsPreset;
-  plugins: string[];
-  ports: PortsConfig;
-  services: Record<string, ServiceConfig>;
-  ssh: {
-    agentForward: boolean;
-    mountSshDir: boolean;
-  };
-  state: StateMode;
-  stateIsolation: StateIsolation;
-}
-
-export interface ProjectConfig {
-  claudeArgs?: string[];
-  config?: {
-    claudeMd?: ClaudeMdMerge;
-  };
-  env?: string[];
-  init?: string[];
-  merge?: MergeStrategy;
-  network?: Partial<ProfileConfig['network']>;
-  ports?: Partial<PortsConfig>;
-  profile?: string;
-  services?: Record<string, ServiceConfig>;
-}
-
-export interface ServiceConfig {
-  env?: Record<string, string>;
-  image: string;
-  ports?: string[];
-  volumes?: string[];
-}
+// Auth as carried on ResolvedConfig: the schema applies a keyEnv default, but
+// resolved/test configs may omit it.
+type AuthConfig = Pick<ProfileConfig['auth'], 'type'> &
+  Partial<Pick<ProfileConfig['auth'], 'keyEnv' | 'keyFile'>>;
 
 interface PortMapping {
   container: number;
@@ -86,7 +32,7 @@ interface PortMapping {
 }
 
 export interface ResolvedConfig {
-  auth: ProfileConfig['auth'];
+  auth: AuthConfig;
   autoDetectMcp: boolean;
   claudeArgs: string[];
   dockerfile?: string;
@@ -105,6 +51,9 @@ export interface ResolvedConfig {
 }
 
 export interface DetectedRuntime {
+  // Value for DOCKER_HOST when the user's own DOCKER_HOST was honored
+  // (including remote tcp:// / ssh:// hosts); otherwise derived from socketPath.
+  dockerHost?: string;
   name: string;
   socketPath: string;
 }

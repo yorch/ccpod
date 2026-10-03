@@ -5,6 +5,7 @@ export default defineCommand({
   subCommands: {
     create: () => import('./create.ts').then((m) => m.default),
     delete: () => import('./delete.ts').then((m) => m.default),
+    edit: () => import('./edit.ts').then((m) => m.default),
     export: () => import('./export.ts').then((m) => m.default),
     install: () => import('./install.ts').then((m) => m.default),
     list: () => import('./list.ts').then((m) => m.default),

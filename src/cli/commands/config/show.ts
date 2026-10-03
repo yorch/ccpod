@@ -9,11 +9,11 @@ import {
 } from '../../../config/loader.ts';
 import { mergeClaudes, mergeConfigs } from '../../../config/merger.ts';
 import {
-  expandProfilePath,
   getProfileDir,
-  profileExists,
+  resolveProfileDockerfile,
 } from '../../../profile/manager.ts';
-import { validateProfileArg } from '../../validate.ts';
+import { rejectExtraPositionals } from '../../args.ts';
+import { resolveProfileName } from '../../profile-arg.ts';
 
 export default defineCommand({
   args: {
@@ -25,52 +25,69 @@ export default defineCommand({
     name: 'show',
   },
   run({ args }) {
+    rejectExtraPositionals(args);
     const cwd = process.cwd();
-    validateProfileArg(args.profile);
     const projectConfig = loadProjectConfig(cwd);
-    const profileName = args.profile ?? projectConfig?.profile ?? 'default';
-
-    if (!profileExists(profileName)) {
-      console.error(`Profile '${profileName}' not found. Run 'ccpod init'.`);
-      process.exit(1);
-    }
+    const profileName = resolveProfileName(args.profile, cwd);
 
     const profile = loadProfileConfig(getProfileDir(profileName));
     const merged = mergeConfigs(profile, projectConfig);
 
-    // Display env forwarding keys (values are resolved at run time from the host env)
-    const envKeys = [
-      ...new Set([...profile.env, ...(projectConfig?.env ?? [])]),
-    ];
+    // Display env forwarding keys (values are resolved at run time from the
+    // host env). Mirrors resolveEnvForwarding: isolation drops project env, and
+    // a project's bare host-var names only forward when the profile allows them.
     const envDisplay: Record<string, string> = {};
-    for (const key of envKeys) {
-      const eqIdx = key.indexOf('=');
+    const addEnv = (entry: string, fromProject: boolean) => {
+      const eqIdx = entry.indexOf('=');
       if (eqIdx !== -1) {
-        const k = key.slice(0, eqIdx);
-        const v = key.slice(eqIdx + 1);
+        const k = entry.slice(0, eqIdx);
+        const v = entry.slice(eqIdx + 1);
         envDisplay[k] =
           k.toLowerCase().includes('key') || k.toLowerCase().includes('token')
             ? `${'*'.repeat(Math.min(v.length, 8))} (${v.length} chars)`
             : v;
+      } else if (
+        fromProject &&
+        !profile.allowProjectEnvForward.includes(entry)
+      ) {
+        envDisplay[entry] = '<ignored: not in profile allowProjectEnvForward>';
       } else {
-        envDisplay[key] = '<forwarded from host env>';
+        envDisplay[entry] = '<forwarded from host env>';
       }
+    };
+    for (const entry of profile.env) {
+      addEnv(entry, false);
+    }
+    for (const entry of profile.isolation ? [] : (projectConfig?.env ?? [])) {
+      addEnv(entry, true);
     }
 
     const display = {
+      allowProject: {
+        envForward: profile.allowProjectEnvForward,
+        hostMounts: profile.allowProjectHostMounts,
+        init: profile.allowProjectInit,
+        services: profile.allowProjectServices,
+      },
       auth: merged.auth,
       autoDetectMcp: merged.autoDetectMcp,
+      claudeArgs: merged.claudeArgs,
       env: envDisplay,
       image:
         merged.image === 'build'
-          ? `build (${expandProfilePath(merged.dockerfile ?? 'Dockerfile', profileName)})`
+          ? `build (${resolveProfileDockerfile(merged.dockerfile ?? 'Dockerfile', profileName)})`
           : merged.image,
+      init: merged.init,
+      isolation: profile.isolation,
       network: merged.network,
+      permissions: profile.permissions ?? null,
+      plugins: merged.plugins,
       ports: merged.ports,
       profile: merged.profileName,
       services: merged.services,
       ssh: merged.ssh,
       state: merged.state,
+      stateIsolation: merged.stateIsolation,
     };
 
     if (args.json) {
@@ -88,7 +105,9 @@ export default defineCommand({
         : join(getProfileDir(profileName), 'config');
 
     const profileMd = readIfExists(join(configSourceDir, 'CLAUDE.md'));
-    const projectMd = readIfExists(join(cwd, 'CLAUDE.md'));
+    const projectMd = profile.isolation
+      ? null
+      : readIfExists(join(cwd, 'CLAUDE.md'));
 
     if (profileMd || projectMd) {
       const mode = projectConfig?.config?.claudeMd ?? 'append';

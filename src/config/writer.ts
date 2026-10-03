@@ -9,6 +9,7 @@ import {
   readdirSync,
   renameSync,
   rmSync,
+  utimesSync,
   writeFileSync,
 } from 'node:fs';
 import { tmpdir } from 'node:os';
@@ -143,8 +144,11 @@ export function writeMergedConfig(
   // The private per-uid parent already blocks cross-user pre-seeding; still
   // require the deterministic path itself to be a regular directory owned by us.
   if (validateOwnedDir(outDir)) {
+    // Refresh the mtime so a config in regular use is never swept as stale.
+    touch(outDir);
     return outDir;
   }
+  sweepStaleDirs(parentDir);
 
   const tmpOut = mkdtempSync(join(parentDir, 'tmp-'));
   try {
@@ -184,6 +188,45 @@ export function writeMergedConfig(
   }
 
   return outDir;
+}
+
+const STALE_CONFIG_MS = 14 * 24 * 60 * 60 * 1000;
+const STALE_TMP_MS = 24 * 60 * 60 * 1000;
+
+function touch(path: string): void {
+  try {
+    const now = new Date();
+    utimesSync(path, now, now);
+  } catch {
+    // best effort
+  }
+}
+
+// Every change to settings or an asset mtime yields a new content-addressed
+// `ccpod-<hash>` dir, so old ones pile up. Remove ones unused for two weeks
+// (a reused dir is touched on every run) and abandoned `tmp-*` build dirs.
+// A running container keeps its bind mount alive even if the path is removed.
+function sweepStaleDirs(parentDir: string): void {
+  const now = Date.now();
+  try {
+    for (const entry of readdirSync(parentDir)) {
+      const maxAge = entry.startsWith('ccpod-')
+        ? STALE_CONFIG_MS
+        : entry.startsWith('tmp-')
+          ? STALE_TMP_MS
+          : null;
+      if (maxAge === null) {
+        continue;
+      }
+      const path = join(parentDir, entry);
+      const stat = lstatSync(path);
+      if (stat.isDirectory() && now - stat.mtimeMs > maxAge) {
+        rmSync(path, { force: true, recursive: true });
+      }
+    }
+  } catch {
+    // best effort
+  }
 }
 
 // Single-syscall existence + ownership check. Returns true if outDir is a

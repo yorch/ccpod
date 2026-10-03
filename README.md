@@ -62,7 +62,7 @@ image:
   # dockerfile: Dockerfile          # relative to the profile directory
 
 auth:
-  type: api-key              # "api-key" | "oauth"
+  type: api-key              # "api-key" | "oauth" | "proxy"
   keyEnv: ANTHROPIC_API_KEY  # env var to read key from
   # keyFile: ~/.ccpod/credentials/default/api-key  # must be under ~/.ccpod
 
@@ -110,19 +110,17 @@ merge: deep                  # "deep" (default) | "override"
 config:
   claudeMd: append           # "append" (default) | "override"
 
-network:
-  policy: restricted
-  allow:
-    - api.github.com
-    - registry.npmjs.org
-
 ports:
   list:
-    - "4000:4000"
+    - "4000:4000"           # published on 127.0.0.1 only
 
 env:
-  - STRIPE_SECRET_KEY
+  - LOG_LEVEL=debug         # literal values are fine
+  # Bare names (e.g. STRIPE_SECRET_KEY) forward a host variable, but only if
+  # the profile lists them in allowProjectEnvForward.
 ```
+
+> **Trust boundary:** a repo's `.ccpod.yml` is untrusted. `network:` is owned by the profile (a project's `network:` is ignored with a warning), project `services:` and `init:` are ignored unless the profile sets `allowProjectServices` / `allowProjectInit`, and `profile:` needs your one-time approval. See [Project config](https://ccpod.dev/project-config/overview/).
 
 **Merge strategies:**
 
@@ -130,9 +128,9 @@ env:
 |-------|-----------------|
 | `settings.json` | Deep merge; project wins on conflicts |
 | `CLAUDE.md` | Profile content first, project appended (or `override` to replace) |
-| plugins | Union — project adds, cannot remove profile plugins (unless `merge: override`) |
-| `services` | Merged by key; project adds sidecars |
-| `env` | Union of both lists |
+| plugins | Profile-only (`plugins:` in `profile.yml`); projects cannot add or remove them |
+| `services` | Merged by key — but project sidecars are ignored unless the profile sets `allowProjectServices: true` |
+| `env` | Union of both lists (project bare-name forwards need `allowProjectEnvForward`) |
 
 ---
 
@@ -141,7 +139,7 @@ env:
 ```
 ccpod run                        Interactive Claude session
 ccpod run "fix lint errors"      Headless: inline prompt
-ccpod run --file prompt.txt      Headless: prompt from file (exit with container code)
+ccpod run --file prompt.txt      Headless: prompt read from a file (exit with container code)
 ccpod run --profile <name>       Use a specific profile
 ccpod run --env KEY=VALUE        Pass/override env var for this run
 ccpod run --rebuild              Force image rebuild or repull
@@ -149,19 +147,22 @@ ccpod run --no-state             Force ephemeral state for this run
 ccpod run --resume <session-id>  Resume a previous Claude session
 
 ccpod shell                      Open an interactive shell in the container
+ccpod exec -- <command>          Run a one-off command in the project container
+ccpod doctor                     Check runtime, config, auth and image
 
 ccpod init                       First-run setup wizard
 ccpod init --profile <name>      Create a named profile
 
 ccpod profile create <name>
-ccpod profile list
+ccpod profile list [--json]
+ccpod profile edit <name>        Edit profile.yml in $EDITOR (validated before saving)
 ccpod profile update <name>      Force-pull git-based config
-ccpod profile delete <name>
+ccpod profile delete <name>      Remove config, credentials, state and plugins volume
 ccpod profile install <source>   Install a profile from URL, git repo, or base64 blob
 ccpod profile export <name>      Print a portable base64-encoded profile blob
 
 ccpod plugins list [--profile <name>]
-ccpod plugins update [--profile <name>]   Flush and reinstall all plugins
+ccpod plugins update --reset [--profile <name>]   Remove the plugins volume (reinstalled next run)
 
 ccpod image init [--profile <name>]       Download Dockerfile for local customization
 ccpod image init --from <url>             Use a custom Dockerfile URL
@@ -170,12 +171,13 @@ ccpod image build --apply                 Also update profile image.use to the b
 ccpod image pull [--profile <name>]       Pull latest base or declared image
 
 ccpod ps                         List running ccpod containers
-ccpod ps --all                   Include stopped containers
+ccpod ps --all                   Include stopped containers (also: --profile, --json)
 ccpod down                       Stop Claude container + sidecars for $PWD
 ccpod down --all                 Stop every ccpod container on this machine
 ccpod down --profile <name>      Limit teardown to a specific profile
 
 ccpod state clear [--profile <name>]      Delete state directory (resets projects/todos)
+ccpod prune [--dry-run] [--force]         Remove stopped containers, orphaned networks/volumes/state
 
 ccpod config get <key>           Get a global config value
 ccpod config set <key> <value>   Set a global config value
@@ -196,7 +198,7 @@ ccpod update                     Update ccpod to the latest release
 
 Switch for a single run: `ccpod run --no-state`
 
-Reset: `ccpod state clear [profile]` — deletes `~/.ccpod/state/<profile>/`
+Reset: `ccpod state clear [--profile <name>]` — deletes `~/.ccpod/state/<profile>/`
 
 ---
 

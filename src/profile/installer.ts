@@ -70,7 +70,7 @@ export function summarizeProfileRisks(profile: RiskyProfileFields): string[] {
   return out;
 }
 
-export type InstallSource =
+type InstallSource =
   | { type: 'git'; url: string }
   | { type: 'url'; url: string }
   | { type: 'file'; path: string }

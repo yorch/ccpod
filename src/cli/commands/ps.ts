@@ -1,24 +1,9 @@
 import chalk from 'chalk';
 import { defineCommand } from 'citty';
-import {
-  LABEL_PROFILE,
-  LABEL_PROJECT,
-  LABEL_WORKDIR,
-} from '../../container/builder.ts';
-import { dockerExec } from '../../runtime/docker.ts';
-
-type PsRow = { Names: string; Image: string; Status: string; Labels: string };
-
-function parseLabels(raw: string): Record<string, string> {
-  const out: Record<string, string> = {};
-  for (const pair of raw.split(',')) {
-    const eq = pair.indexOf('=');
-    if (eq >= 0) {
-      out[pair.slice(0, eq)] = pair.slice(eq + 1);
-    }
-  }
-  return out;
-}
+import { listCcpodContainers } from '../../container/list.ts';
+import { rejectExtraPositionals } from '../args.ts';
+import { exitWithError } from '../errors.ts';
+import { validateProfileArg } from '../validate.ts';
 
 export default defineCommand({
   args: {
@@ -27,38 +12,34 @@ export default defineCommand({
       description: 'Include stopped containers',
       type: 'boolean',
     },
+    json: {
+      default: false,
+      description: 'Output as JSON',
+      type: 'boolean',
+    },
+    profile: {
+      description: 'Only show containers for this profile',
+      type: 'string',
+    },
   },
   meta: { description: 'List ccpod containers', name: 'ps' },
   async run({ args }) {
-    const filterArgs = args.all ? ['-a'] : [];
-    const { exitCode, stderr, stdout } = await dockerExec([
-      'ps',
-      ...filterArgs,
-      '--filter',
-      `label=${LABEL_PROFILE}`,
-      '--format',
-      '{{json .}}',
-    ]);
-
-    if (exitCode !== 0) {
-      console.error(
-        `${chalk.red('error:')} docker ps failed: ${stderr || 'unknown error'}`,
-      );
-      process.exit(1);
+    rejectExtraPositionals(args);
+    validateProfileArg(args.profile);
+    let containers: Awaited<ReturnType<typeof listCcpodContainers>>;
+    try {
+      containers = await listCcpodContainers({
+        all: args.all,
+        ...(args.profile ? { profile: args.profile } : {}),
+      });
+    } catch (err) {
+      exitWithError(err);
     }
 
-    if (!stdout) {
-      console.log(
-        'No ccpod containers' +
-          (args.all ? '.' : ' running. Use --all to include stopped.'),
-      );
+    if (args.json) {
+      console.log(JSON.stringify(containers, null, 2));
       return;
     }
-
-    const containers = stdout
-      .split('\n')
-      .filter(Boolean)
-      .map((line) => JSON.parse(line) as PsRow);
 
     if (containers.length === 0) {
       console.log(
@@ -74,19 +55,13 @@ export default defineCommand({
     console.log(chalk.dim('─'.repeat(HEADER.length)));
 
     for (const c of containers) {
-      const labels = parseLabels(c.Labels);
-      const name = c.Names.replace(/^\//, '');
-      const profile = labels[LABEL_PROFILE] ?? '-';
-      const workdir = labels[LABEL_WORKDIR] ?? labels[LABEL_PROJECT] ?? '-';
-      const isRunning = c.Status.startsWith('Up');
-      const stateRaw = isRunning ? 'running' : 'stopped';
-      const stateColored = isRunning
+      const stateRaw = c.running ? 'running' : 'stopped';
+      const stateColored = c.running
         ? chalk.green(stateRaw)
         : chalk.yellow(stateRaw);
       const statePad = ' '.repeat(Math.max(0, 10 - stateRaw.length));
-
       console.log(
-        `${col(name, 32)} ${col(profile, 16)} ${stateColored}${statePad} ${col(c.Image, 34)} ${workdir}`,
+        `${col(c.name, 32)} ${col(c.profile || '-', 16)} ${stateColored}${statePad} ${col(c.image, 34)} ${c.workdir || c.project || '-'}`,
       );
     }
   },
