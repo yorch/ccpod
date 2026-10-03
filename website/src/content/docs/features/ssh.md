@@ -1,6 +1,6 @@
 ---
-title: SSH Forwarding
-description: Forward your SSH agent or mount ~/.ssh into the container.
+title: SSH Agent Forwarding for Claude Code
+description: Give the Claude Code container SSH access by forwarding your SSH agent or mounting ~/.ssh read-only. Agent forwarding is recommended; Podman has limits.
 ---
 
 Claude often needs to clone private repos or push commits. ccpod offers two ways to give the container access to your SSH credentials.

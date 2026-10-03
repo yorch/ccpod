@@ -1,6 +1,6 @@
 ---
 title: Project Config (.ccpod.yml)
-description: Overlay a profile per repository.
+description: Add a .ccpod.yml to a repo to choose a profile and add ports, env vars, and CLAUDE.md content for that project. Project config is untrusted by default.
 ---
 
 A profile is global to your machine. A **project config** lives in a repo and overlays the profile for that project. ccpod walks up from `$PWD` to find a `.ccpod.yml`, so any subdirectory of the repo works.
@@ -55,7 +55,7 @@ services:
 | `services` | object | Extra sidecars; merged by key. |
 | `env` | string[] | Extra env entries. Each is `KEY` (forward host var) or `KEY=value` (literal). Unlike profile and `--env`, project entries may **not** use `${VAR}` interpolation — a malicious project repo could otherwise exfiltrate host secrets. See [profile env reference](../../profiles/configuration/#env). |
 
-> **Note:** If the profile has [`isolation: true`](../profiles/configuration/#isolation), this entire file is ignored — the profile config is used as-is regardless of what `.ccpod.yml` contains.
+> **Note:** If the profile has [`isolation: true`](../../profiles/configuration/#isolation), this entire file is ignored — the profile config is used as-is regardless of what `.ccpod.yml` contains.
 
 ## Inspecting the result
 

@@ -1,6 +1,6 @@
 ---
-title: Network Policy
-description: Restrict the Claude container's outbound network with an allow-list.
+title: Restrict Claude Code's Network Access
+description: Limit the Claude Code container's outbound traffic with a restricted network policy and a host allow-list. It fails closed if firewall rules cannot be installed.
 ---
 
 By default the Claude container has full outbound network access. For sensitive work, switch to **restricted mode** and explicitly allow-list the destinations Claude is permitted to reach.
@@ -34,6 +34,8 @@ What happens:
    - For each entry in `allow`: resolve hostname → IPs via `getent hosts`, then `ACCEPT` each IP. IPs and CIDRs are used directly.
    - `DROP` all other outbound
 3. The resolution happens once at startup — if a domain's IPs rotate during your session, reconnection to new IPs will be blocked until you restart the container.
+
+Restricted mode fails closed: if `iptables` is unavailable, or a loopback, established-connection, or default-deny rule cannot be installed, the container exits instead of running with unrestricted outbound access. IPv6 is locked down the same way.
 
 ## Project config cannot change the policy
 

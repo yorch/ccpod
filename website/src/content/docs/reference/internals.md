@@ -1,5 +1,5 @@
 ---
-title: Internals
+title: ccpod Internals Reference
 description: Deep-dive reference — dependencies, type definitions, entrypoint assembly, startup sequence, config merging, runtime sockets, image tags, and testing.
 ---
 

@@ -1,6 +1,6 @@
 ---
-title: Sidecar Services
-description: Run Postgres, Redis, queues, or any container alongside Claude.
+title: "Sidecar Services: Postgres, Redis and More"
+description: Run Postgres, Redis, queues, or any container alongside Claude Code. ccpod puts sidecars on a shared Docker network and starts them before the main container.
 ---
 
 Many projects need a database or queue to be useful. ccpod lets you declare those as **sidecars** in the same config that defines your Claude environment, so a single `ccpod run` brings everything up on a shared network.

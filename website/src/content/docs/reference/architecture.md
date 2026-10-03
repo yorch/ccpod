@@ -1,5 +1,5 @@
 ---
-title: ccpod Architecture
+title: "Architecture: From Profile to Running Container"
 description: How the ccpod pipeline loads, merges, and runs a Claude Code container — from profile config to live Docker session. Covers the 8-step execution pipeline.
 ---
 

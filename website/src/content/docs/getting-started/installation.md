@@ -1,5 +1,5 @@
 ---
-title: Install ccpod
+title: Install ccpod on macOS or Linux
 description: Install the ccpod binary on macOS or Linux. Supports Docker, OrbStack, Colima, and Podman. Pre-built binaries for x86_64 and arm64.
 ---
 

@@ -1,6 +1,6 @@
 ---
-title: Profile Configuration
-description: Every field in profile.yml, with defaults and examples.
+title: Profile Configuration Reference
+description: "Every field in ccpod's profile.yml with defaults, validation rules, and examples: config source, image, auth, state, SSH, network, ports, plugins, and services."
 ---
 
 A profile is a YAML file at `~/.ccpod/profiles/<name>/profile.yml`. ccpod validates it with [Zod](https://zod.dev) at load time — invalid files fail fast with a readable error.
@@ -102,7 +102,7 @@ For `proxy`, ccpod starts a local HTTP proxy that shares the host's OAuth sessio
 
 ### `stateIsolation`
 
-`per-profile` (default) shares state across all projects using the same profile. `per-project` isolates state per project — each project gets its own `~/.ccpod/state/<name>/<projectHash>/` directory, preventing cross-project state leakage. Only meaningful with `state: persistent`. See [State Persistence](../features/state.md) for details.
+`per-profile` (default) shares state across all projects using the same profile. `per-project` isolates state per project — each project gets its own `~/.ccpod/state/<name>/<projectHash>/` directory, preventing cross-project state leakage. Only meaningful with `state: persistent`. See [State Persistence](../../features/state/) for details.
 
 ### `plugins`
 

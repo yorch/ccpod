@@ -1,6 +1,6 @@
 ---
-title: Merge Strategies
-description: How profile + project + run-level config combine.
+title: Merge Strategies for Profile and Project Config
+description: "How ccpod combines a profile, a project .ccpod.yml, and run-level flags: deep merge versus override, CLAUDE.md append, and settings.json merging."
 ---
 
 ccpod merges configuration in layers. Each asset has a documented strategy so the result is predictable.
@@ -25,7 +25,7 @@ They are separate flags because the assets have different merge semantics: CLAUD
 
 `merge: override` makes the project config replace the profile entirely for the listed sections. `merge: deep` (default) layers the project on top of the profile per asset, with the rules below.
 
-When the profile sets `isolation: true`, **all project config is ignored** — merge strategy, CLAUDE.md, settings.json, env keys, MCP ports, and `.claude/` assets. The profile config is used as-is. See [Profile Configuration](../profiles/configuration/#isolation).
+When the profile sets `isolation: true`, **all project config is ignored** — merge strategy, CLAUDE.md, settings.json, env keys, MCP ports, and `.claude/` assets. The profile config is used as-is. See [Profile Configuration](../../profiles/configuration/#isolation).
 
 ## Per-asset rules (deep merge)
 

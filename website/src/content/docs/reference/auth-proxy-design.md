@@ -1,6 +1,6 @@
 ---
-title: Auth Proxy Design
-description: Design rationale for proxy auth mode — why copying OAuth credentials into containers causes refresh-token races, the architectures considered, and why API-key translation was selected.
+title: "Auth Proxy Design: OAuth Without Refresh Races"
+description: Why copying OAuth credentials into containers causes refresh-token races, the architectures considered, and why ccpod's proxy auth mode translates API keys.
 ---
 
 ## The problem: OAuth refresh-token rotation
