@@ -40,7 +40,8 @@ jobs:
             claude --version
             bun --version
             uv --version
-            # dash's `command -v` only checks its first argument, so loop.
+            # dash `command -v` only checks its first argument, so loop. (No single
+            # quotes in this script: it is itself single-quoted.)
             for t in rg gh jq iptables gosu; do
               command -v "$t" >/dev/null || {
                 echo "missing: $t (PATH=$PATH)"
