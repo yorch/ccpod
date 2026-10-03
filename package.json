@@ -1,6 +1,6 @@
 {
   "name": "ccpod",
-  "version": "0.7.0",
+  "version": "0.7.1",
   "license": "MIT",
   "description": "Run Claude Code in Docker containers with portable, composable configuration",
   "type": "module",
