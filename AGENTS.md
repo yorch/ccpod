@@ -131,6 +131,17 @@ Tests live in `tests/unit/` and `tests/integration/`. Unit tests use `bun:test`;
 - **Always work in a dedicated worktree** (e.g. `git worktree add -b <branch> /path/to/ccpod-<branch> origin/main`) unless the user explicitly says otherwise. Never commit directly to `main`.
 - **Open a PR for every change** — no matter how small. Push the branch and use `gh pr create` with a clear title and description. Do not push directly to `main`.
 - Clean up worktrees and local branches after the PR is merged.
+- **Every PR that changes the `ccpod` package needs a Changeset** (`bun run changeset`, pick `ccpod`, choose patch/minor/major, write user-facing notes). CI rejects PRs without one (except the generated `changeset-release/*` version PR). Docs/website/CI-only PRs generally need a patch Changeset too, or `bun run changeset --empty` if nothing user-visible changed.
+
+## Release
+
+Releases are **Changeset-driven and PR-gated**. Never bump `package.json` by hand and never push a `v*` tag — GitHub Actions owns both.
+
+1. Merging a PR with Changesets to `main` triggers `.github/workflows/release.yml`, which opens or updates the `chore: version packages` PR (bumps `package.json`, updates `CHANGELOG.md`, refreshes `bun.lock`, deletes the consumed Changesets).
+2. Merging that version PR is the human approval of the version. The same workflow then re-runs `bun run verify`, cross-compiles the four binaries (`ccpod-{linux,darwin}-{x64,arm64}`), generates and validates `SHASUMS256.txt`, signs a build-provenance attestation per binary, and creates the `vX.Y.Z` release (tag created on the exact commit) with auto-generated notes.
+3. After publishing, `release.yml` calls `docker.yml` (`workflow_call`) to push `ghcr.io/yorch/ccpod` tagged `X.Y.Z`, `X.Y`, and `latest`. This is explicit because tags created with `GITHUB_TOKEN` do not trigger `on: push: tags` workflows. `docker.yml` also still runs on every push to `main` (`latest`/`main` tags).
+
+The workflow is idempotent: an existing release must have its tag on the publishing commit and contain exactly the four binaries plus `SHASUMS256.txt`, or it fails without replacing public assets. It only publishes commits associated with a merged `changeset-release/*` PR. The `cut-release` skill (`.claude/skills/cut-release/`) walks through the procedure. Repo settings required: `main` protected (PRs required) and Actions allowed to create pull requests. The version PR is created with `GITHUB_TOKEN`, so it does not trigger CI — do not make CI jobs required checks for it. If the image push is missed, run `gh workflow run docker.yml -f version=X.Y.Z`.
 
 ## Commit Checklist
 

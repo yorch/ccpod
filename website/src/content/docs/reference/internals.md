@@ -307,6 +307,10 @@ To opt out, the profile may set `allowProjectHostMounts: true` (for sidecar volu
 
 The `install.sh` bootstrap performs the same verification: after downloading the binary it fetches `SHASUMS256.txt`, computes the digest with `sha256sum` (or `shasum -a 256`), and aborts on mismatch. It only warns-and-proceeds when the checksum asset is absent (a release predating it) or no sha256 tool is available — never on an actual mismatch.
 
+### Release pipeline
+
+Releases are Changeset-driven and PR-gated. Merging PRs with `.changeset/*.md` files to `main` makes `release.yml` open or update a `chore: version packages` PR (version bump, `CHANGELOG.md`, lockfile). Merging that PR is the approval: the workflow re-runs `bun run verify`, cross-compiles the four platform binaries, writes `SHASUMS256.txt`, signs a build-provenance attestation for each binary (`gh attestation verify <binary> --repo yorch/ccpod`), creates the `vX.Y.Z` tag and GitHub release on the exact commit, then calls `docker.yml` to push the versioned GHCR image (a `GITHUB_TOKEN`-created tag would not trigger a tag-push workflow). The publish step only runs for commits from a merged `changeset-release/*` PR and refuses to replace the assets of an existing release. Nobody bumps `package.json` or pushes tags by hand.
+
 ### Garbage collection (`ccpod prune`)
 
 Over time, stopped containers, orphaned networks, and unreferenced plugin volumes accumulate. `ccpod prune` cleans them up:
