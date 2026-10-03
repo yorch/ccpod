@@ -78,3 +78,6 @@ replacing public assets.
 - If the release was created but the image wasn't pushed, re-run the Docker
   workflow manually: `gh workflow run docker.yml -f version=X.Y.Z`. A release with
   missing/extra assets makes every rerun fail until it is deleted by hand.
+- `ccpod` is `private: true`, so `.changeset/config.json` must keep
+  `privatePackages: {version: true, tag: false}`; otherwise `changeset version`
+  silently does nothing and the version PR comes out empty.
