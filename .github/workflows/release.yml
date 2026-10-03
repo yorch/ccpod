@@ -88,14 +88,17 @@ jobs:
           )
           echo "tag=$tag" >> "$GITHUB_OUTPUT"
           echo "version=$version" >> "$GITHUB_OUTPUT"
+          count_version_pr_merges() {
+            gh api "repos/${GITHUB_REPOSITORY}/commits/$SHA/pulls" \
+              --header 'Accept: application/vnd.github+json' \
+              --jq '[.[] | select(.base.ref == "main" and (.head.ref | startswith("changeset-release/")) and .merged_at != null)] | length'
+          }
 
           if ! gh release view "$tag" >/dev/null 2>&1; then
             # A normal merge can open/update the version PR, but only the
             # merged changeset-release PR may publish. This blocks a direct
             # package.json version push from bypassing version review.
-            version_pr_merges=$(gh api "repos/${GITHUB_REPOSITORY}/commits/$SHA/pulls" \
-              --header 'Accept: application/vnd.github+json' \
-              --jq '[.[] | select(.base.ref == "main" and (.head.ref | startswith("changeset-release/")) and .merged_at != null)] | length')
+            version_pr_merges=$(count_version_pr_merges)
             if [ "$version_pr_merges" -eq 0 ]; then
               echo "No merged Changesets version PR for $SHA; nothing to publish."
               echo 'exists=true' >> "$GITHUB_OUTPUT"
@@ -107,9 +110,23 @@ jobs:
 
           git fetch origin "refs/tags/$tag:refs/tags/$tag"
           tag_commit=$(git rev-list -n 1 "$tag")
+          # The current version was released from an earlier commit and this
+          # push is an ordinary merge (e.g. before the next version PR lands):
+          # nothing to publish, and nothing to validate.
+          if [ "$tag_commit" != "$SHA" ]; then
+            # ...unless this commit is a merged version PR: then a release for
+            # this version already exists elsewhere, which needs a human.
+            if [ "$(count_version_pr_merges)" -gt 0 ]; then
+              echo "::error::version PR merged at $SHA but $tag already exists at $tag_commit"
+              exit 1
+            fi
+            echo "$tag was released from $tag_commit; nothing to publish for $SHA."
+            echo 'exists=true' >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
           actual=$(gh release view "$tag" --json assets --jq '.assets[].name' | sort)
           expected=$(printf '%s\n' "${expected_assets[@]}" | sort)
-          if [ "$tag_commit" != "$SHA" ] || [ "$actual" != "$expected" ]; then
+          if [ "$actual" != "$expected" ]; then
             echo "::error::existing $tag is not the complete release for $SHA"
             echo "tag commit: $tag_commit" >&2
             echo "assets:" >&2
