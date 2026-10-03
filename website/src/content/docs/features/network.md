@@ -35,19 +35,9 @@ What happens:
    - `DROP` all other outbound
 3. The resolution happens once at startup — if a domain's IPs rotate during your session, reconnection to new IPs will be blocked until you restart the container.
 
-## Combining with project config
+## Project config cannot change the policy
 
-A project's `.ccpod.yml` can tighten the policy or extend the allow-list:
-
-```yaml
-# .ccpod.yml
-network:
-  policy: restricted
-  allow:
-    - api.stripe.com
-```
-
-Under deep merge, `allow` lists are concatenated. Under `merge: override`, the project replaces the profile's network block entirely.
+The network policy and allow-list are owned by the profile. If a project's `.ccpod.yml` declares `network:` settings, ccpod prints a warning and ignores them, whatever the `merge` strategy. Otherwise an untrusted repo could downgrade a `restricted` profile to `full` or widen the allow-list. To allow another host for a project, add it to the profile.
 
 ## Caveats
 

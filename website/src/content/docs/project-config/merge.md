@@ -9,7 +9,7 @@ Merging happens across three independent axes — each has its own control:
 
 | Axis | Controlled by | Configurable? |
 |---|---|---|
-| ccpod settings (network, ports, services, env, claudeArgs) | `merge` in `.ccpod.yml` | yes |
+| ccpod settings (ports, services, env, claudeArgs) | `merge` in `.ccpod.yml` | yes |
 | `CLAUDE.md` content | `config.claudeMd` in `.ccpod.yml` | yes |
 | `.claude/settings.json` | — | no — always deep-merged, project wins on conflicts |
 
@@ -40,8 +40,7 @@ When the profile sets `isolation: true`, **all project config is ignored** — m
 | `services` | Merged by key. Project can add or replace specific sidecars. |
 | `env` (forwarded var names) | Union of both lists. |
 | `ports.list` | Concatenated. |
-| `network.allow` | Concatenated. |
-| `network.policy` | Project value wins if set. |
+| `network` | Ignored. The policy and allow-list are profile-owned; a project that declares `network:` gets a warning. See [Network Policy](../../features/network/). |
 
 ## CLI overrides
 

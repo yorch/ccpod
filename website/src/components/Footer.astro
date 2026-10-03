@@ -1,6 +1,11 @@
 ---
+// biome-ignore lint/correctness/noUnusedImports: used in the template below
+import Default from '@astrojs/starlight/components/Footer.astro';
+
 const year = new Date().getFullYear();
 ---
+
+<Default {...Astro.props}><slot /></Default>
 
 <footer class="site-footer">
     <div class="footer-inner">
@@ -8,6 +13,18 @@ const year = new Date().getFullYear();
         <div class="footer-links">
             <a href="https://github.com/yorch/ccpod" class="footer-link">
                 GitHub Repo
+            </a>
+            <a
+                href="https://github.com/yorch/ccpod/releases/latest"
+                class="footer-link"
+            >
+                Releases
+            </a>
+            <a
+                href="https://github.com/yorch/ccpod/blob/main/LICENSE"
+                class="footer-link"
+            >
+                MIT License
             </a>
         </div>
     </div>

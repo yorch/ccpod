@@ -132,6 +132,7 @@ plausible.init()
           tag: 'script',
         },
       ],
+      lastUpdated: true,
       logo: {
         replacesTitle: false,
         src: './src/assets/logo.svg',
@@ -199,6 +200,16 @@ https://github.com/yorch/ccpod
             { label: 'Storage Layout', slug: 'reference/storage' },
           ],
           label: 'Reference',
+        },
+        {
+          items: [
+            { label: 'Untrusted Repos', slug: 'guides/untrusted-repos' },
+            {
+              label: 'Migrate Your Config',
+              slug: 'guides/migrate-claude-config',
+            },
+          ],
+          label: 'Guides',
         },
         {
           items: [{ label: 'Watch a Session', slug: 'demo' }],
