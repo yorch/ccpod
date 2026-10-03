@@ -1,5 +1,5 @@
 ---
-title: ccpod CLI Reference
+title: "CLI Reference: Every Command and Flag"
 description: Complete reference for every ccpod command and flag — run, shell, init, update, profile, plugins, image, config, ps, and down.
 ---
 

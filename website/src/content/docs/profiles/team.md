@@ -1,6 +1,6 @@
 ---
-title: Shared Team Profile
-description: Sync a profile from a git repo so your whole team gets the same Claude environment.
+title: Share a Claude Code Environment with Your Team
+description: Sync a ccpod profile from a git repo so your whole team gets the same CLAUDE.md, settings, skills, and hooks, refreshed daily or on every run.
 ---
 
 The most common reason teams adopt ccpod is to align on a single Claude environment. The fix is a profile with `config.source: git`.

@@ -1,6 +1,6 @@
 ---
-title: MCP Auto-detection
-description: Expose Model Context Protocol server ports automatically.
+title: MCP Server Port Auto-detection
+description: ccpod reads your project's .mcp.json and automatically exposes HTTP and SSE MCP server ports from the Claude container, with no manual port flags.
 ---
 
 Claude Code uses the [Model Context Protocol](https://modelcontextprotocol.io) to talk to external servers (HTTP/SSE or stdio). HTTP/SSE servers need their port reachable from inside the container. ccpod handles this for you.

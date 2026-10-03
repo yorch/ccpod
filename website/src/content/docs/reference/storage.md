@@ -1,6 +1,6 @@
 ---
-title: Storage Layout
-description: Where ccpod keeps profiles, credentials, and Docker volumes.
+title: Where ccpod Stores Profiles and State
+description: Where ccpod keeps profiles, credentials, persistent state, and Docker volumes on your machine, and what each directory contains.
 ---
 
 ccpod stores everything under `~/.ccpod/` plus a small set of Docker named volumes. There is no global database, no daemon, no hidden state.
