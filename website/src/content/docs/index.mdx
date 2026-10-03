@@ -40,9 +40,27 @@ import Asciinema from '../../components/Asciinema.astro';
 
 ## What is ccpod?
 
-Your Claude environment — settings, plugins, skills, `CLAUDE.md`, MCP servers — is usually pinned to one machine. **ccpod** wraps it in a *profile*: a versioned, portable config that travels with you, your team, or your open-source project. Every `ccpod run` drops you into a clean, reproducible Claude session inside a container.
+**ccpod is an open-source (MIT) command-line tool that runs [Claude Code](https://docs.claude.com/en/docs/claude-code) inside a Docker container, with the whole Claude environment described by a portable profile.** It runs on macOS and Linux (x86_64 and arm64) with Docker, OrbStack, Colima, or Podman.
+
+Your Claude environment — settings, plugins, skills, `CLAUDE.md`, MCP servers — is usually pinned to one machine. ccpod wraps it in a *profile*: a versioned, portable config that travels with you, your team, or your open-source project. Every `ccpod run` drops you into a clean, reproducible Claude session inside a container.
+
+## Who is ccpod for?
+
+- **Developers on more than one machine** who want one source of truth for their Claude setup.
+- **Teams** that want a shared `CLAUDE.md`, settings, and plugin set, synced daily from a git repo.
+- **Open-source maintainers** who want to ship a known-good Claude environment to contributors.
+- **Anyone working with untrusted code or sensitive data** who wants Claude confined to a container, optionally with an outbound network allow-list.
 
 <HeroFeatures />
+
+## Secure by default
+
+Running an AI agent against a repo you did not write is a trust problem, so ccpod treats a project's `.ccpod.yml` as untrusted:
+
+- **Restricted network mode.** Set `network.policy: restricted` and the container can only reach the hosts you allow-list. If the firewall rules cannot be installed, the container refuses to start rather than run open. See [Network Policy](./features/network/).
+- **Project config cannot escalate.** A cloned repo cannot start sidecar containers or run init commands unless your profile opts in, and it can never widen the network allow-list or override your Anthropic credentials and proxy settings.
+- **Secrets stay out of process lists.** Credentials reach the container through the environment rather than command-line arguments, so they do not show up in `ps`.
+- **No shared refresh-token race.** With `auth.type: proxy`, a local proxy holds the only OAuth session, so several containers can run at once without invalidating each other's login. See the [auth proxy design](./reference/auth-proxy-design/).
 
 ## See it in action
 
@@ -82,3 +100,5 @@ config:
 - [**Project config**](./project-config/overview/) — overlay a profile per repo.
 - [**CLI reference**](./reference/cli/) — every command and flag.
 - [**Architecture**](./reference/architecture/) — how the pipeline works.
+- [**Network policy**](./features/network/) — lock down outbound traffic.
+- [**Shared team profile**](./profiles/team/) — one config for the whole team.
