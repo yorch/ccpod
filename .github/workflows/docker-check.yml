@@ -42,7 +42,12 @@ jobs:
             uv --version
             # dash's `command -v` only checks its first argument, so loop.
             for t in rg gh jq iptables gosu; do
-              command -v "$t" >/dev/null || { echo "missing: $t"; exit 1; }
+              command -v "$t" >/dev/null || {
+                echo "missing: $t (PATH=$PATH)"
+                dpkg -l ripgrep 2>&1 | tail -2 || true
+                ls -l /usr/bin/rg /usr/local/bin/rg 2>&1 || true
+                exit 1
+              }
             done
             test "$(id -un)" = node
           '
