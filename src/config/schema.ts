@@ -62,6 +62,7 @@ const keyFileSchema = z
   );
 
 export const profileConfigSchema = z.object({
+  allowProjectEnvForward: z.array(z.string()).default([]),
   allowProjectHostMounts: z.boolean().default(false),
   allowProjectInit: z.boolean().default(false),
   allowProjectServices: z.boolean().default(false),

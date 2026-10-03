@@ -53,7 +53,7 @@ services:
 | `network` | — | Not honored. Network policy is profile-owned; a project `network:` block is ignored with a warning. See [Network Policy](../../features/network/). |
 | `ports` | object | Extra port mappings (`list`, `autoDetectMcp`). |
 | `services` | object | Extra sidecars; merged by key. |
-| `env` | string[] | Extra env entries. Each is `KEY` (forward host var) or `KEY=value` (literal). Unlike profile and `--env`, project entries may **not** use `${VAR}` interpolation — a malicious project repo could otherwise exfiltrate host secrets. See [profile env reference](../../profiles/configuration/#env). |
+| `env` | string[] | Extra env entries. Each is `KEY=value` (literal), or a bare `KEY` (forward host var — **ignored unless the profile lists `KEY` in `allowProjectEnvForward`**). Unlike profile and `--env`, project entries may **not** use `${VAR}` interpolation — a malicious project repo could otherwise exfiltrate host secrets. See [profile env reference](../../profiles/configuration/#env). |
 
 > **Note:** If the profile has [`isolation: true`](../../profiles/configuration/#isolation), this entire file is ignored — the profile config is used as-is regardless of what `.ccpod.yml` contains.
 

@@ -13,6 +13,7 @@ interface PortsConfig {
 }
 
 export interface ProfileConfig {
+  allowProjectEnvForward: string[];
   allowProjectHostMounts: boolean;
   allowProjectInit: boolean;
   allowProjectServices: boolean;

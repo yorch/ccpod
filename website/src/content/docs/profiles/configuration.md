@@ -80,7 +80,7 @@ services:
 | Field | Type | Notes |
 |---|---|---|
 | `use` | string | Image reference (e.g. `ghcr.io/yorch/ccpod:latest`) or the literal `build`. |
-| `dockerfile` | string | Required when `use: build`. Absolute path, path relative to `$PWD`, or `{{profile_dir}}/Dockerfile` to reference a Dockerfile inside the profile directory. |
+| `dockerfile` | string | Required when `use: build`. Absolute path, path relative to the **profile directory** (never the project — a cloned repo's own Dockerfile is not built), or `{{profile_dir}}/Dockerfile`. |
 
 When `use: build`, both `ccpod run` and `ccpod image build` use the same tag `ccpod-local-<profile>-<hash>:latest` (hash derived from Dockerfile contents). Running `ccpod image build` pre-builds the image so `ccpod run` reuses it without rebuilding. Override the tag with `--tag`. Force a rebuild with `ccpod run --rebuild`.
 
@@ -157,6 +157,18 @@ env:
 
 Interpolation syntax follows POSIX shell: `${NAME}` and `${NAME:-default}` only (no `:?`, `:+`, command substitution, or nesting). Names match `[A-Za-z_][A-Za-z0-9_]*`. The `:-default` portion is a literal string — variable references inside it (e.g. `${REGION:-us-${ZONE}}`) are not expanded. Following POSIX semantics, a host var set to the empty string is still considered "set" and wins over `:-default`; only an unset var triggers the default. Interpolation is currently scoped to **`env` values only**; other string fields (`image`, `binds`, `claudeArgs`, etc.) take their values literally. Project `.ccpod.yml` `env:` entries and `--env KEY=VALUE` CLI overrides accept the same syntax.
 
+### `allowProjectEnvForward`
+
+Default `[]`. A list of host variable names that a project's `.ccpod.yml` `env:` is allowed to forward by bare name (e.g. `- GITHUB_TOKEN`). By default a project entry that names a host variable is ignored with a warning, because a cloned repo could otherwise pull any secret from your shell into the container — the same reason `${VAR}` interpolation is blocked in project env.
+
+```yaml
+allowProjectEnvForward:
+  - GITHUB_TOKEN
+  - NPM_TOKEN
+```
+
+Project `KEY=literal` entries are unaffected. Profile `env:` and `--env` are trusted and can forward anything.
+
 ### `claudeArgs`
 
 A list of extra CLI flags passed verbatim to the `claude` command on every run. These are appended before any `claudeArgs` in the project config.
@@ -193,7 +205,7 @@ The profile config is used as-is. Useful for security-sensitive profiles where y
 isolation: true
 ```
 
-> **Note:** `isolation` does not prevent profile selection — a project's `.ccpod.yml` can still specify `profile: my-isolated-profile` to opt into it. CLI flags (`--no-state`, `--env`, `--rebuild`) continue to work.
+> **Note:** `isolation` does not prevent profile selection — a project's `.ccpod.yml` can still specify `profile: my-isolated-profile` to opt into it (ccpod asks you to approve a project's profile choice the first time, and remembers it; `--profile` skips the prompt). CLI flags (`--no-state`, `--env`, `--rebuild`) continue to work.
 
 ### `permissions`
 

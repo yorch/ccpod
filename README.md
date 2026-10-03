@@ -59,7 +59,7 @@ config:
 image:
   use: ghcr.io/yorch/ccpod:latest   # pre-built image with Claude Code
   # use: build                     # build locally using dockerfile:
-  # dockerfile: ./Dockerfile
+  # dockerfile: Dockerfile          # relative to the profile directory
 
 auth:
   type: api-key              # "api-key" | "oauth"
@@ -263,4 +263,4 @@ Everyone gets the same CLAUDE.md, settings, and plugins. Updates flow in daily (
 
 The official base image is `ghcr.io/yorch/ccpod` — built from `docker/Dockerfile` and published automatically on every push to `main` (`:main`, `:latest`) and on version tags (`:1.2.3`, `:1.2`).
 
-To use a custom image, set `image.use` in your profile. To build locally from a Dockerfile, set `image.use: build` and `image.dockerfile: ./Dockerfile`.
+To use a custom image, set `image.use` in your profile. To build locally from a Dockerfile, set `image.use: build` and `image.dockerfile: Dockerfile` (a relative path is resolved inside the profile directory, `~/.ccpod/profiles/<name>/`).

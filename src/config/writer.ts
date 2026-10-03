@@ -37,6 +37,26 @@ function secureParentDir(): string {
   return dir;
 }
 
+// True only for a real directory (not a symlink to one). The project's .claude/
+// is untrusted: a committed `.claude -> ~/.ssh` symlink would otherwise have
+// every file under the target copied into the container's config dir.
+export function isRegularDir(path: string, warn = true): boolean {
+  try {
+    const stat = lstatSync(path);
+    if (stat.isSymbolicLink()) {
+      if (warn) {
+        console.warn(
+          `Warning: ${path} is a symlink — ignoring it (project .claude/ must be a real directory).`,
+        );
+      }
+      return false;
+    }
+    return stat.isDirectory();
+  } catch {
+    return false;
+  }
+}
+
 function hashDir(dir: string, hash: ReturnType<typeof createHash>): void {
   if (!existsSync(dir)) {
     return;
@@ -77,12 +97,18 @@ function copyTreeSkipSymlinks(src: string, dest: string): void {
   }
 }
 
+const RESERVED_ASSETS = new Set(['CLAUDE.md', 'settings.json', 'post-init.sh']);
+
 function copyAssets(srcDir: string, destDir: string): void {
   if (!existsSync(srcDir)) {
     return;
   }
   for (const entry of readdirSync(srcDir)) {
-    if (entry === 'CLAUDE.md' || entry === 'settings.json') {
+    // CLAUDE.md and settings.json are merged and written by ccpod itself;
+    // post-init.sh is generated from the (trust-gated) init commands. A copied
+    // post-init.sh would let an untrusted project run commands regardless of
+    // allowProjectInit.
+    if (RESERVED_ASSETS.has(entry)) {
       continue;
     }
     const src = join(srcDir, entry);
@@ -104,7 +130,10 @@ export function writeMergedConfig(
     claudeMd: mergedClaudeMd,
     initCommands,
     profileDirHash: hashProfileDir(profileConfigDir),
-    projectDirHash: projectClaudeDir ? hashProfileDir(projectClaudeDir) : '',
+    projectDirHash:
+      projectClaudeDir && isRegularDir(projectClaudeDir, false)
+        ? hashProfileDir(projectClaudeDir)
+        : '',
     settings: mergedSettings,
   });
   const hash = createHash('sha256').update(content).digest('hex').slice(0, 16);
@@ -121,7 +150,7 @@ export function writeMergedConfig(
   try {
     // Profile assets first; project assets second so project wins on conflict
     copyAssets(profileConfigDir, tmpOut);
-    if (projectClaudeDir) {
+    if (projectClaudeDir && isRegularDir(projectClaudeDir, false)) {
       copyAssets(projectClaudeDir, tmpOut);
     }
 

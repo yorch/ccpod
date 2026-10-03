@@ -4,6 +4,7 @@ import type { ProfileConfig } from '../../../src/types/index.ts';
 
 function makeProfile(overrides: Partial<ProfileConfig> = {}): ProfileConfig {
   return {
+    allowProjectEnvForward: [],
     allowProjectHostMounts: false,
     allowProjectInit: false,
     allowProjectServices: false,
@@ -122,6 +123,15 @@ describe('mergeConfigs', () => {
     expect(() => mergeConfigs(profile, null)).toThrow(
       'Invalid port mapping "0:3000"',
     );
+  });
+
+  it('parsePorts rejects ports above 65535 and extra segments', () => {
+    for (const bad of ['70000:80', '80:70000', '1:2:3']) {
+      const profile = makeProfile({
+        ports: { autoDetectMcp: false, list: [bad] },
+      });
+      expect(() => mergeConfigs(profile, null)).toThrow('Invalid port mapping');
+    }
   });
 
   it('deep merge: claudeArgs concatenates profile then project', () => {
@@ -469,5 +479,14 @@ describe('mergeClaudes', () => {
     );
     expect(result).toBe('# Project\nDo Y');
     expect(result).not.toContain('# Profile');
+  });
+
+  it('override with no project content keeps the profile content', () => {
+    expect(mergeClaudes('# Profile', '', 'override')).toBe('# Profile');
+  });
+
+  it('append with only one side present has no dangling separator', () => {
+    expect(mergeClaudes('# Profile', '', 'append')).toBe('# Profile');
+    expect(mergeClaudes('', '# Project', 'append')).toBe('# Project');
   });
 });

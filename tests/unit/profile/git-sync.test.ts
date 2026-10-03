@@ -173,4 +173,38 @@ describe('syncGitConfig', () => {
     );
     expect(lockMs).toBeGreaterThanOrEqual(beforeMs);
   });
+
+  it('keeps the cached config and does not throw when the remote is unreachable', async () => {
+    const { repoDir, ref } = makeLocalRepo();
+    const profileDir = makeTempDir();
+    await syncGitConfig(profileDir, repoDir, ref, 'always');
+
+    rmSync(repoDir, { force: true, recursive: true });
+    await syncGitConfig(profileDir, repoDir, ref, 'always');
+
+    expect(readFileSync(join(profileDir, 'config', 'config.txt'), 'utf8')).toBe(
+      'initial content',
+    );
+  });
+
+  it('clones a commit SHA ref', async () => {
+    const { repoDir } = makeLocalRepo();
+    const sha = Bun.spawnSync(['git', 'rev-parse', 'HEAD'], {
+      cwd: repoDir,
+    })
+      .stdout.toString()
+      .trim();
+    writeFileSync(join(repoDir, 'later.txt'), 'later');
+    git(['add', '.'], repoDir);
+    git(['commit', '-m', 'later'], repoDir);
+
+    const profileDir = makeTempDir();
+    await syncGitConfig(profileDir, `file://${repoDir}`, sha, 'always');
+
+    const configDir = join(profileDir, 'config');
+    expect(readFileSync(join(configDir, 'config.txt'), 'utf8')).toBe(
+      'initial content',
+    );
+    expect(existsSync(join(configDir, 'later.txt'))).toBe(false);
+  });
 });

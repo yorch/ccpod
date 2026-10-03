@@ -1,12 +1,12 @@
-import { existsSync, readFileSync } from 'node:fs';
-import { dirname, isAbsolute, join } from 'node:path';
+import { existsSync, lstatSync, readFileSync } from 'node:fs';
+import { dirname, join } from 'node:path';
 import chalk from 'chalk';
 import deepmerge from 'deepmerge';
 import { resolveAuth, resolveEnvForwarding } from '../../auth/resolver.ts';
 import { loadProfileConfig, loadProjectConfig } from '../../config/loader.ts';
 import { mergeClaudes, mergeConfigs } from '../../config/merger.ts';
 import { expandPermissionsPreset } from '../../config/permissions.ts';
-import { writeMergedConfig } from '../../config/writer.ts';
+import { isRegularDir, writeMergedConfig } from '../../config/writer.ts';
 import { computeProjectHash } from '../../container/builder.ts';
 import { sidecarNetworkName, startSidecars } from '../../container/sidecars.ts';
 import { computeLocalImageTag } from '../../image/hash.ts';
@@ -15,12 +15,13 @@ import { runWizard } from '../../init/wizard.ts';
 import { extractHttpMcpPorts, parseMcpJson } from '../../mcp/parser.ts';
 import { syncGitConfig } from '../../profile/git-sync.ts';
 import {
-  expandProfilePath,
   getCredentialsDir,
   getProfileDir,
   profileExists,
+  resolveProfileDockerfile,
 } from '../../profile/manager.ts';
 import type { ResolvedConfig } from '../../types/index.ts';
+import { ensureProjectProfileTrusted } from '../project-trust.ts';
 import { validateProfileArg } from '../validate.ts';
 
 export interface ContainerSetupArgs {
@@ -57,6 +58,12 @@ export async function setupContainer(
         `Profile '${profileName}' not found. Run 'ccpod init --profile ${profileName}'.`,
       );
     }
+  }
+
+  // The project (untrusted) picked this profile rather than the user via
+  // --profile: require remembered approval before honoring it.
+  if (!args.profile && projectConfig?.profile && profileName !== 'default') {
+    await ensureProjectProfileTrusted(cwd, profileName);
   }
 
   const profileDir = getProfileDir(profileName);
@@ -131,6 +138,7 @@ export async function setupContainer(
       profile.env,
       profile.isolation ? [] : (projectConfig?.env ?? []),
       args.envArgs ?? [],
+      profile.allowProjectEnvForward,
     ),
     ...authEnv,
   };
@@ -143,7 +151,7 @@ export async function setupContainer(
   const profileClaudeMd = readIfExists(join(configSourceDir, 'CLAUDE.md'));
   const projectClaudeMd = profile.isolation
     ? null
-    : readIfExists(join(cwd, 'CLAUDE.md'));
+    : readProjectFileIfExists(join(cwd, 'CLAUDE.md'));
   const claudeMdMode = profile.isolation
     ? 'append'
     : (projectConfig?.config?.claudeMd ?? 'append');
@@ -166,9 +174,12 @@ export async function setupContainer(
     },
   );
   const projectClaudeDir = join(cwd, '.claude');
-  const projectSettings = profile.isolation
-    ? {}
-    : (readJsonIfExists(join(projectClaudeDir, 'settings.json')) ?? {});
+  // lstat of the file alone misses a symlinked .claude/ directory, so check
+  // the directory too before trusting anything inside it.
+  const projectSettings =
+    profile.isolation || !isRegularDir(projectClaudeDir)
+      ? {}
+      : (readJsonIfExists(join(projectClaudeDir, 'settings.json'), true) ?? {});
   const mergedSettings = deepmerge(profileSettings, projectSettings, {
     arrayMerge: (dest: unknown[], src: unknown[]) => {
       const combined = [...dest, ...src];
@@ -188,13 +199,12 @@ export async function setupContainer(
   console.log(chalk.dim('Checking image...'));
   let image = partial.image;
   if (image === 'build') {
-    const rawDockerfile = partial.dockerfile ?? 'Dockerfile';
-    const dockerfile = expandProfilePath(rawDockerfile, profileName);
-    const dockerfileAbs = isAbsolute(dockerfile)
-      ? dockerfile
-      : join(cwd, dockerfile);
-    const tag = computeLocalImageTag(profileName, dockerfile, cwd);
+    const dockerfileAbs = resolveProfileDockerfile(
+      partial.dockerfile ?? 'Dockerfile',
+      profileName,
+    );
     const contextDir = dirname(dockerfileAbs);
+    const tag = computeLocalImageTag(profileName, dockerfileAbs, contextDir);
     await ensureLocalImage(
       tag,
       dockerfileAbs,
@@ -231,12 +241,33 @@ function readIfExists(path: string): string | null {
   return existsSync(path) ? readFileSync(path, 'utf8') : null;
 }
 
-function readJsonIfExists(path: string): object | null {
-  if (!existsSync(path)) {
+// Project files come from an untrusted checkout. Refuse symlinks (and anything
+// that isn't a regular file) so a repo can't point CLAUDE.md or
+// .claude/settings.json at e.g. ~/.aws/credentials and have it spliced into the
+// container's config — same rule as .mcp.json and .ccpod.yml.
+function readProjectFileIfExists(path: string): string | null {
+  let stat: ReturnType<typeof lstatSync>;
+  try {
+    stat = lstatSync(path);
+  } catch {
+    return null;
+  }
+  if (!stat.isFile()) {
+    console.warn(
+      `Warning: ${path} is not a regular file (symlink?) — ignoring it.`,
+    );
+    return null;
+  }
+  return readFileSync(path, 'utf8');
+}
+
+function readJsonIfExists(path: string, untrusted = false): object | null {
+  const raw = untrusted ? readProjectFileIfExists(path) : readIfExists(path);
+  if (raw === null) {
     return null;
   }
   try {
-    return JSON.parse(readFileSync(path, 'utf8')) as object;
+    return JSON.parse(raw) as object;
   } catch {
     return null;
   }

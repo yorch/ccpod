@@ -87,6 +87,7 @@ export interface ProfileConfig {
   services: Record<string, ServiceConfig>;
   env: string[];
   allowProjectHostMounts: boolean;
+  allowProjectEnvForward: string[];
   allowProjectInit: boolean;
   allowProjectServices: boolean;
 }
@@ -279,9 +280,9 @@ write_merged_config(result) → /tmp/ccpod-<sha256(content)>/
 
 Interpolation is governed by `INTERPOLATION_RE = /\$\{([A-Za-z_][A-Za-z0-9_]*)(?::-([^}]*))?\}/g`. Missing host vars without `:-default` resolve to empty string and warn once per unique name. Interpolation runs on `env` values only — other config string fields are taken verbatim by design (limits attack surface from project-controlled `.ccpod.yml`).
 
-**Project entries cannot interpolate.** Because a repo's `.ccpod.yml` is untrusted input, `${VAR}` in a project-sourced entry throws an error rather than reading from `process.env`. Profile- and CLI-sourced entries retain full interpolation. Bare `KEY` forwarding and `KEY=literal` still work everywhere.
+**Project entries cannot interpolate.** Because a repo's `.ccpod.yml` is untrusted input, `${VAR}` in a project-sourced entry throws an error rather than reading from `process.env`. Profile- and CLI-sourced entries retain full interpolation. `KEY=literal` works everywhere. Bare `KEY` forwarding works in profile and CLI entries; in project entries it is ignored with a warning unless the profile lists the name in `allowProjectEnvForward` (forwarding a host value by name is the same exfiltration path as `${VAR}`).
 
-**Project entries cannot set redirect/injection/TLS keys.** Project-sourced entries whose key (matched case-insensitively) is on `PROJECT_ENV_DENYLIST` are ignored with a warning. The list groups into: Anthropic credential/endpoint (`ANTHROPIC_API_KEY`, `ANTHROPIC_AUTH_TOKEN`, `ANTHROPIC_BASE_URL` / `ANTHROPIC_BEDROCK_BASE_URL` / `ANTHROPIC_VERTEX_BASE_URL`), proxy (`HTTP_PROXY` / `HTTPS_PROXY` / `ALL_PROXY` / `NO_PROXY`), code injection (`NODE_OPTIONS`), and TLS trust (`NODE_EXTRA_CA_CERTS`, `NODE_TLS_REJECT_UNAUTHORIZED`, `SSL_CERT_FILE`, `SSL_CERT_DIR`, `CURL_CA_BUNDLE`, `REQUESTS_CA_BUNDLE`). Otherwise a repo could redirect API traffic to exfiltrate the profile's resolved credential, inject code into the credential-bearing Node process, or disable TLS verification. Profile and CLI entries are trusted and may set them.
+**Project entries cannot set redirect/injection/TLS keys.** Project-sourced entries whose key (matched case-insensitively) is on `PROJECT_ENV_DENYLIST` are ignored with a warning. The list groups into: Anthropic credential/endpoint (`ANTHROPIC_API_KEY`, `ANTHROPIC_AUTH_TOKEN`, `ANTHROPIC_BASE_URL` / `ANTHROPIC_BEDROCK_BASE_URL` / `ANTHROPIC_VERTEX_BASE_URL`), proxy (`HTTP_PROXY` / `HTTPS_PROXY` / `ALL_PROXY` / `NO_PROXY`), code injection (`NODE_OPTIONS` / `BUN_OPTIONS`), binary/library hijack (`PATH`, `HOME`, `SHELL`, `BASH_ENV`, `ENV`, `IFS`, `CLAUDE_CONFIG_DIR`, and every `LD_*` / `DYLD_*` key), and TLS trust (`NODE_EXTRA_CA_CERTS`, `NODE_TLS_REJECT_UNAUTHORIZED`, `SSL_CERT_FILE`, `SSL_CERT_DIR`, `CURL_CA_BUNDLE`, `REQUESTS_CA_BUNDLE`). Otherwise a repo could redirect API traffic to exfiltrate the profile's resolved credential, inject code into the credential-bearing Node process, or disable TLS verification. Profile and CLI entries are trusted and may set them.
 
 **Project entries cannot set `CCPOD_*` or `DOCKER_*` keys.** Project-sourced entries whose key starts (case-insensitively) with `CCPOD_` or `DOCKER_` are ignored with a warning. `CCPOD_*` could override ccpod's own control vars (e.g. `CCPOD_NETWORK_POLICY=full` to bypass the profile's restricted network), and `DOCKER_*` (e.g. `DOCKER_HOST=tcp://attacker:2375`) could redirect the docker CLI itself to an attacker-controlled daemon. `builder.ts` additionally strips `CCPOD_*` and `DOCKER_*` from `secretEnv` as defense-in-depth, so even a profile-sourced value cannot reach the container as a `-e` flag that would override ccpod's constructed control vars.
 
@@ -298,14 +299,17 @@ A repo's `.ccpod.yml` ships with the codebase being run inside the sandbox, so i
 - `env` from project may not use `${VAR}` interpolation (see above) or set a `PROJECT_ENV_DENYLIST` key (see above). `CCPOD_*` and `DOCKER_*` prefix keys are also blocked (see above).
 - `network:` (`policy` / `allow`) is profile-owned. Project `network` keys are ignored with a warning regardless of `merge` strategy, so a repo cannot downgrade a `restricted` profile to `full` or extend its allow-list.
 - `init:` from project is dropped (with a one-line `console.warn`).
+- Project `.claude/`, `CLAUDE.md` and `.claude/settings.json` are ignored (with a warning) when they are symlinks, and `post-init.sh` is never copied from any config directory — it is generated only from trust-gated `init` commands.
+- `profile:` in `.ccpod.yml` needs one-time interactive approval per (project, profile), remembered in `~/.ccpod/trusted-projects.json` (0600). Non-interactive runs fail unless already approved; `--profile` skips the prompt.
+- A profile's relative `image.dockerfile` resolves against the profile directory, never the project.
 
-To opt out, the profile may set `allowProjectHostMounts: true` (for sidecar volumes/ports), `allowProjectInit: true` (for init commands), or `allowProjectServices: true` (for project-declared sidecar services). All three default to `false`. There is no opt-out for the network or main-container port controls — they are always profile-owned.
+To opt out, the profile may set `allowProjectHostMounts: true` (for sidecar volumes/ports), `allowProjectInit: true` (for init commands), `allowProjectServices: true` (for project-declared sidecar services), or list host variable names in `allowProjectEnvForward: [NAME, ...]` (bare `NAME` forwarding from project env). The booleans default to `false`; the list defaults to empty. There is no opt-out for the network or main-container port controls — they are always profile-owned.
 
 ### Updater integrity
 
 `ccpod update` requires each release to publish a `SHASUMS256.txt` asset alongside the binaries. The updater fetches `SHASUMS256.txt` and the platform asset in parallel, then streams the response body through `createHash('sha256')` into a write pipeline (`node:stream/promises#pipeline`). The hash is computed as bytes arrive, so the 50–80 MB binary is never buffered twice in memory; it is compared to the entry for the platform asset before the temp file is moved into place. A missing `SHASUMS256.txt`, a missing entry, or a mismatch all refuse the install with a clear error and leave nothing on disk.
 
-The `install.sh` bootstrap performs the same verification: after downloading the binary it fetches `SHASUMS256.txt`, computes the digest with `sha256sum` (or `shasum -a 256`), and aborts on mismatch. It only warns-and-proceeds when the checksum asset is absent (a release predating it) or no sha256 tool is available — never on an actual mismatch.
+The `install.sh` bootstrap performs the same verification: after downloading the binary it fetches `SHASUMS256.txt`, computes the digest with `sha256sum` (or `shasum -a 256`), and aborts on mismatch. It only warns-and-proceeds when the release definitively has no checksum asset (HTTP 404 — a release predating it). A mismatch, any other download error, a missing entry, or a missing sha256 tool aborts the install; set `CCPOD_INSTALL_SKIP_VERIFY=1` to override the latter group explicitly.
 
 ### Garbage collection (`ccpod prune`)
 
@@ -359,7 +363,7 @@ ccpod run [-- claude-args]
 ├─ 4. Ensure image
 │     if dockerfile: {{profile_dir}} placeholder expanded to ~/.ccpod/profiles/<profile>/
 │                   tag = ccpod-local-<profile>-<sha256(dockerfile)>
-│                   context = dirname(dockerfile) if absolute, else $PWD
+│                   context = dirname(resolved dockerfile); relative paths anchor at the profile dir
 │                   build if tag absent (or --rebuild)
 │     else: check locally; pull if absent
 │

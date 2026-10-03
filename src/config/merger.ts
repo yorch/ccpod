@@ -232,17 +232,19 @@ function parsePorts(
   hostIp?: string,
 ): Array<{ host: number; container: number; hostIp?: string }> {
   return list.map((entry) => {
-    const [hostStr = entry, containerStr = entry] = entry.split(':');
+    const parts = entry.split(':');
+    if (parts.length > 2) {
+      throw new Error(
+        `Invalid port mapping "${entry}": expected "host:container" (or a single port)`,
+      );
+    }
+    const [hostStr = entry, containerStr = hostStr] = parts;
     const host = Number(hostStr);
     const container = Number(containerStr);
-    if (
-      !Number.isInteger(host) ||
-      host <= 0 ||
-      !Number.isInteger(container) ||
-      container <= 0
-    ) {
+    const valid = (n: number) => Number.isInteger(n) && n >= 1 && n <= 65535;
+    if (!valid(host) || !valid(container)) {
       throw new Error(
-        `Invalid port mapping "${entry}": expected "host:container" with positive integers`,
+        `Invalid port mapping "${entry}": expected "host:container" with integers in 1-65535`,
       );
     }
     return hostIp ? { container, host, hostIp } : { container, host };
@@ -254,7 +256,13 @@ export function mergeClaudes(
   projectContent: string,
   mode: 'append' | 'override',
 ): string {
-  if (mode === 'override') {
+  // With only one side present there is nothing to override or append to:
+  // return it as-is (override with no project file must not wipe the profile's
+  // instructions, and append must not leave a dangling separator).
+  if (!projectContent) {
+    return profileContent;
+  }
+  if (!profileContent || mode === 'override') {
     return projectContent;
   }
   return `${profileContent}\n\n---\n\n${projectContent}`;

@@ -149,6 +149,16 @@ describe('runContainer', () => {
     expect(spawnArgs[0]).toBe('run');
   });
 
+  it('refuses to reattach in proxy auth mode', async () => {
+    const { deps, spawnMock } = makeDeps([
+      { exitCode: 0, stderr: '', stdout: 'running' },
+    ]);
+    await expect(
+      runContainer(makeSpec({ proxyAuth: true }), deps),
+    ).rejects.toThrow(/ccpod down/);
+    expect(spawnMock).not.toHaveBeenCalled();
+  });
+
   it('headless run refuses to attach to a running container', async () => {
     const { deps, spawnMock } = makeDeps([
       { exitCode: 0, stderr: '', stdout: 'running' },
@@ -235,6 +245,26 @@ describe('runContainer', () => {
 });
 
 describe('shellContainer', () => {
+  it('execs into the running main container (execTarget) before starting its own', async () => {
+    const { deps, spawnMock } = makeDeps([
+      { exitCode: 0, stderr: '', stdout: 'running' },
+    ]);
+    await shellContainer(
+      makeSpec({
+        cmd: ['/bin/bash'],
+        execTarget: 'ccpod-default-abc123',
+        name: 'ccpod-default-abc123-shell',
+      }),
+      deps,
+    );
+    expect(spawnMock.mock.calls[0]?.[0]).toEqual([
+      'exec',
+      '-it',
+      'ccpod-default-abc123',
+      '/bin/bash',
+    ]);
+  });
+
   it('execs into running container with spec.cmd', async () => {
     const { deps, spawnMock } = makeDeps([
       { exitCode: 0, stderr: '', stdout: 'running' },

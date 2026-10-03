@@ -399,11 +399,64 @@ describe('resolveEnvForwarding', () => {
       });
     });
 
-    it('allows bare host-var forwarding in project env entries', () => {
+    it('ignores bare host-var forwarding in project env unless the profile allows it', () => {
       saveEnv('PROJECT_HOST_VAR');
       process.env.PROJECT_HOST_VAR = 'forwarded';
-      expect(resolveEnvForwarding([], ['PROJECT_HOST_VAR'], [])).toEqual({
-        PROJECT_HOST_VAR: 'forwarded',
+      const warn = spyOn(console, 'warn').mockImplementation(() => {});
+      try {
+        expect(resolveEnvForwarding([], ['PROJECT_HOST_VAR'], [])).toEqual({});
+        expect(warn).toHaveBeenCalledTimes(1);
+      } finally {
+        warn.mockRestore();
+      }
+    });
+
+    it('forwards bare project env names listed in the profile allowlist', () => {
+      saveEnv('PROJECT_HOST_VAR');
+      saveEnv('OTHER_HOST_VAR');
+      process.env.PROJECT_HOST_VAR = 'forwarded';
+      process.env.OTHER_HOST_VAR = 'secret';
+      const warn = spyOn(console, 'warn').mockImplementation(() => {});
+      try {
+        expect(
+          resolveEnvForwarding(
+            [],
+            ['PROJECT_HOST_VAR', 'OTHER_HOST_VAR'],
+            [],
+            ['PROJECT_HOST_VAR'],
+          ),
+        ).toEqual({ PROJECT_HOST_VAR: 'forwarded' });
+      } finally {
+        warn.mockRestore();
+      }
+    });
+
+    it('blocks PATH/HOME/LD_*/DYLD_* and shell-startup vars from project env', () => {
+      const warn = spyOn(console, 'warn').mockImplementation(() => {});
+      try {
+        expect(
+          resolveEnvForwarding(
+            [],
+            [
+              'PATH=.:/usr/bin',
+              'HOME=/workspace',
+              'LD_PRELOAD=/workspace/evil.so',
+              'ld_library_path=/workspace',
+              'DYLD_INSERT_LIBRARIES=/workspace/evil.dylib',
+              'BASH_ENV=/workspace/evil.sh',
+              'CLAUDE_CONFIG_DIR=/workspace/cfg',
+            ],
+            [],
+          ),
+        ).toEqual({});
+      } finally {
+        warn.mockRestore();
+      }
+    });
+
+    it('allows PATH from profile and CLI (trusted sources)', () => {
+      expect(resolveEnvForwarding(['PATH=/opt/bin'], [], [])).toEqual({
+        PATH: '/opt/bin',
       });
     });
 

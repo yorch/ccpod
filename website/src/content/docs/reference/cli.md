@@ -47,7 +47,7 @@ ccpod shell --no-state         # force ephemeral state
 ccpod shell --rebuild          # force image rebuild or repull
 ```
 
-If a container for this project/profile is already running (e.g. Claude is active), `ccpod shell` exec's into it with `docker exec -it` — giving you a second shell alongside the running session. Otherwise it starts a fresh container with `/bin/bash` as the entrypoint.
+If a container for this project/profile is already running (e.g. Claude is active), `ccpod shell` exec's into it with `docker exec -it` — giving you a second shell alongside the running session. Otherwise it starts a separate `ccpod-<profile>-<hash>-shell` container with `/bin/bash` as the entrypoint (so `ccpod run` never attaches to a bash session). The shell container does not publish the project's ports.
 
 :::note
 The target image must have `/bin/bash`. Alpine-based images typically only have `/bin/sh` and will fail. The official ccpod image always includes bash.

@@ -9,6 +9,67 @@ const GIT_HOSTS = ['github.com', 'gitlab.com', 'bitbucket.org'];
 // providers".
 const RAW_HOSTS = ['raw.githubusercontent.com', 'gist.githubusercontent.com'];
 
+interface RiskyProfileFields {
+  allowProjectEnvForward: string[];
+  allowProjectHostMounts: boolean;
+  allowProjectInit: boolean;
+  allowProjectServices: boolean;
+  config: { repo?: string };
+  env: string[];
+  init: string[];
+  network: { policy: string };
+  services: Record<string, { image: string }>;
+  ssh: { mountSshDir: boolean };
+}
+
+/**
+ * Human-readable list of the capabilities a profile grants that deserve a
+ * look before installing (init scripts, extra containers, host mounts, open
+ * network, trust of project configs). Empty when nothing notable is requested.
+ */
+export function summarizeProfileRisks(profile: RiskyProfileFields): string[] {
+  const out: string[] = [];
+  if (profile.init.length > 0) {
+    out.push(`runs ${profile.init.length} init command(s) on every start:`);
+    for (const cmd of profile.init) {
+      out.push(`    $ ${cmd}`);
+    }
+  }
+  for (const [name, svc] of Object.entries(profile.services)) {
+    out.push(`starts sidecar '${name}' from image ${svc.image}`);
+  }
+  if (profile.config.repo) {
+    out.push(`pulls its Claude config from ${profile.config.repo}`);
+  }
+  if (profile.ssh.mountSshDir) {
+    out.push('mounts your ~/.ssh directory into the container');
+  }
+  if (profile.network.policy === 'full') {
+    out.push('allows unrestricted network egress (network.policy: full)');
+  }
+  if (profile.allowProjectInit) {
+    out.push('lets any project run init commands (allowProjectInit)');
+  }
+  if (profile.allowProjectHostMounts) {
+    out.push('lets any project mount host paths (allowProjectHostMounts)');
+  }
+  if (profile.allowProjectServices) {
+    out.push(
+      'lets any project start sidecar containers (allowProjectServices)',
+    );
+  }
+  if (profile.allowProjectEnvForward.length > 0) {
+    out.push(
+      `lets projects forward host env vars: ${profile.allowProjectEnvForward.join(', ')}`,
+    );
+  }
+  const interpolated = profile.env.filter((e) => /\$\{/.test(e));
+  if (interpolated.length > 0) {
+    out.push(`forwards host env via interpolation: ${interpolated.join(', ')}`);
+  }
+  return out;
+}
+
 export type InstallSource =
   | { type: 'git'; url: string }
   | { type: 'url'; url: string }

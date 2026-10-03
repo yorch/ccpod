@@ -12,6 +12,7 @@ import {
   expandProfilePath,
   getProfileDir,
   profileExists,
+  resolveProfileDockerfile,
   updateProfileImage,
 } from '../../../profile/manager.ts';
 import { validateProfileArg } from '../../validate.ts';
@@ -48,10 +49,13 @@ export default defineCommand({
     }
 
     const profile = loadProfileConfig(getProfileDir(profileName));
-    const rawDockerfile = args.dockerfile ?? profile.image.dockerfile;
-    const dockerfile = rawDockerfile
-      ? expandProfilePath(rawDockerfile, profileName)
-      : rawDockerfile;
+    // --dockerfile is user-typed (relative to cwd); a profile's own
+    // image.dockerfile is anchored at the profile dir.
+    const dockerfile = args.dockerfile
+      ? expandProfilePath(args.dockerfile, profileName)
+      : profile.image.dockerfile
+        ? resolveProfileDockerfile(profile.image.dockerfile, profileName)
+        : undefined;
 
     if (!dockerfile) {
       console.error(

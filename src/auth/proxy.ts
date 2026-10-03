@@ -1,4 +1,4 @@
-import { randomBytes } from 'node:crypto';
+import { randomBytes, timingSafeEqual } from 'node:crypto';
 import {
   createServer,
   type IncomingMessage,
@@ -27,6 +27,8 @@ const REFRESH_TIMEOUT_MS = 15_000; // 15 seconds for OAuth refresh
 const BODY_TIMEOUT_MS = 30_000; // 30 seconds to read request body
 const MAX_BODY_BYTES = 100 * 1024 * 1024; // 100 MB max request body
 
+const MAX_TIMER_MS = 2 ** 31 - 1;
+
 // Retry delay after a failed proactive refresh.
 const REFRESH_RETRY_MS = 60_000; // 1 minute
 const MAX_REFRESH_RETRIES = 10; // stop retrying after this many consecutive failures
@@ -43,6 +45,8 @@ const STRIP_HEADERS = new Set([
 export interface AuthProxyOptions {
   hostname?: string;
   port?: number;
+  // Credential source; defaults to the host Keychain / ~/.claude file.
+  readCredentials?: () => OAuthCredentials | undefined;
   // The sentinel API key that the proxy expects in x-api-key. If set,
   // requests without a matching x-api-key are rejected with 401.
   sentinelKey?: string;
@@ -78,6 +82,7 @@ export class AuthProxy {
   private readonly port: number;
   private readonly hostname: string;
   private readonly sentinelKey: string | undefined;
+  private readonly readCredentials: () => OAuthCredentials | undefined;
   private refreshTimer: ReturnType<typeof setTimeout> | null = null;
   private refreshRetryCount = 0;
   private stopped = false;
@@ -87,12 +92,14 @@ export class AuthProxy {
     // On macOS, Docker Desktop/OrbStack route host.docker.internal to the
     // host's 127.0.0.1, so binding loopback is sufficient. On native Linux
     // Docker Engine and Podman, host-gateway resolves to the bridge IP
-    // (e.g. 172.17.0.1), not 127.0.0.1 — so we must bind 0.0.0.0 to be
-    // reachable from the container. The sentinel key gates access.
+    // (e.g. 172.17.0.1), not 127.0.0.1 — so callers should pass the bridge
+    // gateway IP as `hostname` (see withAuthProxy); 0.0.0.0 is only the
+    // fallback when it can't be determined. The sentinel key gates access.
     this.hostname =
       opts.hostname ??
       (process.platform === 'darwin' ? '127.0.0.1' : '0.0.0.0');
     this.sentinelKey = opts.sentinelKey;
+    this.readCredentials = opts.readCredentials ?? readHostOAuthCredentials;
   }
 
   get address(): string {
@@ -120,7 +127,7 @@ export class AuthProxy {
   async start(): Promise<void> {
     this.stopped = false;
     // Load initial credentials from the host store
-    const creds = readHostOAuthCredentials();
+    const creds = this.readCredentials();
     if (!creds) {
       throw new Error(
         'No OAuth credentials found on host. Run "claude /login" first, then use proxy auth.',
@@ -191,9 +198,11 @@ export class AuthProxy {
     }
     const { creds } = this.cache;
     const refreshAt = creds.expiresAt - REFRESH_MARGIN_MS;
+    // At least 1 min (or 1 min if expiresAt is invalid), and capped at the
+    // largest delay setTimeout supports — beyond 2^31-1 ms it fires at once.
     const delay = Number.isFinite(refreshAt)
-      ? Math.max(refreshAt - Date.now(), 60_000)
-      : 60_000; // at least 1 min, or 1 min if expiresAt is invalid
+      ? Math.min(Math.max(refreshAt - Date.now(), 60_000), MAX_TIMER_MS)
+      : 60_000;
 
     if (this.refreshTimer) {
       clearTimeout(this.refreshTimer);
@@ -296,7 +305,7 @@ export class AuthProxy {
       // the host credential store and retry once with the fresh token.
       const msg = err instanceof Error ? err.message : String(err);
       if (msg.includes('invalid_grant')) {
-        const freshCreds = readHostOAuthCredentials();
+        const freshCreds = this.readCredentials();
         if (freshCreds && freshCreds.refreshToken !== refreshToken) {
           const retryBody = JSON.stringify({
             client_id: OAUTH_CLIENT_ID,
@@ -416,7 +425,10 @@ export class AuthProxy {
     // proxy as an open auth relay.
     if (this.sentinelKey) {
       const incomingKey = req.headers['x-api-key'];
-      if (incomingKey !== this.sentinelKey) {
+      if (
+        typeof incomingKey !== 'string' ||
+        !constantTimeEqual(incomingKey, this.sentinelKey)
+      ) {
         this.sendError(res, 401, 'invalid or missing sentinel key');
         return;
       }
@@ -498,7 +510,14 @@ export class AuthProxy {
                 `auth proxy: refresh on 401 failed: ${err}`,
               );
             })
-            .finally(resolve);
+            .finally(() => {
+              // The retry attached its own close listener; drop the first
+              // request's so a long-lived response doesn't accumulate them.
+              if (onClientClose) {
+                res.off('close', onClientClose);
+              }
+              resolve();
+            });
           return;
         }
 
@@ -507,12 +526,21 @@ export class AuthProxy {
         upstreamResp.pipe(res);
         // Clean up the close listener only after the response body has
         // fully streamed (not when headers arrive — the client could still
-        // disconnect during streaming).
-        upstreamResp.on('end', () => {
+        // disconnect during streaming). 'close' also fires when the client
+        // disconnects mid-stream (we destroy upstreamReq) and 'error' covers
+        // upstream resets — without these the promise never settled and an
+        // unhandled 'error' would reach the global uncaughtException handler.
+        const finish = () => {
           if (onClientClose) {
             res.off('close', onClientClose);
           }
           resolve();
+        };
+        upstreamResp.on('end', finish);
+        upstreamResp.on('close', finish);
+        upstreamResp.on('error', () => {
+          res.destroy();
+          finish();
         });
       });
 
@@ -612,6 +640,12 @@ export class AuthProxy {
       }),
     );
   }
+}
+
+function constantTimeEqual(a: string, b: string): boolean {
+  const ab = Buffer.from(a);
+  const bb = Buffer.from(b);
+  return ab.length === bb.length && timingSafeEqual(ab, bb);
 }
 
 /**

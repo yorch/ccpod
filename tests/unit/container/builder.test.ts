@@ -356,7 +356,8 @@ describe('buildContainerSpec — proxy auth mode', () => {
     expect(spec.proxyAuth).toBeUndefined();
   });
 
-  it('auto-adds host.docker.internal to allow-list in restricted + proxy mode', () => {
+  it('does not whitelist the whole host gateway in restricted + proxy mode', () => {
+    // The entrypoint allows only the proxy port, derived from ANTHROPIC_BASE_URL.
     const spec = buildContainerSpec(
       makeConfig({
         auth: { type: 'proxy' },
@@ -368,9 +369,46 @@ describe('buildContainerSpec — proxy auth mode', () => {
     const allowedHostsEntry = spec.env.find((e) =>
       e.startsWith('CCPOD_ALLOWED_HOSTS='),
     );
-    expect(allowedHostsEntry).toBeDefined();
-    expect(allowedHostsEntry).toContain('host.docker.internal');
-    expect(allowedHostsEntry).toContain('example.com');
+    expect(allowedHostsEntry).toBe('CCPOD_ALLOWED_HOSTS=example.com');
+    expect(spec.env).toContain('CCPOD_PROXY_AUTH=1');
+  });
+
+  it('injects proxy URL and sentinel key into secretEnv', () => {
+    const spec = buildContainerSpec(
+      makeConfig({ auth: { type: 'proxy' } }),
+      PROJECT_DIR,
+      true,
+      undefined,
+      {
+        proxy: {
+          baseUrl: 'http://host.docker.internal:1234',
+          sentinelKey: 'sk-ant-api03-x',
+        },
+      },
+    );
+    expect(spec.secretEnv.ANTHROPIC_BASE_URL).toBe(
+      'http://host.docker.internal:1234',
+    );
+    expect(spec.secretEnv.ANTHROPIC_API_KEY).toBe('sk-ant-api03-x');
+  });
+
+  it('shell mode uses a distinct name/label, bash cmd and exec target', () => {
+    const main = buildContainerSpec(makeConfig(), PROJECT_DIR, true);
+    const shell = buildContainerSpec(
+      makeConfig(),
+      PROJECT_DIR,
+      true,
+      undefined,
+      {
+        mode: 'shell',
+      },
+    );
+    expect(shell.name).toBe(`${main.name}-shell`);
+    expect(shell.execTarget).toBe(main.name);
+    expect(shell.labels['ccpod.type']).toBe('shell');
+    expect(shell.cmd).toEqual(['/bin/bash']);
+    expect(shell.env).toContain('CCPOD_SHELL_MODE=1');
+    expect(main.env).not.toContain('CCPOD_SHELL_MODE=1');
   });
 
   it('does not add host.docker.internal in restricted + non-proxy mode', () => {

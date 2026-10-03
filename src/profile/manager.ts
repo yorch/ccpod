@@ -8,7 +8,7 @@ import {
   writeFileSync,
 } from 'node:fs';
 import { homedir } from 'node:os';
-import { join } from 'node:path';
+import { isAbsolute, join } from 'node:path';
 import { parseDocument } from 'yaml';
 
 // Re-evaluated at each call so CCPOD_TEST_DIR env override works in tests.
@@ -52,6 +52,22 @@ export function getProfileDir(name: string): string {
 
 export function expandProfilePath(path: string, profileName: string): string {
   return path.replaceAll('{{profile_dir}}', getProfileDir(profileName));
+}
+
+/**
+ * Absolute path of a profile's `image.dockerfile`. `{{profile_dir}}` is
+ * expanded and relative paths are anchored at the profile directory — never
+ * the project checkout, whose own Dockerfile would otherwise be built and run
+ * with the profile's credentials.
+ */
+export function resolveProfileDockerfile(
+  rawPath: string,
+  profileName: string,
+): string {
+  const expanded = expandProfilePath(rawPath, profileName);
+  return isAbsolute(expanded)
+    ? expanded
+    : join(getProfileDir(profileName), expanded);
 }
 
 export function getCredentialsDir(profileName: string): string {
