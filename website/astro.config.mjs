@@ -37,9 +37,40 @@ export default defineConfig({
           },
           tag: 'link',
         },
+        // Social card: Starlight defaults og:type to "article"; this is a docs/product site
+        { attrs: { content: 'website', property: 'og:type' }, tag: 'meta' },
+        {
+          attrs: {
+            content: 'https://ccpod.brnby.com/og.png',
+            property: 'og:image',
+          },
+          tag: 'meta',
+        },
+        {
+          attrs: { content: '1200', property: 'og:image:width' },
+          tag: 'meta',
+        },
+        {
+          attrs: { content: '630', property: 'og:image:height' },
+          tag: 'meta',
+        },
+        {
+          attrs: {
+            content: 'ccpod: Claude Code in Docker with portable profiles',
+            property: 'og:image:alt',
+          },
+          tag: 'meta',
+        },
         // Twitter/X card
         {
           attrs: { content: 'summary_large_image', name: 'twitter:card' },
+          tag: 'meta',
+        },
+        {
+          attrs: {
+            content: 'https://ccpod.brnby.com/og.png',
+            name: 'twitter:image',
+          },
           tag: 'meta',
         },
         { attrs: { content: '@yorch', name: 'twitter:creator' }, tag: 'meta' },
@@ -50,13 +81,21 @@ export default defineConfig({
             '@context': 'https://schema.org',
             '@type': 'SoftwareApplication',
             applicationCategory: 'DeveloperApplication',
+            author: {
+              '@type': 'Person',
+              name: 'yorch',
+              url: 'https://github.com/yorch',
+            },
             description:
               'Run Claude Code in Docker with portable, versioned profiles. Share and reproduce your Claude environment across machines and teams.',
+            downloadUrl: 'https://github.com/yorch/ccpod/releases',
+            image: 'https://ccpod.brnby.com/og.png',
             license: 'https://github.com/yorch/ccpod/blob/main/LICENSE',
             name: 'ccpod',
             offers: { '@type': 'Offer', price: '0', priceCurrency: 'USD' },
             operatingSystem: 'macOS, Linux',
-            url: 'https://ccpod.brnby.com',
+            sameAs: ['https://github.com/yorch/ccpod'],
+            url: 'https://ccpod.brnby.com/',
           }),
           tag: 'script',
         },

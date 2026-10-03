@@ -26,7 +26,10 @@ cd website
 bun run dev              # start Astro dev server
 bun run build            # build to website/dist/
 bun run preview          # preview built site
+bun scripts/build-og.mjs # re-render public/og.png (social card) from scripts/og.svg
 ```
+
+SEO notes: the homepage overrides `<title>` via frontmatter `head` (Starlight would otherwise emit `ccpod | ccpod`); site-wide `og:type`, `og:image`, `twitter:image` and the `SoftwareApplication` JSON-LD live in `website/astro.config.mjs`.
 
 ## Architecture
 
