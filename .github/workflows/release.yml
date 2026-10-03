@@ -1,59 +1,228 @@
+# Creates reviewed version PRs and publishes the compiled binary release.
+#
+# A merge carrying changesets opens or updates `chore: version packages`; merging
+# that PR is the human approval of the version number. Only that merged version
+# commit has an unpublished package version, so only it reaches the publishing
+# half of this workflow. After a successful publish the Docker image workflow is
+# invoked (tags created with GITHUB_TOKEN do not trigger other workflows).
 name: Release
 
 on:
   push:
-    tags:
-      - "v*"
+    branches: [main]
+
+concurrency:
+  group: release
+  cancel-in-progress: false
 
 permissions:
   contents: write
+  pull-requests: write
+  # Build-provenance attestation signs the artifacts with a workflow identity
+  # (via OIDC) that code running inside the job cannot forge — unlike the
+  # same-job SHASUMS256.txt, which only proves integrity.
+  id-token: write
+  attestations: write
 
 jobs:
   release:
-    name: Build and release
     runs-on: ubuntu-latest
+    outputs:
+      published: ${{ steps.existing-release.outputs.exists == 'false' }}
+      version: ${{ steps.existing-release.outputs.version }}
     steps:
-      - uses: actions/checkout@v6
-
-      - uses: oven-sh/setup-bun@v2
+      # Full-SHA pins matter here: this workflow can create public releases,
+      # pull requests, tags, and an OIDC identity for provenance.
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
         with:
-          bun-version: latest
+          fetch-depth: 0
 
-      - run: bun install --frozen-lockfile
+      - uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2
+        with:
+          bun-version: 1.3.14
 
-      - run: bun run typecheck
+      - name: Install dependencies
+        run: bun install --frozen-lockfile
 
-      - run: bun test
+      # This action only creates the reviewed version PR. It never publishes
+      # packages, tags commits, or creates releases; the binary-specific steps
+      # below own that irreversible work.
+      - name: Create or update version PR
+        uses: changesets/action@ae32849d5ba541f9ae29e40e22a623bc13562f51 # v2.1.2
+        with:
+          version-script: bun run version-packages
+          publish-script: echo 'GitHub Release publishing is handled below.'
+          commit-message: 'chore: version packages'
+          pr-title: 'chore: version packages'
+          create-github-releases: false
+          push-git-tags: false
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
-      - name: Build binaries
-        run: |
-          mkdir -p dist
-          bun build --compile --minify --target=bun-linux-x64   src/cli/index.ts --outfile dist/ccpod-linux-x64
-          bun build --compile --minify --target=bun-linux-arm64  src/cli/index.ts --outfile dist/ccpod-linux-arm64
-          bun build --compile --minify --target=bun-darwin-x64   src/cli/index.ts --outfile dist/ccpod-darwin-x64
-          bun build --compile --minify --target=bun-darwin-arm64 src/cli/index.ts --outfile dist/ccpod-darwin-arm64
+      # The action may leave `changeset-release/main` (bumped tree) checked out
+      # when changesets are still pending. Everything below must read and build
+      # the exact commit that was pushed.
+      - name: Check out the pushed commit
+        env:
+          SHA: ${{ github.sha }}
+        run: git checkout --force --detach "$SHA"
 
-      - name: Generate checksums
-        working-directory: dist
-        run: |
-          sha256sum \
-            ccpod-linux-x64 \
-            ccpod-linux-arm64 \
-            ccpod-darwin-x64 \
-            ccpod-darwin-arm64 \
-            > SHASUMS256.txt
-          cat SHASUMS256.txt
-
-      - name: Create release
+      # A completed release is the idempotence gate. Its immutable tag must
+      # resolve to this exact commit and it must have the complete asset
+      # contract; otherwise stop rather than replacing public artifacts.
+      - name: Verify existing release is complete
+        id: existing-release
         env:
           GH_TOKEN: ${{ github.token }}
-          TAG: ${{ github.ref_name }}
+          SHA: ${{ github.sha }}
         run: |
+          set -euo pipefail
+          version=$(jq -r .version package.json)
+          tag="v$version"
+          expected_assets=(
+            ccpod-linux-x64
+            ccpod-linux-arm64
+            ccpod-darwin-x64
+            ccpod-darwin-arm64
+            SHASUMS256.txt
+          )
+          echo "tag=$tag" >> "$GITHUB_OUTPUT"
+          echo "version=$version" >> "$GITHUB_OUTPUT"
+
+          if ! gh release view "$tag" >/dev/null 2>&1; then
+            # A normal merge can open/update the version PR, but only the
+            # merged changeset-release PR may publish. This blocks a direct
+            # package.json version push from bypassing version review.
+            version_pr_merges=$(gh api "repos/${GITHUB_REPOSITORY}/commits/$SHA/pulls" \
+              --header 'Accept: application/vnd.github+json' \
+              --jq '[.[] | select(.base.ref == "main" and (.head.ref | startswith("changeset-release/")) and .merged_at != null)] | length')
+            if [ "$version_pr_merges" -eq 0 ]; then
+              echo "No merged Changesets version PR for $SHA; nothing to publish."
+              echo 'exists=true' >> "$GITHUB_OUTPUT"
+              exit 0
+            fi
+            echo 'exists=false' >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+
+          git fetch origin "refs/tags/$tag:refs/tags/$tag"
+          tag_commit=$(git rev-list -n 1 "$tag")
+          actual=$(gh release view "$tag" --json assets --jq '.assets[].name' | sort)
+          expected=$(printf '%s\n' "${expected_assets[@]}" | sort)
+          if [ "$tag_commit" != "$SHA" ] || [ "$actual" != "$expected" ]; then
+            echo "::error::existing $tag is not the complete release for $SHA"
+            echo "tag commit: $tag_commit" >&2
+            echo "assets:" >&2
+            printf '%s\n' "$actual" >&2
+            exit 1
+          fi
+          echo "Existing $tag is complete; nothing to publish."
+          echo 'exists=true' >> "$GITHUB_OUTPUT"
+
+      # Publishing is irreversible. Re-run every CI gate instead of trusting a
+      # prior run, then build once on the host before cross-compiling.
+      - name: Verify
+        if: steps.existing-release.outputs.exists != 'true'
+        run: bun run verify
+
+      - name: Compile cross-platform binaries
+        if: steps.existing-release.outputs.exists != 'true'
+        run: |
+          set -euo pipefail
+          mkdir -p dist
+          targets=(
+            "bun-linux-x64:ccpod-linux-x64"
+            "bun-linux-arm64:ccpod-linux-arm64"
+            "bun-darwin-x64:ccpod-darwin-x64"
+            "bun-darwin-arm64:ccpod-darwin-arm64"
+          )
+          for entry in "${targets[@]}"; do
+            target="${entry%%:*}"
+            out="${entry##*:}"
+            echo "::group::Compiling $out ($target)"
+            bun build --compile --minify --target="$target" \
+              --outfile "dist/$out" src/cli/index.ts
+            test -s "dist/$out"
+            echo "::endgroup::"
+          done
+          ls -lh dist
+
+      - name: Generate checksums
+        if: steps.existing-release.outputs.exists != 'true'
+        run: |
+          set -euo pipefail
+          # Run inside dist/ so manifest entries are basenames, not dist/… paths.
+          cd dist
+          sha256sum ccpod-* > SHASUMS256.txt
+          expected_assets=(
+            ccpod-linux-x64
+            ccpod-linux-arm64
+            ccpod-darwin-x64
+            ccpod-darwin-arm64
+          )
+          [ "$(wc -l < SHASUMS256.txt | tr -d ' ')" -eq "${#expected_assets[@]}" ]
+          for asset in "${expected_assets[@]}"; do
+            grep -Eq "^[[:xdigit:]]{64}  ${asset}$" SHASUMS256.txt
+          done
+          cat SHASUMS256.txt
+
+      # Signed provenance for each binary, verifiable with:
+      #   gh attestation verify <binary> --repo yorch/ccpod
+      - name: Attest build provenance
+        if: steps.existing-release.outputs.exists != 'true'
+        uses: actions/attest-build-provenance@4d101475d8b20a2381f78447822ac1eab6504dd8 # v4
+        with:
+          subject-path: dist/ccpod-*
+
+      - name: Publish GitHub release
+        if: steps.existing-release.outputs.exists != 'true'
+        env:
+          GH_TOKEN: ${{ github.token }}
+          SHA: ${{ github.sha }}
+          TAG: ${{ steps.existing-release.outputs.tag }}
+        run: |
+          set -euo pipefail
           gh release create "$TAG" \
+            --target "$SHA" \
             --title "$TAG" \
             --generate-notes \
-            dist/ccpod-linux-x64 \
-            dist/ccpod-linux-arm64 \
-            dist/ccpod-darwin-x64 \
-            dist/ccpod-darwin-arm64 \
-            dist/SHASUMS256.txt
+            dist/ccpod-* dist/SHASUMS256.txt
+
+      - name: Verify published release
+        if: steps.existing-release.outputs.exists != 'true'
+        env:
+          GH_TOKEN: ${{ github.token }}
+          SHA: ${{ github.sha }}
+          TAG: ${{ steps.existing-release.outputs.tag }}
+        run: |
+          set -euo pipefail
+          expected_assets=(
+            ccpod-linux-x64
+            ccpod-linux-arm64
+            ccpod-darwin-x64
+            ccpod-darwin-arm64
+            SHASUMS256.txt
+          )
+          git fetch origin "refs/tags/$TAG:refs/tags/$TAG"
+          tag_commit=$(git rev-list -n 1 "$TAG")
+          actual=$(gh release view "$TAG" --json assets --jq '.assets[].name' | sort)
+          expected=$(printf '%s\n' "${expected_assets[@]}" | sort)
+          if [ "$tag_commit" != "$SHA" ] || [ "$actual" != "$expected" ]; then
+            echo "::error::published $TAG is not the complete release for $SHA"
+            echo "tag commit: $tag_commit" >&2
+            echo "assets:" >&2
+            printf '%s\n' "$actual" >&2
+            exit 1
+          fi
+
+  # Tags created with GITHUB_TOKEN don't trigger `docker.yml`, so call it
+  # explicitly once the release is published.
+  docker:
+    needs: release
+    if: needs.release.outputs.published == 'true'
+    permissions:
+      contents: read
+      packages: write
+    uses: ./.github/workflows/docker.yml
+    with:
+      version: ${{ needs.release.outputs.version }}

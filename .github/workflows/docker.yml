@@ -4,8 +4,23 @@ on:
   push:
     branches:
       - main
-    tags:
-      - "v*"
+  # Manual recovery: re-push the versioned tags for an existing release.
+  workflow_dispatch:
+    inputs:
+      version:
+        description: "Release version (e.g. 1.2.3) to tag the image with"
+        required: false
+        default: ""
+        type: string
+  # Called by release.yml after a release is published (a GITHUB_TOKEN-created
+  # tag would not trigger a `tags:` push event).
+  workflow_call:
+    inputs:
+      version:
+        description: "Release version (e.g. 1.2.3) to tag the image with"
+        required: false
+        default: ''
+        type: string
 
 permissions:
   contents: read
@@ -25,14 +40,23 @@ jobs:
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
 
+      - name: Compute release tags
+        id: release-tags
+        if: inputs.version != ''
+        env:
+          VERSION: ${{ inputs.version }}
+        run: |
+          base="${VERSION%%-*}"
+          echo "major_minor=${base%.*}" >> "$GITHUB_OUTPUT"
+
       - name: Extract metadata
         id: meta
         uses: docker/metadata-action@v6
         with:
           images: ghcr.io/${{ github.repository }}
           tags: |
-            type=semver,pattern={{version}}
-            type=semver,pattern={{major}}.{{minor}}
+            type=raw,value=${{ inputs.version || 'unused' }},enable=${{ inputs.version != '' }}
+            type=raw,value=${{ steps.release-tags.outputs.major_minor || 'unused' }},enable=${{ inputs.version != '' }}
             type=raw,value=latest,enable={{is_default_branch}}
             type=raw,value=main,enable={{is_default_branch}}
 

@@ -7,6 +7,23 @@ on:
     branches: [main]
 
 jobs:
+  # The version PR consumes changesets, so it intentionally has none.
+  changeset:
+    name: Changeset present
+    if: >-
+      github.event_name == 'pull_request' &&
+      !startsWith(github.head_ref, 'changeset-release/')
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: latest
+      - run: bun install --frozen-lockfile
+      - run: bun run changeset status --since=origin/${{ github.base_ref }}
+
   typecheck:
     name: Typecheck
     runs-on: ubuntu-latest
