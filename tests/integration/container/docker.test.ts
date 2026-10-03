@@ -13,7 +13,12 @@ beforeAll(async () => {
   if (exitCode !== 0) {
     throw new Error('Docker is not available — skipping integration tests');
   }
-});
+  // Pre-pull so the first test doesn't pay for the pull inside its own timeout
+  const pull = await dockerExec(['pull', 'alpine']);
+  if (pull.exitCode !== 0) {
+    throw new Error(`Failed to pull alpine: ${pull.stderr}`);
+  }
+}, 60_000);
 
 afterAll(async () => {
   // Clean up test volume if left behind
