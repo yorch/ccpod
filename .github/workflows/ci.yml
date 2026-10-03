@@ -66,7 +66,7 @@ jobs:
         with:
           bun-version: latest
       - run: bun install --frozen-lockfile
-      - run: bun test tests/unit
+      - run: bun test tests/unit --isolate
 
   integration:
     name: Integration Tests

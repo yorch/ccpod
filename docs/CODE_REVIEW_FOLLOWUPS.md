@@ -15,8 +15,7 @@ review. Numbering is left stable (with gaps) so cross-references stay valid.
 Highest-leverage open items, in suggested order:
 
 1. **Container/runtime correctness** — R16 (image build-context).
-2. **Config/CLI & auth correctness** — R5 (`run --` passthrough), R7 (updater
-   `ETXTBSY`), R18 (config-show masking), R21, R23, R24, R27.
+2. **Config/CLI & auth correctness** — R7 (updater `ETXTBSY`), R18 (config-show masking), R21, R23, R24, R27.
 3. **DRY / maintainability, performance, and test-coverage** backlogs (below).
 
 > **Addressed:** the trust-boundary trio (**R1–R3**) and dead-`claudeArgs`
@@ -51,14 +50,6 @@ profile-relative `image.dockerfile`) is closed — see "Security invariants" in
 ## Correctness
 
 ### Config / CLI wiring
-
-- **R5. `ccpod run -- <flags>` passthrough is double-parsed** (verified: citty
-  0.2.2 yields `{prompt:"--verbose"}` for `rawArgs:['--','--verbose']`).
-  `src/cli/commands/run.ts:89-106`. citty parses post-`--` tokens as the
-  `prompt` positional *and* run.ts re-extracts them from `process.argv`, so
-  they double-apply: `run -- --verbose` silently goes headless (`tty=false`)
-  and passes `--verbose` twice; `run -- --model opus` hard-errors on the bare
-  `opus`. Fix: derive the prompt from pre-`--` argv only.
 
 - **R18.** `config show` masks only env keys containing "key"/"token"
   (`src/cli/commands/config/show.ts:49`); `PASSWORD`/`SECRET`/`CREDENTIALS`

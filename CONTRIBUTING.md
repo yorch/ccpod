@@ -19,7 +19,7 @@ Run before every commit:
 
 ```sh
 bun run typecheck    # tsc --noEmit
-bun test tests/unit/ # unit tests
+bun test tests/unit/ --isolate # unit tests (--isolate keeps mock.module() from leaking between files)
 bun run check        # biome format + lint (writes fixes)
 ```
 

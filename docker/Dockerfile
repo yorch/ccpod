@@ -1,4 +1,12 @@
+# uv is copied from its official image; the tag is pinned so builds are
+# reproducible; bump deliberately. PRs touching docker/ build and smoke-test
+# the image (.github/workflows/docker-check.yml).
+FROM ghcr.io/astral-sh/uv:0.12.22 AS uv
+
 FROM node:24-slim
+
+# bun is installed with its official script at a pinned release.
+ARG BUN_VERSION=1.4.2
 
 # Install system deps + tools Claude Code actively uses:
 #   ripgrep  — Grep tool falls back to system rg
@@ -33,17 +41,19 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
   && rm -rf /tmp/*
 
 # Install uv
-COPY --from=ghcr.io/astral-sh/uv:latest /uv /uvx /bin/
+COPY --from=uv /uv /uvx /bin/
 
 USER node
 
 # Install claude as the node user so it lands in /home/node/.local/bin —
-# user-writable, allowing auto-updates without root.
+# user-writable, allowing auto-updates without root. Deliberately NOT pinned:
+# Claude Code updates itself, and a stale pinned version would only fall behind
+# on fixes; the image is rebuilt on every ccpod release.
 RUN curl -fsSL https://claude.ai/install.sh | bash
 ENV PATH="/home/node/.local/bin:${PATH}"
 
 # Install bun
-RUN curl -fsSL https://bun.com/install | bash
+RUN curl -fsSL https://bun.com/install | bash -s "bun-v${BUN_VERSION}"
 ENV PATH="/home/node/.bun/bin:${PATH}"
 
 USER root

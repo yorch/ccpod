@@ -5,7 +5,7 @@ import { defineCommand } from 'citty';
 import { buildContainerSpec } from '../../container/builder.ts';
 import { runContainer } from '../../container/runner.ts';
 import { dockerExec } from '../../runtime/docker.ts';
-import { repeatedFlag } from '../args.ts';
+import { leadingPositional, repeatedFlag, splitPassthrough } from '../args.ts';
 import { withAuthProxy } from '../auth-proxy.ts';
 import { exitWithError } from '../errors.ts';
 import { setupContainer } from './_setup.ts';
@@ -52,6 +52,9 @@ function readPromptFile(absPath: string, shown: string): string {
   }
   return text;
 }
+
+// Flags of `ccpod run` that consume the following token as their value.
+const RUN_VALUE_FLAGS = ['--env', '--file', '--profile', '--resume'];
 
 export default defineCommand({
   args: {
@@ -100,7 +103,12 @@ export default defineCommand({
       const cwd = process.cwd();
       console.log(chalk.dim('Loading config...'));
 
-      const promptArg = args.prompt as string | undefined;
+      // Everything after `--` belongs to claude. citty's own `prompt`
+      // positional also grabs the first token after `--`, so derive the prompt
+      // and the passthrough from the raw argv instead.
+      const { before, passthrough: passthroughArgs } =
+        splitPassthrough(rawArgs);
+      const promptArg = leadingPositional(before, RUN_VALUE_FLAGS);
       if (args.file && promptArg) {
         console.error(
           `${chalk.red('error:')} --file and prompt text are mutually exclusive`,
@@ -119,10 +127,6 @@ export default defineCommand({
         }
         fileArg = normalized;
       }
-
-      const passthroughIdx = process.argv.indexOf('--');
-      const passthroughArgs =
-        passthroughIdx >= 0 ? process.argv.slice(passthroughIdx + 1) : [];
 
       if (promptArg && passthroughArgs.some((a) => !a.startsWith('-'))) {
         console.error(

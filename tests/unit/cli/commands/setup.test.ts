@@ -36,8 +36,11 @@ mock.module('../../../../src/image/manager.ts', () => ({
   ensureLocalImage: mock(async () => {}),
 }));
 
-// Mock writer to avoid filesystem writes
+// Mock writer to avoid filesystem writes. Keep the real exports (e.g.
+// isRegularDir) so only the filesystem-writing function is replaced.
+const realWriter = await import('../../../../src/config/writer.ts');
 mock.module('../../../../src/config/writer.ts', () => ({
+  ...realWriter,
   writeMergedConfig: mock(() => '/tmp/fake-merged-config'),
 }));
 

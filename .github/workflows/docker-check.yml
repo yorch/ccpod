@@ -1,0 +1,48 @@
+name: Docker build check
+
+# Builds the image on pull requests that touch it (the publish workflow only
+# runs on main, so a broken Dockerfile would otherwise surface after merge) and
+# smoke-tests the tools the entrypoint and docs rely on. Nothing is pushed.
+
+on:
+  pull_request:
+    paths:
+      - docker/**
+      - .github/workflows/docker.yml
+      - .github/workflows/docker-check.yml
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    name: Build and smoke-test image
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+
+      - uses: docker/setup-buildx-action@v4
+
+      - name: Build image (linux/amd64, not pushed)
+        uses: docker/build-push-action@v7
+        with:
+          context: docker
+          load: true
+          push: false
+          tags: ccpod-check:latest
+          cache-from: type=gha
+
+      - name: Smoke test
+        run: |
+          # The entrypoint runs as root and drops to `node` via gosu.
+          docker run --rm ccpod-check:latest sh -c '
+            set -e
+            claude --version
+            bun --version
+            uv --version
+            # dash's `command -v` only checks its first argument, so loop.
+            for t in rg gh jq iptables gosu; do
+              command -v "$t" >/dev/null || { echo "missing: $t"; exit 1; }
+            done
+            test "$(id -un)" = node
+          '

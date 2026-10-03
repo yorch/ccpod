@@ -27,7 +27,7 @@ ccpod run -- --dangerously-skip-permissions   # pass flags directly to claude
 
 An inline prompt or `--file` starts a non-interactive run: ccpod reads the prompt (for `--file`, from the host, relative to the project directory — absolute paths and `..` are rejected, max 100,000 bytes) and runs `claude -p "<prompt>"`, streaming Claude's output to stdout. Flags after `--` are forwarded too, so `ccpod run --file task.md -- --output-format json` works for CI. Headless runs need working auth up front (an API key, a saved OAuth login, or host OAuth credentials for `auth.type: proxy`) because there is no prompt to recover from a missing one. `--file` and an inline prompt are mutually exclusive.
 
-Everything after `--` is forwarded verbatim to the `claude` command inside the container and appended after any `claudeArgs` declared in the profile or project config.
+Everything after `--` is forwarded verbatim to the `claude` command inside the container and appended after any `claudeArgs` declared in the profile or project config. The prompt is only ever taken from arguments *before* `--`. Because ccpod cannot tell a flag's value from a prompt after `--`, an inline prompt cannot be combined with bare values after it (`ccpod run "fix it" -- --model opus` is rejected); use `--file` for the prompt in that case.
 
 ### Reattaching
 
