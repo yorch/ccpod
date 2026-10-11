@@ -1,11 +1,31 @@
-import type { ProfileConfigInput } from '../config/schema.ts';
+import { mkdirSync, writeFileSync } from 'node:fs';
+import { join } from 'node:path';
+import { parse } from 'yaml';
+import {
+  type ProfileConfigInput,
+  profileConfigSchema,
+} from '../config/schema.ts';
 import { OFFICIAL_IMAGE } from '../constants.ts';
 
 export function yamlQuote(val: string): string {
-  if (/[\s:#[\]{},!*&|>%@`?]/.test(val) || val.startsWith('-')) {
-    return `"${val.replace(/\\/g, '\\\\').replace(/"/g, '\\"')}"`;
+  // JSON string scalars are valid YAML double-quoted scalars and correctly
+  // preserve newlines, control characters, quotes, backslashes and indicators.
+  return JSON.stringify(val);
+}
+
+export function writeValidatedProfile(
+  profileDir: string,
+  profile: ProfileConfigInput,
+  configDir?: string,
+): string {
+  const yaml = buildAnnotatedProfileYaml(profile);
+  profileConfigSchema.parse(parse(yaml));
+  mkdirSync(profileDir, { recursive: true });
+  if (configDir) {
+    mkdirSync(configDir, { recursive: true });
   }
-  return val;
+  writeFileSync(join(profileDir, 'profile.yml'), yaml, 'utf8');
+  return yaml;
 }
 
 export function buildAnnotatedProfileYaml(profile: ProfileConfigInput): string {
@@ -42,7 +62,9 @@ export function buildAnnotatedProfileYaml(profile: ProfileConfigInput): string {
     if (profile.auth.keyFile) {
       s.push(`  keyFile: ${yamlQuote(profile.auth.keyFile)}`);
     } else {
-      s.push(`  keyEnv: ${profile.auth?.keyEnv ?? 'ANTHROPIC_API_KEY'}`);
+      s.push(
+        `  keyEnv: ${yamlQuote(profile.auth?.keyEnv ?? 'ANTHROPIC_API_KEY')}`,
+      );
     }
   }
   s.push('');

@@ -11,9 +11,15 @@ const portsConfigSchema = z
   .default({ autoDetectMcp: true, list: [] });
 
 export const serviceConfigSchema = z.object({
+  dependsOn: z.array(z.string()).optional(),
   env: z.record(z.string(), z.string()).optional(),
   image: z.string(),
   ports: z.array(z.string()).optional(),
+  ready: z
+    .object({
+      timeoutSeconds: z.number().int().min(1).max(3600).default(60),
+    })
+    .optional(),
   volumes: z.array(z.string()).optional(),
 });
 
@@ -61,67 +67,79 @@ const keyFileSchema = z
     },
   );
 
-export const profileConfigSchema = z.object({
-  allowProjectEnvForward: z.array(z.string()).default([]),
-  allowProjectHostMounts: z.boolean().default(false),
-  allowProjectInit: z.boolean().default(false),
-  allowProjectServices: z.boolean().default(false),
-  auth: z
-    .object({
-      keyEnv: z.string().default('ANTHROPIC_API_KEY'),
-      keyFile: keyFileSchema.optional(),
-      type: z.enum(['api-key', 'oauth', 'proxy']).default('api-key'),
-    })
-    .default({ keyEnv: 'ANTHROPIC_API_KEY', type: 'api-key' }),
-  claudeArgs: z.array(z.string()).default([]),
-  config: z.object({
-    path: z.string().optional(),
-    ref: gitRefSchema.optional(),
-    repo: gitRepoSchema.optional(),
-    source: z.enum(['local', 'git']),
-    sync: z.enum(['always', 'daily', 'pin']).default('daily'),
-  }),
-  description: z.string().optional(),
-  env: z.array(z.string()).default([]),
-  image: z
-    .object({
-      dockerfile: z.string().optional(),
-      use: z.string().default(OFFICIAL_IMAGE),
-    })
-    .default({ use: OFFICIAL_IMAGE }),
-  init: z
-    .array(
-      z.string().refine((s) => !s.includes('\n'), {
-        message: 'init commands must be single-line strings',
-      }),
-    )
-    .default([]),
-  isolation: z.boolean().default(false),
-  name: z
-    .string()
-    .regex(
-      /^[a-zA-Z0-9_-]{1,64}$/,
-      'Profile name may only contain letters, digits, hyphens, and underscores (max 64 chars)',
-    ),
-  network: z
-    .object({
-      allow: z.array(z.string()).default([]),
-      policy: z.enum(['full', 'restricted']).default('full'),
-    })
-    .default({ allow: [], policy: 'full' }),
-  permissions: z.enum(['conservative', 'moderate', 'permissive']).optional(),
-  plugins: z.array(z.string()).default([]),
-  ports: portsConfigSchema,
-  services: z.record(z.string(), serviceConfigSchema).default({}),
-  ssh: z
-    .object({
-      agentForward: z.boolean().default(true),
-      mountSshDir: z.boolean().default(false),
-    })
-    .default({ agentForward: true, mountSshDir: false }),
-  state: z.enum(['ephemeral', 'persistent']).default('ephemeral'),
-  stateIsolation: z.enum(['per-profile', 'per-project']).default('per-profile'),
-});
+export const profileConfigSchema = z
+  .object({
+    allowProjectEnvForward: z.array(z.string()).default([]),
+    allowProjectHostMounts: z.boolean().default(false),
+    allowProjectInit: z.boolean().default(false),
+    allowProjectServices: z.boolean().default(false),
+    auth: z
+      .object({
+        keyEnv: z.string().default('ANTHROPIC_API_KEY'),
+        keyFile: keyFileSchema.optional(),
+        type: z.enum(['api-key', 'oauth', 'proxy']).default('api-key'),
+      })
+      .default({ keyEnv: 'ANTHROPIC_API_KEY', type: 'api-key' }),
+    claudeArgs: z.array(z.string()).default([]),
+    config: z.object({
+      path: z.string().optional(),
+      ref: gitRefSchema.optional(),
+      repo: gitRepoSchema.optional(),
+      source: z.enum(['local', 'git']),
+      sync: z.enum(['always', 'daily', 'pin']).default('daily'),
+    }),
+    description: z.string().optional(),
+    env: z.array(z.string()).default([]),
+    image: z
+      .object({
+        dockerfile: z.string().optional(),
+        use: z.string().default(OFFICIAL_IMAGE),
+      })
+      .default({ use: OFFICIAL_IMAGE }),
+    init: z
+      .array(
+        z.string().refine((s) => !s.includes('\n'), {
+          message: 'init commands must be single-line strings',
+        }),
+      )
+      .default([]),
+    isolation: z.boolean().default(false),
+    name: z
+      .string()
+      .regex(
+        /^[a-zA-Z0-9_-]{1,64}$/,
+        'Profile name may only contain letters, digits, hyphens, and underscores (max 64 chars)',
+      ),
+    network: z
+      .object({
+        allow: z.array(z.string()).default([]),
+        policy: z.enum(['full', 'restricted']).default('full'),
+      })
+      .default({ allow: [], policy: 'full' }),
+    permissions: z.enum(['conservative', 'moderate', 'permissive']).optional(),
+    plugins: z.array(z.string()).default([]),
+    ports: portsConfigSchema,
+    services: z.record(z.string(), serviceConfigSchema).default({}),
+    ssh: z
+      .object({
+        agentForward: z.boolean().default(true),
+        mountSshDir: z.boolean().default(false),
+      })
+      .default({ agentForward: true, mountSshDir: false }),
+    state: z.enum(['ephemeral', 'persistent']).default('ephemeral'),
+    stateIsolation: z
+      .enum(['per-profile', 'per-project'])
+      .default('per-profile'),
+  })
+  .superRefine((profile, ctx) => {
+    if (profile.config.source === 'git' && !profile.config.repo) {
+      ctx.addIssue({
+        code: 'custom',
+        message: 'config.repo is required when config.source is "git"',
+        path: ['config', 'repo'],
+      });
+    }
+  });
 
 export const projectConfigSchema = z.object({
   claudeArgs: z.array(z.string()).optional(),

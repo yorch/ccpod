@@ -15,7 +15,7 @@ export type ProfileConfig = z.output<typeof profileConfigSchema>;
 // What a project .ccpod.yml may contain. The input type is used so callers can
 // build one without spelling out schema defaults; parsed output is assignable.
 export type ProjectConfig = z.input<typeof projectConfigSchema>;
-export type ServiceConfig = z.infer<typeof serviceConfigSchema>;
+export type ServiceConfig = z.input<typeof serviceConfigSchema>;
 
 // Auth as carried on ResolvedConfig: the schema applies a keyEnv default, but
 // resolved/test configs may omit it.

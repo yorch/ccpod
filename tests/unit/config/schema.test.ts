@@ -50,6 +50,49 @@ describe('profileConfigSchema', () => {
     });
     expect(result.success).toBe(false);
   });
+
+  it('requires a repo when config source is git', () => {
+    const result = profileConfigSchema.safeParse({
+      config: { source: 'git' },
+      name: 'test',
+    });
+    expect(result.success).toBe(false);
+  });
+});
+
+describe('serviceConfigSchema fields', () => {
+  it('keeps dependency fields and defaults readiness timeout to 60 seconds', () => {
+    const result = profileConfigSchema.parse({
+      config: { source: 'local' },
+      name: 'test',
+      services: {
+        api: { dependsOn: ['db'], image: 'api:latest', ready: {} },
+        db: { image: 'db:latest' },
+      },
+    });
+    expect(result.services.api.dependsOn).toEqual(['db']);
+    expect(result.services.api.ready?.timeoutSeconds).toBe(60);
+    expect(result.services.db.ready).toBeUndefined();
+  });
+
+  it('bounds readiness timeout to integer seconds from 1 through 3600', () => {
+    for (const timeoutSeconds of [0, 3601, 1.5]) {
+      expect(
+        profileConfigSchema.safeParse({
+          config: { source: 'local' },
+          name: 'test',
+          services: { db: { image: 'db', ready: { timeoutSeconds } } },
+        }).success,
+      ).toBe(false);
+    }
+    expect(
+      profileConfigSchema.safeParse({
+        config: { source: 'local' },
+        name: 'test',
+        services: { db: { image: 'db', ready: { timeoutSeconds: 3600 } } },
+      }).success,
+    ).toBe(true);
+  });
 });
 
 describe('projectConfigSchema', () => {

@@ -1,7 +1,11 @@
 import { describe, expect, it, mock } from 'bun:test';
 import type { ContainerSpec } from '../../../src/container/builder.ts';
 import type { RunnerDeps } from '../../../src/container/runner.ts';
-import { runContainer, shellContainer } from '../../../src/container/runner.ts';
+import {
+  findRunningShellTarget,
+  runContainer,
+  shellContainer,
+} from '../../../src/container/runner.ts';
 
 type ExecResult = { exitCode: number; stdout: string; stderr: string };
 
@@ -54,8 +58,329 @@ function makeDeps(
 }
 
 describe('runContainer', () => {
-  it('starts a new container when not found', async () => {
-    const { deps, spawnMock } = makeDeps([
+  it('does not launch when cancellation arrives during inspect', async () => {
+    const controller = new AbortController();
+    const { deps, spawnMock } = makeDeps();
+    const inspect = deps.dockerExec as unknown as (
+      args: string[],
+    ) => Promise<ExecResult>;
+    const original = inspect;
+    deps.dockerExec = (async (args: string[]) => {
+      const result = await original(args);
+      controller.abort();
+      return result;
+    }) as RunnerDeps['dockerExec'];
+
+    await expect(
+      runContainer(makeSpec({ proxyAuth: true }), deps, controller.signal),
+    ).rejects.toThrow('Container startup cancelled');
+    expect(spawnMock).not.toHaveBeenCalled();
+  });
+  it('removes the owned container without starting after cancellation during create', async () => {
+    const controller = new AbortController();
+    const ownedId = 'd'.repeat(64);
+    const { deps, execMock, spawnMock } = makeDeps([
+      { exitCode: 1, stderr: 'No such container', stdout: '' },
+      { exitCode: 0, stderr: '', stdout: ownedId },
+      { exitCode: 0, stderr: '', stdout: '' },
+    ]);
+    let resolveCreate: () => void = () => {};
+    let markCreateStarted: () => void = () => {};
+    const createStarted = new Promise<void>((resolve) => {
+      markCreateStarted = resolve;
+    });
+    const original = deps.dockerExec;
+    deps.dockerExec = (async (
+      args: string[],
+      extraEnv?: Record<string, string>,
+    ) => {
+      if (args[0] === 'create') {
+        markCreateStarted();
+        await new Promise<void>((resolve) => {
+          resolveCreate = resolve;
+        });
+      }
+      return original(args, extraEnv);
+    }) as RunnerDeps['dockerExec'];
+
+    const result = runContainer(
+      makeSpec({ proxyAuth: true }),
+      deps,
+      controller.signal,
+    );
+    await createStarted;
+    controller.abort();
+    resolveCreate();
+    await expect(result).rejects.toThrow('Container startup cancelled');
+
+    expect(
+      execMock.mock.calls.some(
+        ([args]) => args[0] === 'rm' && args.at(-1) === ownedId,
+      ),
+    ).toBe(true);
+    expect(execMock.mock.calls.some(([args]) => args[0] === 'start')).toBe(
+      false,
+    );
+    expect(spawnMock).not.toHaveBeenCalled();
+  });
+
+  it('does not start a non-proxy headless job when cancellation arrives during create', async () => {
+    const controller = new AbortController();
+    const ownedId = '1'.repeat(64);
+    const { deps, execMock, spawnMock } = makeDeps([
+      { exitCode: 1, stderr: 'No such container', stdout: '' },
+      { exitCode: 0, stderr: '', stdout: ownedId },
+      { exitCode: 0, stderr: '', stdout: '' },
+    ]);
+    let resolveCreate: () => void = () => {};
+    let markCreateStarted: () => void = () => {};
+    const createStarted = new Promise<void>((resolve) => {
+      markCreateStarted = resolve;
+    });
+    const original = deps.dockerExec;
+    deps.dockerExec = (async (
+      args: string[],
+      extraEnv?: Record<string, string>,
+    ) => {
+      if (args[0] === 'create') {
+        markCreateStarted();
+        await new Promise<void>((resolve) => {
+          resolveCreate = resolve;
+        });
+      }
+      return original(args, extraEnv);
+    }) as RunnerDeps['dockerExec'];
+
+    const result = runContainer(
+      makeSpec({ proxyAuth: false, tty: false }),
+      deps,
+      controller.signal,
+    );
+    await createStarted;
+    controller.abort();
+    resolveCreate();
+    await expect(result).rejects.toThrow('Container startup cancelled');
+
+    expect(
+      execMock.mock.calls.some(
+        ([args]) => args[0] === 'rm' && args.at(-1) === ownedId,
+      ),
+    ).toBe(true);
+    expect(execMock.mock.calls.some(([args]) => args[0] === 'start')).toBe(
+      false,
+    );
+    expect(spawnMock).not.toHaveBeenCalled();
+  });
+
+  it('stops the owned job when cancelled while attached', async () => {
+    const controller = new AbortController();
+    const ownedId = 'e'.repeat(64);
+    const attachStartedCallbacks: Array<() => void> = [];
+    let finishAttach: (code: number) => void = () => {};
+    const spawnMock = mock(async (): Promise<number> => {
+      const result = await new Promise<number>((resolve) => {
+        finishAttach = resolve;
+        for (const callback of attachStartedCallbacks.splice(0)) {
+          callback();
+        }
+      });
+      return result;
+    });
+    let inspectCount = 0;
+    const execMock = mock(async (args: string[]) => {
+      if (args[0] === 'inspect') {
+        inspectCount++;
+        return {
+          exitCode: inspectCount === 1 ? 1 : 0,
+          stderr: inspectCount === 1 ? 'No such container' : '',
+          stdout:
+            inspectCount === 1 ? '' : inspectCount === 2 ? 'running' : 'exited',
+        };
+      }
+      if (args[0] === 'create') {
+        return { exitCode: 0, stderr: '', stdout: ownedId };
+      }
+      if (args[0] === 'stop') {
+        finishAttach(130);
+        return { exitCode: 0, stderr: '', stdout: '' };
+      }
+      return { exitCode: 1, stderr: 'unexpected command', stdout: '' };
+    });
+    const deps: RunnerDeps = {
+      dockerExec: execMock as RunnerDeps['dockerExec'],
+      dockerSpawn: spawnMock as RunnerDeps['dockerSpawn'],
+    };
+    const attachStarted = new Promise<void>((resolve) => {
+      attachStartedCallbacks.push(resolve);
+    });
+    const run = runContainer(
+      makeSpec({ proxyAuth: true }),
+      deps,
+      controller.signal,
+    );
+    await attachStarted;
+    controller.abort();
+    expect(await run).toBe(130);
+    expect(
+      execMock.mock.calls.some(
+        ([args]) => args[0] === 'stop' && args.at(-1) === ownedId,
+      ),
+    ).toBe(true);
+    expect(inspectCount).toBeGreaterThanOrEqual(3);
+  });
+
+  it('stops the owned non-proxy headless job when cancelled while active', async () => {
+    const controller = new AbortController();
+    const ownedId = '2'.repeat(64);
+    let finishStart: (code: number) => void = () => {};
+    let markStartStarted: () => void = () => {};
+    const startStarted = new Promise<void>((resolve) => {
+      markStartStarted = resolve;
+    });
+    const spawnMock = mock(async (): Promise<number> => {
+      markStartStarted();
+      return await new Promise<number>((resolve) => {
+        finishStart = resolve;
+      });
+    });
+    let inspectCount = 0;
+    const execMock = mock(async (args: string[]) => {
+      if (args[0] === 'inspect') {
+        inspectCount++;
+        return {
+          exitCode: inspectCount === 1 ? 1 : 0,
+          stderr: inspectCount === 1 ? 'No such container' : '',
+          stdout:
+            inspectCount === 1 ? '' : inspectCount === 2 ? 'running' : 'exited',
+        };
+      }
+      if (args[0] === 'create') {
+        return { exitCode: 0, stderr: '', stdout: ownedId };
+      }
+      if (args[0] === 'stop') {
+        finishStart(130);
+        return { exitCode: 0, stderr: '', stdout: '' };
+      }
+      return { exitCode: 1, stderr: 'unexpected command', stdout: '' };
+    });
+    const deps: RunnerDeps = {
+      dockerExec: execMock as RunnerDeps['dockerExec'],
+      dockerSpawn: spawnMock as RunnerDeps['dockerSpawn'],
+    };
+
+    const run = runContainer(
+      makeSpec({ proxyAuth: false, tty: false }),
+      deps,
+      controller.signal,
+    );
+    await startStarted;
+    controller.abort();
+    expect(await run).toBe(130);
+    expect(
+      execMock.mock.calls.some(
+        ([args]) => args[0] === 'stop' && args.at(-1) === ownedId,
+      ),
+    ).toBe(true);
+    expect(inspectCount).toBeGreaterThanOrEqual(3);
+  });
+
+  it('lets a normally completed non-proxy headless container exit without stopping it', async () => {
+    const ownedId = '4'.repeat(64);
+    const { deps, execMock, spawnMock } = makeDeps([
+      { exitCode: 1, stderr: 'No such container', stdout: '' },
+      { exitCode: 0, stderr: '', stdout: ownedId },
+      { exitCode: 0, stderr: '', stdout: 'exited' },
+    ]);
+    const signal = new AbortController().signal;
+
+    expect(
+      await runContainer(
+        makeSpec({ proxyAuth: false, tty: false }),
+        deps,
+        signal,
+      ),
+    ).toBe(0);
+    expect(spawnMock.mock.calls[0]?.[0]).toEqual([
+      'start',
+      '--attach',
+      ownedId,
+    ]);
+    expect(execMock.mock.calls.some(([args]) => args[0] === 'stop')).toBe(
+      false,
+    );
+  });
+
+  it('removes an owned headless container that remains created after start failure', async () => {
+    const ownedId = '5'.repeat(64);
+    const { deps, execMock } = makeDeps(
+      [
+        { exitCode: 1, stderr: 'No such container', stdout: '' },
+        { exitCode: 0, stderr: '', stdout: ownedId },
+        { exitCode: 0, stderr: '', stdout: 'created' },
+        { exitCode: 0, stderr: '', stdout: '' },
+      ],
+      125,
+    );
+
+    expect(
+      await runContainer(
+        makeSpec({ proxyAuth: false, tty: false }),
+        deps,
+        new AbortController().signal,
+      ),
+    ).toBe(125);
+    expect(
+      execMock.mock.calls.some(
+        ([args]) => args[0] === 'rm' && args.at(-1) === ownedId,
+      ),
+    ).toBe(true);
+  });
+
+  it('handles cancellation stop failures while attach is still pending', async () => {
+    const controller = new AbortController();
+    const ownedId = '3'.repeat(64);
+    let markStartStarted: () => void = () => {};
+    const startStarted = new Promise<void>((resolve) => {
+      markStartStarted = resolve;
+    });
+    const spawnMock = mock(async (): Promise<number> => {
+      markStartStarted();
+      return await new Promise<number>(() => {});
+    });
+    let inspectCount = 0;
+    const execMock = mock(async (args: string[]) => {
+      if (args[0] === 'inspect') {
+        inspectCount++;
+        return {
+          exitCode: inspectCount === 1 ? 1 : 0,
+          stderr: inspectCount === 1 ? 'No such container' : '',
+          stdout: inspectCount === 1 ? '' : 'running',
+        };
+      }
+      if (args[0] === 'create') {
+        return { exitCode: 0, stderr: '', stdout: ownedId };
+      }
+      if (args[0] === 'stop') {
+        return { exitCode: 1, stderr: 'stop denied', stdout: '' };
+      }
+      return { exitCode: 1, stderr: 'unexpected command', stdout: '' };
+    });
+    const deps: RunnerDeps = {
+      dockerExec: execMock as RunnerDeps['dockerExec'],
+      dockerSpawn: spawnMock as RunnerDeps['dockerSpawn'],
+    };
+    const run = runContainer(
+      makeSpec({ proxyAuth: false, tty: false }),
+      deps,
+      controller.signal,
+    );
+    await startStarted;
+    controller.abort();
+    await expect(run).rejects.toThrow('Failed to stop owned container');
+  });
+
+  it('keeps ordinary non-proxy interactive detach on docker run without stopping it', async () => {
+    const { deps, spawnMock, execMock } = makeDeps([
       { exitCode: 1, stderr: 'Error: No such container', stdout: '' },
     ]);
 
@@ -66,6 +391,9 @@ describe('runContainer', () => {
     const spawnArgs = (spawnMock.mock.calls[0] as [string[]])[0];
     expect(spawnArgs[0]).toBe('run');
     expect(spawnArgs).toContain('test-image:latest');
+    expect(execMock.mock.calls.some(([args]) => args[0] === 'stop')).toBe(
+      false,
+    );
   });
 
   it('reattaches when container is already running', async () => {
@@ -147,6 +475,107 @@ describe('runContainer', () => {
 
     const spawnArgs = (spawnMock.mock.calls[0] as [string[]])[0];
     expect(spawnArgs[0]).toBe('run');
+  });
+
+  it('creates, starts, attaches, and stops only the owned proxy container ID', async () => {
+    const ownedId = 'a'.repeat(64);
+    const { deps, execMock, spawnMock } = makeDeps([
+      { exitCode: 1, stderr: 'No such container', stdout: '' },
+      { exitCode: 0, stderr: '', stdout: ownedId },
+      { exitCode: 0, stderr: '', stdout: 'running' },
+      { exitCode: 0, stderr: '', stdout: '' }, // stop
+      { exitCode: 0, stderr: '', stdout: 'exited' },
+    ]);
+
+    expect(await runContainer(makeSpec({ proxyAuth: true }), deps)).toBe(0);
+    const execArgs = (execMock.mock.calls as [string[]][]).map(([a]) => a);
+    expect(execArgs[1]?.[0]).toBe('create');
+    expect(execArgs[2]?.[0]).toBe('inspect');
+    expect(execArgs.some((a) => a[0] === 'stop' && a.at(-1) === ownedId)).toBe(
+      true,
+    );
+    expect(
+      execArgs.some(
+        (a) => a[0] === 'stop' && a.at(-1) === 'ccpod-default-abc123',
+      ),
+    ).toBe(false);
+    expect(spawnMock.mock.calls[0]?.[0]).toEqual([
+      'start',
+      '--attach',
+      '--interactive',
+      ownedId,
+    ]);
+  });
+
+  it('does not clean up a concurrent winner when create fails on name conflict', async () => {
+    const { deps, execMock, spawnMock } = makeDeps([
+      { exitCode: 1, stderr: 'No such container', stdout: '' },
+      {
+        exitCode: 1,
+        stderr: 'Conflict. The container name is already in use',
+        stdout: '',
+      },
+    ]);
+
+    await expect(
+      runContainer(makeSpec({ proxyAuth: true }), deps),
+    ).rejects.toThrow('Failed to create');
+    expect(execMock.mock.calls.map(([args]) => args[0])).toEqual([
+      'inspect',
+      'create',
+    ]);
+    expect(spawnMock).not.toHaveBeenCalled();
+  });
+
+  it('stops its owned proxy container after start/attach throws', async () => {
+    const ownedId = 'b'.repeat(64);
+    const { deps, execMock, spawnMock } = makeDeps([
+      { exitCode: 1, stderr: 'No such container', stdout: '' },
+      { exitCode: 0, stderr: '', stdout: ownedId },
+      { exitCode: 0, stderr: '', stdout: 'running' },
+      { exitCode: 0, stderr: '', stdout: '' },
+      { exitCode: 0, stderr: '', stdout: 'exited' },
+    ]);
+    spawnMock.mockImplementation(async () => {
+      throw new Error('start attach failed');
+    });
+
+    await expect(
+      runContainer(makeSpec({ proxyAuth: true }), deps),
+    ).rejects.toThrow('start attach failed');
+    expect(
+      execMock.mock.calls.some(
+        ([args]) => args[0] === 'stop' && args.at(-1) === ownedId,
+      ),
+    ).toBe(true);
+  });
+
+  it('surfaces a failed stop for an owned proxy container', async () => {
+    const ownedId = 'c'.repeat(64);
+    const { deps } = makeDeps([
+      { exitCode: 1, stderr: 'No such container', stdout: '' },
+      { exitCode: 0, stderr: '', stdout: ownedId },
+      { exitCode: 0, stderr: '', stdout: 'running' },
+      { exitCode: 1, stderr: 'permission denied', stdout: '' },
+    ]);
+
+    await expect(
+      runContainer(makeSpec({ proxyAuth: true }), deps),
+    ).rejects.toThrow('Failed to stop owned container');
+  });
+
+  it('surfaces a final state verification failure after stop', async () => {
+    const ownedId = '9'.repeat(64);
+    const { deps } = makeDeps([
+      { exitCode: 1, stderr: 'No such container', stdout: '' },
+      { exitCode: 0, stderr: '', stdout: ownedId },
+      { exitCode: 0, stderr: '', stdout: 'running' },
+      { exitCode: 0, stderr: '', stdout: '' },
+      { exitCode: 1, stderr: 'daemon unavailable', stdout: '' },
+    ]);
+    await expect(
+      runContainer(makeSpec({ proxyAuth: true }), deps),
+    ).rejects.toThrow('Failed to inspect owned container');
   });
 
   it('refuses to reattach in proxy auth mode', async () => {
@@ -245,6 +674,135 @@ describe('runContainer', () => {
 });
 
 describe('shellContainer', () => {
+  it('removes the owned proxy shell ID when cancelled during create', async () => {
+    const controller = new AbortController();
+    const ownedId = '9'.repeat(64);
+    const { deps, execMock, spawnMock } = makeDeps([
+      { exitCode: 1, stderr: 'No such container', stdout: '' },
+      { exitCode: 0, stderr: '', stdout: ownedId },
+      { exitCode: 0, stderr: '', stdout: '' },
+    ]);
+    let releaseCreate: (() => void) | undefined;
+    let markCreateStarted: (() => void) | undefined;
+    const createStarted = new Promise<void>((resolve) => {
+      markCreateStarted = resolve;
+    });
+    const original = deps.dockerExec;
+    deps.dockerExec = (async (args: string[], env?: Record<string, string>) => {
+      if (args[0] === 'create') {
+        markCreateStarted?.();
+        await new Promise<void>((resolve) => {
+          releaseCreate = resolve;
+        });
+      }
+      return original(args, env);
+    }) as RunnerDeps['dockerExec'];
+
+    const result = shellContainer(
+      makeSpec({ name: 'shell', proxyAuth: true }),
+      deps,
+      controller.signal,
+    );
+    await createStarted;
+    controller.abort();
+    releaseCreate?.();
+    await expect(result).rejects.toThrow('Container startup cancelled');
+
+    expect(
+      execMock.mock.calls.some(
+        ([args]) => args[0] === 'rm' && args.at(-1) === ownedId,
+      ),
+    ).toBe(true);
+    expect(spawnMock).not.toHaveBeenCalled();
+  });
+
+  it('stops the owned proxy shell ID when cancelled during start', async () => {
+    const controller = new AbortController();
+    const ownedId = '8'.repeat(64);
+    const { deps, execMock, spawnMock } = makeDeps([
+      { exitCode: 1, stderr: 'No such container', stdout: '' },
+      { exitCode: 0, stderr: '', stdout: ownedId },
+      { exitCode: 0, stderr: '', stdout: 'running' },
+      { exitCode: 0, stderr: '', stdout: '' },
+      { exitCode: 0, stderr: '', stdout: 'exited' },
+    ]);
+    let releaseStart: (() => void) | undefined;
+    let markStart: (() => void) | undefined;
+    const startStarted = new Promise<void>((resolve) => {
+      markStart = resolve;
+    });
+    deps.dockerSpawn = (async () => {
+      markStart?.();
+      await new Promise<void>((resolve) => {
+        releaseStart = resolve;
+      });
+      return 0;
+    }) as RunnerDeps['dockerSpawn'];
+
+    const result = shellContainer(
+      makeSpec({ name: 'shell', proxyAuth: true }),
+      deps,
+      controller.signal,
+    );
+    await startStarted;
+    controller.abort();
+    expect(await result).toBe(130);
+    releaseStart?.();
+
+    expect(
+      execMock.mock.calls.some(
+        ([args]) => args[0] === 'stop' && args.at(-1) === ownedId,
+      ),
+    ).toBe(true);
+    expect(spawnMock).not.toHaveBeenCalled();
+  });
+
+  it('cleans up a newly created proxy shell container', async () => {
+    const ownedId = 'f'.repeat(64);
+    const { deps, execMock, spawnMock } = makeDeps([
+      { exitCode: 1, stderr: 'No such container', stdout: '' }, // exec target
+      { exitCode: 1, stderr: 'No such container', stdout: '' }, // shell target
+      { exitCode: 0, stderr: '', stdout: ownedId },
+      { exitCode: 0, stderr: '', stdout: 'running' },
+      { exitCode: 0, stderr: '', stdout: '' }, // stop
+      { exitCode: 0, stderr: '', stdout: 'exited' },
+    ]);
+
+    expect(
+      await shellContainer(
+        makeSpec({ execTarget: 'main', name: 'shell', proxyAuth: true }),
+        deps,
+      ),
+    ).toBe(0);
+    expect(spawnMock.mock.calls[0]?.[0]).toEqual([
+      'start',
+      '--attach',
+      '--interactive',
+      ownedId,
+    ]);
+    expect(
+      execMock.mock.calls.some(
+        ([args]) => args[0] === 'stop' && args.at(-1) === ownedId,
+      ),
+    ).toBe(true);
+  });
+
+  it('does not stop a reused proxy-backed main shell target', async () => {
+    const { deps, execMock, spawnMock } = makeDeps([
+      { exitCode: 0, stderr: '', stdout: 'running' }, // execTarget is running
+    ]);
+    await shellContainer(
+      makeSpec({ execTarget: 'main', name: 'shell', proxyAuth: true }),
+      deps,
+    );
+    expect(spawnMock.mock.calls[0]?.[0]).toContain('main');
+    expect(execMock.mock.calls.some(([args]) => args[0] === 'stop')).toBe(
+      false,
+    );
+    expect(execMock.mock.calls.some(([args]) => args[0] === 'create')).toBe(
+      false,
+    );
+  });
   it('execs into the running main container (execTarget) before starting its own', async () => {
     const { deps, spawnMock } = makeDeps([
       { exitCode: 0, stderr: '', stdout: 'running' },
@@ -305,6 +863,24 @@ describe('shellContainer', () => {
     const spawnArgs = (spawnMock.mock.calls[0] as [string[]])[0];
     expect(spawnArgs[0]).toBe('run');
     expect(spawnArgs[spawnArgs.length - 1]).toBe('/bin/bash');
+  });
+
+  it('does not create a proxy-backed shell if a selected reuse target disappeared', async () => {
+    const { deps, execMock, spawnMock } = makeDeps([
+      { exitCode: 0, stderr: '', stdout: 'running' },
+      { exitCode: 1, stderr: 'No such container', stdout: '' },
+    ]);
+    const spec = makeSpec({ name: 'shell', proxyAuth: true });
+
+    expect(await findRunningShellTarget(spec, deps)).toBe('shell');
+    await expect(
+      shellContainer(spec, deps, undefined, { allowProxyCreate: false }),
+    ).rejects.toThrow(/retry the command/);
+
+    expect(execMock.mock.calls.some(([args]) => args[0] === 'create')).toBe(
+      false,
+    );
+    expect(spawnMock).not.toHaveBeenCalled();
   });
 });
 

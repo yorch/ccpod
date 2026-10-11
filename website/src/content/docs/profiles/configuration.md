@@ -71,7 +71,7 @@ services:
 |---|---|---|
 | `source` | `local` \| `git` | Where to read the Claude config tree. |
 | `path` | string | Required when `source: local`. Tilde-expanded. |
-| `repo` | string | Required when `source: git`. HTTPS or SSH URL. |
+| `repo` | string | Required when `source: git`. HTTPS or SSH URL. Cached checkouts are verified as clean, owned Git repositories with the configured origin before reuse or reset. Unsafe destinations fail closed; a failed remote fetch may use a previously verified cached copy. |
 | `sync` | `always` \| `daily` \| `pin` | When to refresh the clone. `pin` never re-pulls. |
 | `ref` | string | Branch, tag, or commit to check out. Defaults to remote HEAD. |
 
@@ -231,7 +231,7 @@ Without a preset, Claude Code uses its own defaults — which means permission p
 
 ### `services`
 
-Sidecar containers (Postgres, Redis, queues, anything with a Docker image). Reachable from the Claude container by service name on a shared network. See [Sidecar Services](../../features/sidecars/).
+Sidecar containers (Postgres, Redis, queues, anything with a Docker image). Reachable from the Claude container by service name on a shared network. Optional `dependsOn` lists other declared services to start first; dependencies are validated for missing names and cycles before Docker changes. Optional `ready.timeoutSeconds` (1–3600, default 60) bounds create/start and waits for a configured image healthcheck to report `healthy`. The image must define a healthcheck when `ready` is set; without `ready`, ccpod does not wait for health. See [Sidecar Services](../../features/sidecars/).
 
 ## Validate it
 

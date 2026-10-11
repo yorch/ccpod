@@ -12,7 +12,11 @@ import {
 import { expandPermissionsPreset } from '../../config/permissions.ts';
 import { isRegularDir, writeMergedConfig } from '../../config/writer.ts';
 import { computeProjectHash } from '../../container/builder.ts';
-import { sidecarNetworkName, startSidecars } from '../../container/sidecars.ts';
+import {
+  sidecarNetworkName,
+  startSidecars,
+  validateServiceDependencies,
+} from '../../container/sidecars.ts';
 import { computeLocalImageTag } from '../../image/hash.ts';
 import { ensureImage, ensureLocalImage } from '../../image/manager.ts';
 import { runWizard } from '../../init/wizard.ts';
@@ -86,6 +90,7 @@ export async function setupContainer(
   const partial = mergeConfigs(profile, projectConfig, {
     state: stateOverride,
   });
+  validateServiceDependencies(partial.services);
 
   const mcpJson =
     partial.autoDetectMcp && !profile.isolation ? parseMcpJson(cwd) : null;

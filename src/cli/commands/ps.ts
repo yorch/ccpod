@@ -12,11 +12,12 @@ export default defineCommand({
       description: 'Include stopped containers',
       type: 'boolean',
     },
-    json: {
+    details: {
       default: false,
-      description: 'Output as JSON',
+      description: 'Inspect exit code and health status',
       type: 'boolean',
     },
+    json: { default: false, description: 'Output as JSON', type: 'boolean' },
     profile: {
       description: 'Only show containers for this profile',
       type: 'string',
@@ -30,17 +31,16 @@ export default defineCommand({
     try {
       containers = await listCcpodContainers({
         all: args.all,
+        details: args.details || args.json,
         ...(args.profile ? { profile: args.profile } : {}),
       });
     } catch (err) {
       exitWithError(err);
     }
-
     if (args.json) {
       console.log(JSON.stringify(containers, null, 2));
       return;
     }
-
     if (containers.length === 0) {
       console.log(
         'No ccpod containers' +
@@ -48,20 +48,20 @@ export default defineCommand({
       );
       return;
     }
-
     const col = (s: string, w: number) => s.slice(0, w).padEnd(w);
-    const HEADER = `${'CONTAINER'.padEnd(32)} ${'PROFILE'.padEnd(16)} ${'STATE'.padEnd(10)} ${'IMAGE'.padEnd(34)} WORKDIR`;
-    console.log(chalk.bold(HEADER));
-    console.log(chalk.dim('─'.repeat(HEADER.length)));
-
-    for (const c of containers) {
-      const stateRaw = c.running ? 'running' : 'stopped';
-      const stateColored = c.running
-        ? chalk.green(stateRaw)
-        : chalk.yellow(stateRaw);
-      const statePad = ' '.repeat(Math.max(0, 10 - stateRaw.length));
+    const header = `${'CONTAINER'.padEnd(32)} ${'PROFILE'.padEnd(16)} ${'STATE'.padEnd(12)} ${'IMAGE'.padEnd(34)} WORKDIR`;
+    console.log(chalk.bold(header));
+    console.log(chalk.dim('─'.repeat(header.length)));
+    for (const container of containers) {
+      const state = container.state || 'unknown';
+      const stateColored = container.running
+        ? chalk.green(state)
+        : chalk.yellow(state);
+      const details = args.details
+        ? ` exit=${container.exitCode ?? 'unknown'} health=${container.health ?? 'unknown'}`
+        : '';
       console.log(
-        `${col(c.name, 32)} ${col(c.profile || '-', 16)} ${stateColored}${statePad} ${col(c.image, 34)} ${c.workdir || c.project || '-'}`,
+        `${col(container.name, 32)} ${col(container.profile || '-', 16)} ${stateColored}${' '.repeat(Math.max(0, 12 - state.length))} ${col(container.image, 34)} ${container.workdir || container.project || '-'}${details}`,
       );
     }
   },

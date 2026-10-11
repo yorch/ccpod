@@ -1,14 +1,12 @@
 import { createHash } from 'node:crypto';
 import {
   chmodSync,
-  copyFileSync,
   createWriteStream,
   mkdtempSync,
+  renameSync,
   rmSync,
-  unlinkSync,
 } from 'node:fs';
-import { tmpdir } from 'node:os';
-import { join } from 'node:path';
+import { dirname, join } from 'node:path';
 import { Readable } from 'node:stream';
 import { pipeline } from 'node:stream/promises';
 import type { ReadableStream as NodeReadableStream } from 'node:stream/web';
@@ -93,8 +91,9 @@ export function parseChecksums(text: string): Map<string, string> {
 async function fetchExpectedDigest(
   checksumsUrl: string,
   assetName: string,
+  fetchImpl: typeof fetch = fetch,
 ): Promise<string> {
-  const res = await fetch(checksumsUrl, {
+  const res = await fetchImpl(checksumsUrl, {
     headers: { 'User-Agent': 'ccpod-updater' },
   });
   if (!res.ok) {
@@ -110,13 +109,24 @@ async function fetchExpectedDigest(
   return expected;
 }
 
+export interface UpdaterDependencies {
+  chmod?: typeof chmodSync;
+  createStageDir?: (parent: string) => string;
+  createWriteStream?: typeof createWriteStream;
+  fetch?: typeof fetch;
+  remove?: typeof rmSync;
+  rename?: typeof renameSync;
+}
+
 export async function downloadAndReplace(
   release: LatestRelease,
   targetPath: string,
+  dependencies: UpdaterDependencies = {},
 ): Promise<void> {
+  const fetchImpl = dependencies.fetch ?? fetch;
   const [expectedDigest, binaryRes] = await Promise.all([
-    fetchExpectedDigest(release.checksumsUrl, release.assetName),
-    fetch(release.url, { headers: { 'User-Agent': 'ccpod-updater' } }),
+    fetchExpectedDigest(release.checksumsUrl, release.assetName, fetchImpl),
+    fetchImpl(release.url, { headers: { 'User-Agent': 'ccpod-updater' } }),
   ]);
   if (!binaryRes.ok) {
     throw new Error(`Download failed: ${binaryRes.status}`);
@@ -126,9 +136,10 @@ export async function downloadAndReplace(
     throw new Error('Download response has no body');
   }
 
-  // mkdtempSync avoids the predictable-path symlink-attack vector that
-  // `tmpdir()/ccpod-update-<timestamp>` would have on multi-user hosts.
-  const tmpDir = mkdtempSync(join(tmpdir(), 'ccpod-update-'));
+  // Create staging data beneath the target's parent so rename is same-filesystem.
+  const parentDir = dirname(targetPath);
+  const makeStageDir = dependencies.createStageDir ?? mkdtempSync;
+  const tmpDir = makeStageDir(join(parentDir, '.ccpod-update-'));
   const tmpPath = join(tmpDir, release.assetName);
 
   try {
@@ -137,9 +148,8 @@ export async function downloadAndReplace(
     // ArrayBuffer for hashing, once as a Buffer for writing).
     const hash = createHash('sha256');
     await pipeline(
-      // Cast is the documented workaround for the DOM vs. node:stream/web
-      // ReadableStream type drift in Node's typings.
       Readable.fromWeb(
+        // SAFETY: Fetch bodies are WHATWG byte streams, matching Node's web stream type.
         binaryRes.body as unknown as NodeReadableStream<Uint8Array>,
       ),
       async function* (source) {
@@ -148,7 +158,7 @@ export async function downloadAndReplace(
           yield chunk;
         }
       },
-      createWriteStream(tmpPath),
+      (dependencies.createWriteStream ?? createWriteStream)(tmpPath),
     );
     const actualDigest = hash.digest('hex');
     if (actualDigest !== expectedDigest) {
@@ -157,26 +167,14 @@ export async function downloadAndReplace(
       );
     }
 
-    chmodSync(tmpPath, 0o755);
+    (dependencies.chmod ?? chmodSync)(tmpPath, 0o755);
 
-    try {
-      // Atomic on same filesystem
-      const { renameSync } = await import('node:fs');
-      renameSync(tmpPath, targetPath);
-    } catch (err) {
-      if ((err as NodeJS.ErrnoException).code === 'EXDEV') {
-        // Cross-device link: fall back to copy + delete
-        copyFileSync(tmpPath, targetPath);
-        chmodSync(targetPath, 0o755);
-        unlinkSync(tmpPath);
-      } else {
-        throw err;
-      }
-    }
+    // The staged file is on the destination filesystem. Its verified bytes and
+    // mode are complete before this final mutation; rename preserves the old
+    // executable if staging or verification fails.
+    (dependencies.rename ?? renameSync)(tmpPath, targetPath);
   } finally {
-    // Always remove tmpDir: on success it's empty (rename/copy moved the
-    // binary out); on any error it may contain a partial file. rmSync is
-    // idempotent thanks to `force: true`.
-    rmSync(tmpDir, { force: true, recursive: true });
+    // Remove the stage directory after success or any failure.
+    (dependencies.remove ?? rmSync)(tmpDir, { force: true, recursive: true });
   }
 }

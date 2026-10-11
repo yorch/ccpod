@@ -7,12 +7,17 @@ import {
   type ServerResponse,
 } from 'node:http';
 import { request as httpsRequest, type RequestOptions } from 'node:https';
-
 import {
+  hostOAuthCredentialLockScope,
+  type OAuthCredentialEntry,
+  type OAuthCredentialStoreIdentity,
   type OAuthCredentials,
+  readHostOAuthCredentialEntry,
   readHostOAuthCredentials,
+  writeHostOAuthCredentialEntry,
   writeHostOAuthCredentials,
 } from './keychain.ts';
+import { withOAuthRefreshLock } from './refresh-lock.ts';
 
 // Claude Code's public OAuth client ID (from the CLI's source).
 const OAUTH_CLIENT_ID = '9d1c250a-e61b-44d9-88ed-5944d1962f5e';
@@ -33,6 +38,8 @@ const MAX_TIMER_MS = 2 ** 31 - 1;
 // Retry delay after a failed proactive refresh.
 const REFRESH_RETRY_MS = 60_000; // 1 minute
 const MAX_REFRESH_RETRIES = 10; // stop retrying after this many consecutive failures
+const PERSIST_RETRY_BASE_MS = 100;
+const PERSIST_RETRY_MAX_MS = 30_000;
 
 // Headers that must not be forwarded as-is (either stripped or replaced).
 const STRIP_HEADERS = new Set([
@@ -48,19 +55,32 @@ interface AuthProxyOptions {
   // overridable (http:// allowed) so tests can point at local servers.
   apiUpstream?: string;
   hostname?: string;
+  // Private lock root; configurable for isolated tests, normally ~/.ccpod/oauth-locks.
+  lockRoot?: string;
+  // Store identity override for injected credential stores in tests.
+  lockScope?: string;
   port?: number;
+  // Entry-aware adapters preserve the exact account/file selected by the reader.
+  readCredentialEntry?: (
+    identity?: OAuthCredentialStoreIdentity,
+  ) => OAuthCredentialEntry | undefined;
   // Credential source; defaults to the host Keychain / ~/.claude file.
   readCredentials?: () => OAuthCredentials | undefined;
   // The sentinel API key that the proxy expects in x-api-key. If set,
   // requests without a matching x-api-key are rejected with 401.
   sentinelKey?: string;
   tokenEndpoint?: string;
+  writeCredentialEntry?: (
+    creds: OAuthCredentials,
+    identity: OAuthCredentialStoreIdentity,
+  ) => void;
   // Persists refreshed credentials; defaults to the host Keychain / file.
   writeCredentials?: (creds: OAuthCredentials) => void;
 }
 
 interface TokenCache {
   creds: OAuthCredentials;
+  identity?: OAuthCredentialStoreIdentity;
   refreshing: Promise<OAuthCredentials> | null;
 }
 
@@ -74,25 +94,36 @@ interface TokenCache {
  * 4. Refreshes the access token proactively (single-flight) before expiry
  * 5. On 401 from upstream: refreshes on-demand and retries once
  *
- * Multiple containers share one proxy instance, so all consumers share one
- * OAuth session with serialized refresh — eliminating the refresh-token
- * rotation race.
+ * Each invocation owns a proxy instance. A private SQLite transaction lock
+ * coordinates refresh-token rotation across ccpod processes sharing the same
+ * host credential store; native Claude is outside that lock.
  *
- * Limitation: if native `claude` runs concurrently on the host and refreshes
- * the same OAuth session independently, it can invalidate the proxy's refresh
- * token. The proxy re-reads the host credential store on `invalid_grant` to
- * recover, but a brief window of 401s is possible during recovery.
+ * Limitation: native `claude` does not honor ccpod's SQLite lock. The proxy
+ * reconciles ambiguous writes by rereading the store before each persistence
+ * retry, but cannot make its write atomic with an external Keychain/file update;
+ * an external rotation between that read and write can still race. Native
+ * refresh may also invalidate the proxy's refresh token, causing a brief 401
+ * window while the proxy rereads and recovers.
  */
 export class AuthProxy {
   private server: Server | null = null;
   private cache: TokenCache | null = null;
+  private pendingPersistence: OAuthCredentials | null = null;
   private readonly port: number;
   private readonly hostname: string;
   private readonly sentinelKey: string | undefined;
-  private readonly readCredentials: () => OAuthCredentials | undefined;
-  private readonly writeCredentials: (creds: OAuthCredentials) => void;
+  private readonly readCredentialEntry: (
+    identity?: OAuthCredentialStoreIdentity,
+  ) => OAuthCredentialEntry | undefined;
+  private readonly requireStoreIdentity: boolean;
+  private readonly writeCredentialEntry: (
+    creds: OAuthCredentials,
+    identity?: OAuthCredentialStoreIdentity,
+  ) => void;
   private readonly apiUpstream: string;
   private readonly tokenEndpoint: string;
+  private readonly lockRoot: string | undefined;
+  private readonly lockScope: string | undefined;
   private refreshTimer: ReturnType<typeof setTimeout> | null = null;
   private refreshRetryCount = 0;
   private stopped = false;
@@ -109,10 +140,43 @@ export class AuthProxy {
       opts.hostname ??
       (process.platform === 'darwin' ? '127.0.0.1' : '0.0.0.0');
     this.sentinelKey = opts.sentinelKey;
-    this.readCredentials = opts.readCredentials ?? readHostOAuthCredentials;
-    this.writeCredentials = opts.writeCredentials ?? writeHostOAuthCredentials;
+    if (opts.readCredentialEntry || opts.writeCredentialEntry) {
+      this.requireStoreIdentity = true;
+      if (!opts.readCredentialEntry || !opts.writeCredentialEntry) {
+        throw new Error(
+          'Credential entry adapters must provide both read and write',
+        );
+      }
+      this.readCredentialEntry = opts.readCredentialEntry;
+      this.writeCredentialEntry = (credentials, identity) => {
+        if (!identity) {
+          throw new Error('OAuth credential store identity is unavailable');
+        }
+        opts.writeCredentialEntry?.(credentials, identity);
+      };
+    } else if (opts.readCredentials || opts.writeCredentials) {
+      this.requireStoreIdentity = false;
+      const read = opts.readCredentials ?? readHostOAuthCredentials;
+      const write = opts.writeCredentials ?? writeHostOAuthCredentials;
+      this.readCredentialEntry = () => {
+        const credentials = read();
+        return credentials ? { credentials, identity: undefined } : undefined;
+      };
+      this.writeCredentialEntry = (credentials) => write(credentials);
+    } else {
+      this.requireStoreIdentity = true;
+      this.readCredentialEntry = readHostOAuthCredentialEntry;
+      this.writeCredentialEntry = (credentials, identity) => {
+        if (!identity) {
+          throw new Error('OAuth credential store identity is unavailable');
+        }
+        writeHostOAuthCredentialEntry(credentials, identity);
+      };
+    }
     this.apiUpstream = opts.apiUpstream ?? DEFAULT_API_UPSTREAM;
     this.tokenEndpoint = opts.tokenEndpoint ?? DEFAULT_TOKEN_ENDPOINT;
+    this.lockRoot = opts.lockRoot;
+    this.lockScope = opts.lockScope;
   }
 
   get address(): string {
@@ -140,24 +204,28 @@ export class AuthProxy {
   async start(): Promise<void> {
     this.stopped = false;
     // Load initial credentials from the host store
-    const creds = this.readCredentials();
+    const creds = this.readCredentialsSafely();
     if (!creds) {
       throw new Error(
         'No OAuth credentials found on host. Run "claude /login" first, then use proxy auth.',
       );
     }
-    this.cache = { creds, refreshing: null };
+    this.cache = {
+      creds: creds.credentials,
+      identity: creds.identity,
+      refreshing: null,
+    };
 
     // If the access token is already expired or near expiry, refresh now
-    if (this.needsRefresh(creds)) {
+    if (this.needsRefresh(creds.credentials)) {
       await this.refreshToken();
     }
 
     this.scheduleProactiveRefresh();
 
     this.server = createServer((req, res) => {
-      this.handleRequest(req, res).catch((err) => {
-        console.error(`[ccpod-auth-proxy] unhandled error: ${err}`);
+      this.handleRequest(req, res).catch(() => {
+        console.error('[ccpod-auth-proxy] unhandled proxy request error');
         if (!res.headersSent) {
           res.writeHead(502, { 'Content-Type': 'application/json' });
           res.end(
@@ -187,6 +255,13 @@ export class AuthProxy {
     if (this.refreshTimer) {
       clearTimeout(this.refreshTimer);
       this.refreshTimer = null;
+    }
+    // A credential write may have thrown after consuming a single-use token.
+    // Keep this process alive and retain the SQLite lock until its read-back
+    // reconciliation completes, even when the container lifecycle is ending.
+    const refresh = this.cache?.refreshing;
+    if (refresh) {
+      await refresh.catch(() => {});
     }
     const server = this.server;
     if (server) {
@@ -221,8 +296,8 @@ export class AuthProxy {
       clearTimeout(this.refreshTimer);
     }
     this.refreshTimer = setTimeout(() => {
-      this.refreshToken().catch((err) => {
-        console.error(`[ccpod-auth-proxy] proactive refresh failed: ${err}`);
+      this.refreshToken().catch(() => {
+        console.error('[ccpod-auth-proxy] proactive refresh failed');
       });
     }, delay);
   }
@@ -239,22 +314,51 @@ export class AuthProxy {
       return this.cache.refreshing;
     }
 
-    const refreshPromise = this.doRefresh()
-      .then((newCreds) => {
-        this.cache = { creds: newCreds, refreshing: null };
-        this.refreshRetryCount = 0; // reset on success
-        // Write-back is best-effort: the in-memory token is already valid.
-        // A Keychain permission prompt or disk error should not fail the
-        // request — the token will be persisted on the next successful write.
-        try {
-          this.writeCredentials(newCreds);
-        } catch (err) {
-          console.warn(
-            `[ccpod-auth-proxy] credential write-back failed (non-fatal): ${err}`,
-          );
+    const refreshPromise = withOAuthRefreshLock(
+      this.lockScope ?? `${process.platform}:${hostOAuthCredentialLockScope()}`,
+      async () => {
+        if (this.pendingPersistence) {
+          throw new Error('OAuth credential reconciliation is already active');
         }
+
+        const latest = this.readCredentialsSafely();
+        if (
+          latest &&
+          !this.needsRefresh(latest.credentials) &&
+          latest.credentials.accessToken !== this.cache?.creds.accessToken
+        ) {
+          return latest;
+        }
+        if (latest) {
+          // The store may contain a rotated refresh token with the same still-
+          // rejected access token. Use that refresh token rather than adopting
+          // an access token that already received a 401.
+          this.cache = {
+            creds: latest.credentials,
+            identity: latest.identity,
+            refreshing: this.cache?.refreshing ?? null,
+          };
+        }
+        const { credentials: refreshed, source } = await this.doRefresh();
+        // Retain the single-use token in memory and hold the SQLite transaction
+        // until the write is confirmed, the exact source generation remains so
+        // the same rotation can safely be retried, or another generation wins.
+        this.pendingPersistence = refreshed;
+        const reconciled = await this.persistRotation(source, refreshed);
+        this.pendingPersistence = null;
+        return reconciled;
+      },
+      this.lockRoot,
+    )
+      .then((entry) => {
+        this.cache = {
+          creds: entry.credentials,
+          identity: entry.identity,
+          refreshing: null,
+        };
+        this.refreshRetryCount = 0; // reset on success
         this.scheduleProactiveRefresh();
-        return newCreds;
+        return entry.credentials;
       })
       .catch((err) => {
         if (this.cache) {
@@ -275,8 +379,8 @@ export class AuthProxy {
             clearTimeout(this.refreshTimer);
           }
           this.refreshTimer = setTimeout(() => {
-            this.refreshToken().catch((e) =>
-              console.error(`[ccpod-auth-proxy] retry refresh failed: ${e}`),
+            this.refreshToken().catch(() =>
+              console.error('[ccpod-auth-proxy] retry refresh failed'),
             );
           }, delay);
         } else if (this.refreshRetryCount >= MAX_REFRESH_RETRIES) {
@@ -292,45 +396,172 @@ export class AuthProxy {
     return refreshPromise;
   }
 
-  private async doRefresh(): Promise<OAuthCredentials> {
+  private readCredentialsSafely(
+    identity?: OAuthCredentialStoreIdentity,
+  ): OAuthCredentialEntry | undefined {
+    try {
+      const entry: unknown = this.readCredentialEntry(identity);
+      if (entry === undefined) {
+        return undefined;
+      }
+      if (
+        typeof entry !== 'object' ||
+        entry === null ||
+        !isOAuthCredentials((entry as OAuthCredentialEntry).credentials) ||
+        (this.requireStoreIdentity &&
+          !isOAuthCredentialStoreIdentity(
+            (entry as OAuthCredentialEntry).identity,
+          )) ||
+        ((entry as OAuthCredentialEntry).identity !== undefined &&
+          !isOAuthCredentialStoreIdentity(
+            (entry as OAuthCredentialEntry).identity,
+          ))
+      ) {
+        throw new Error('invalid credentials');
+      }
+      return entry as OAuthCredentialEntry;
+    } catch {
+      throw new Error('OAuth credential store read failed');
+    }
+  }
+
+  private async persistRotation(
+    source: OAuthCredentialEntry,
+    pending: OAuthCredentials,
+  ): Promise<OAuthCredentialEntry> {
+    let attempt = 0;
+    let warned = false;
+    let expectedSource = source;
+    let rotation = pending;
+    while (true) {
+      let current: OAuthCredentialEntry | undefined;
+      try {
+        current = this.readCredentialsSafely(expectedSource.identity);
+      } catch {
+        // Missing, malformed, or unreadable state is indeterminate. Keep the
+        // lock and pending rotation; never write after an unverified read.
+      }
+
+      if (current && sameCredentialGeneration(current.credentials, pending)) {
+        return current;
+      }
+      if (
+        current &&
+        !sameCredentialGeneration(
+          current.credentials,
+          expectedSource.credentials,
+        )
+      ) {
+        // A different valid generation appeared (for example, an external
+        // Claude refresh). Adopt it, never overwrite it with this rotation.
+        return current;
+      }
+      if (
+        current &&
+        sameCredentialGeneration(
+          current.credentials,
+          expectedSource.credentials,
+        )
+      ) {
+        if (
+          !sameCredentialSnapshot(
+            current.credentials,
+            expectedSource.credentials,
+          )
+        ) {
+          // Never restore the consumed source generation because metadata
+          // changed. Preserve the latest metadata and make it the exact snapshot
+          // that must be reread before retrying the pending rotation write.
+          rotation = {
+            ...rotation,
+            rateLimitTier: current.credentials.rateLimitTier,
+            refreshTokenExpiresAt: current.credentials.refreshTokenExpiresAt,
+            scopes: current.credentials.scopes,
+            subscriptionType: current.credentials.subscriptionType,
+          };
+          expectedSource = current;
+        } else {
+          try {
+            this.writeCredentialEntry(rotation, expectedSource.identity);
+            return { credentials: rotation, identity: expectedSource.identity };
+          } catch {
+            if (!warned) {
+              console.warn(
+                '[ccpod-auth-proxy] credential persistence failed; holding the refresh lock while reconciling the store',
+              );
+              warned = true;
+            }
+            // The next loop iteration rereads before any further write. In
+            // particular, never write after a backoff without a fresh check.
+          }
+        }
+      }
+
+      const delay = Math.min(
+        PERSIST_RETRY_BASE_MS * 2 ** Math.min(attempt, 16),
+        PERSIST_RETRY_MAX_MS,
+      );
+      attempt++;
+      await new Promise((resolve) => setTimeout(resolve, delay));
+    }
+  }
+
+  private async doRefresh(): Promise<{
+    credentials: OAuthCredentials;
+    source: OAuthCredentialEntry;
+  }> {
     if (!this.cache) {
       throw new Error('Proxy not initialized');
     }
-    const { refreshToken, scopes, subscriptionType, rateLimitTier } =
-      this.cache.creds;
+    let source: OAuthCredentialEntry = {
+      credentials: this.cache.creds,
+      identity: this.cache.identity,
+    };
+    const { scopes, subscriptionType, rateLimitTier } = source.credentials;
 
     const body = JSON.stringify({
       client_id: OAUTH_CLIENT_ID,
       grant_type: 'refresh_token',
-      refresh_token: refreshToken,
+      refresh_token: source.credentials.refreshToken,
     });
 
     try {
-      return await this.callTokenEndpoint(
-        body,
-        scopes,
-        subscriptionType,
-        rateLimitTier,
-      );
+      return {
+        credentials: await this.callTokenEndpoint(
+          body,
+          scopes,
+          subscriptionType,
+          rateLimitTier,
+        ),
+        source,
+      };
     } catch (err) {
       // If the refresh failed with invalid_grant, the refresh token may have
       // been invalidated by native claude refreshing concurrently. Re-read
       // the host credential store and retry once with the fresh token.
       const msg = err instanceof Error ? err.message : String(err);
       if (msg.includes('invalid_grant')) {
-        const freshCreds = this.readCredentials();
-        if (freshCreds && freshCreds.refreshToken !== refreshToken) {
+        const freshEntry = this.readCredentialsSafely(source.identity);
+        if (
+          freshEntry &&
+          freshEntry.credentials.refreshToken !==
+            source.credentials.refreshToken
+        ) {
+          source = freshEntry;
           const retryBody = JSON.stringify({
             client_id: OAUTH_CLIENT_ID,
             grant_type: 'refresh_token',
-            refresh_token: freshCreds.refreshToken,
+            refresh_token: freshEntry.credentials.refreshToken,
           });
-          return await this.callTokenEndpoint(
-            retryBody,
-            scopes,
-            subscriptionType,
-            rateLimitTier,
-          );
+          return {
+            credentials: await this.callTokenEndpoint(
+              retryBody,
+              scopes,
+              subscriptionType,
+              rateLimitTier,
+            ),
+            source,
+          };
         }
       }
       throw err;
@@ -363,9 +594,10 @@ export class AuthProxy {
         resp.on('end', () => {
           const raw = Buffer.concat(chunks).toString('utf8');
           if (resp.statusCode !== 200) {
+            const invalidGrant = raw.includes('invalid_grant');
             reject(
               new Error(
-                `OAuth refresh failed: HTTP ${resp.statusCode} ${raw.slice(0, 200)}`,
+                `OAuth refresh failed: HTTP ${resp.statusCode}${invalidGrant ? ' invalid_grant' : ''}`,
               ),
             );
             return;
@@ -389,8 +621,8 @@ export class AuthProxy {
               ...(subscriptionType !== undefined ? { subscriptionType } : {}),
               ...(rateLimitTier !== undefined ? { rateLimitTier } : {}),
             });
-          } catch (err) {
-            reject(new Error(`Failed to parse refresh response: ${err}`));
+          } catch {
+            reject(new Error('Failed to parse OAuth refresh response'));
           }
         });
       });
@@ -412,11 +644,11 @@ export class AuthProxy {
     if (this.needsRefresh(this.cache.creds)) {
       try {
         await this.refreshToken();
-      } catch (err) {
+      } catch {
         // If proactive refresh failed, the old token may still be valid
-        // (refresh starts 1 hour before expiry). Try it rather than failing.
+        // (refresh starts 1 hour before expiry). Do not expose store errors.
         console.warn(
-          `[ccpod-auth-proxy] refresh failed, trying existing token: ${err}`,
+          '[ccpod-auth-proxy] proactive refresh failed; trying existing token',
         );
       }
     }
@@ -448,6 +680,31 @@ export class AuthProxy {
       }
     }
 
+    // Accept only origin-form request targets. WHATWG URL resolution treats
+    // //host and backslash forms as authorities, so reject them before any
+    // request body or credential-store access occurs.
+    const requestTarget = req.url ?? '/';
+    if (
+      !requestTarget.startsWith('/') ||
+      requestTarget.startsWith('//') ||
+      requestTarget.includes('\\')
+    ) {
+      this.sendError(res, 400, 'invalid request target');
+      return;
+    }
+    let upstreamUrl: URL;
+    try {
+      upstreamUrl = new URL(requestTarget, this.apiUpstream);
+      const configuredOrigin = new URL(this.apiUpstream).origin;
+      if (upstreamUrl.origin !== configuredOrigin) {
+        this.sendError(res, 400, 'invalid request target');
+        return;
+      }
+    } catch {
+      this.sendError(res, 400, 'invalid request target');
+      return;
+    }
+
     // Read the request body
     const body = await this.readBody(req);
 
@@ -455,13 +712,12 @@ export class AuthProxy {
     let accessToken: string;
     try {
       accessToken = await this.getAccessToken();
-    } catch (err) {
-      this.sendError(res, 401, `auth proxy: no valid token: ${err}`);
+    } catch {
+      this.sendError(res, 401, 'auth proxy: unable to obtain a valid token');
       return;
     }
 
     // Forward to upstream, stripping x-api-key and adding Authorization
-    const upstreamUrl = new URL(req.url ?? '/', this.apiUpstream);
     const headers = this.buildUpstreamHeaders(req, accessToken);
 
     await this.forwardRequest(
@@ -524,12 +780,8 @@ export class AuthProxy {
               };
               return this.forwardRequest(url, method, newHeaders, body, res, 1);
             })
-            .catch((err) => {
-              this.sendError(
-                res,
-                401,
-                `auth proxy: refresh on 401 failed: ${err}`,
-              );
+            .catch(() => {
+              this.sendError(res, 401, 'auth proxy: refresh on 401 failed');
             })
             .finally(() => {
               // The retry attached its own close listener; drop the first
@@ -665,9 +917,80 @@ export class AuthProxy {
 
 // https for the real endpoints; http only ever appears via the test overrides.
 function requestFor(url: URL): typeof httpsRequest {
-  return url.protocol === 'http:'
-    ? (httpRequest as unknown as typeof httpsRequest)
-    : httpsRequest;
+  if (url.protocol === 'http:') {
+    // SAFETY: Node's http and https request overloads have the same runtime
+    // contract; this cast selects the corresponding local test transport.
+    return httpRequest as unknown as typeof httpsRequest;
+  }
+  return httpsRequest;
+}
+
+function sameCredentialGeneration(
+  left: OAuthCredentials,
+  right: OAuthCredentials,
+): boolean {
+  return (
+    left.accessToken === right.accessToken &&
+    left.refreshToken === right.refreshToken
+  );
+}
+
+function sameCredentialSnapshot(
+  left: OAuthCredentials,
+  right: OAuthCredentials,
+): boolean {
+  return (
+    sameCredentialGeneration(left, right) &&
+    left.expiresAt === right.expiresAt &&
+    left.refreshTokenExpiresAt === right.refreshTokenExpiresAt &&
+    left.subscriptionType === right.subscriptionType &&
+    left.rateLimitTier === right.rateLimitTier &&
+    ((left.scopes === undefined && right.scopes === undefined) ||
+      (left.scopes !== undefined &&
+        right.scopes !== undefined &&
+        left.scopes.length === right.scopes.length &&
+        left.scopes.every((scope, index) => scope === right.scopes?.[index])))
+  );
+}
+
+function isOAuthCredentialStoreIdentity(
+  value: unknown,
+): value is OAuthCredentialStoreIdentity {
+  if (typeof value !== 'object' || value === null || Array.isArray(value)) {
+    return false;
+  }
+  const identity = value as Record<string, unknown>;
+  return (
+    identity.kind === 'file' ||
+    (identity.kind === 'keychain' &&
+      typeof identity.account === 'string' &&
+      identity.account.length > 0)
+  );
+}
+
+function isOAuthCredentials(value: unknown): value is OAuthCredentials {
+  if (typeof value !== 'object' || value === null || Array.isArray(value)) {
+    return false;
+  }
+  const credentials = value as Record<string, unknown>;
+  return (
+    typeof credentials.accessToken === 'string' &&
+    credentials.accessToken.length > 0 &&
+    typeof credentials.refreshToken === 'string' &&
+    credentials.refreshToken.length > 0 &&
+    typeof credentials.expiresAt === 'number' &&
+    Number.isFinite(credentials.expiresAt) &&
+    (credentials.refreshTokenExpiresAt === undefined ||
+      (typeof credentials.refreshTokenExpiresAt === 'number' &&
+        Number.isFinite(credentials.refreshTokenExpiresAt))) &&
+    (credentials.scopes === undefined ||
+      (Array.isArray(credentials.scopes) &&
+        credentials.scopes.every((scope) => typeof scope === 'string'))) &&
+    (credentials.subscriptionType === undefined ||
+      typeof credentials.subscriptionType === 'string') &&
+    (credentials.rateLimitTier === undefined ||
+      typeof credentials.rateLimitTier === 'string')
+  );
 }
 
 function constantTimeEqual(a: string, b: string): boolean {

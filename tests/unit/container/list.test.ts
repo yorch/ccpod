@@ -33,6 +33,7 @@ describe('listCcpodContainers', () => {
         running: true,
         state: 'running',
         status: 'Up 2 minutes',
+        type: '',
         workdir: '/home/me/a,b|c',
       },
     ]);
@@ -41,7 +42,12 @@ describe('listCcpodContainers', () => {
   it('builds filters from the options', async () => {
     const exec = fakeExec('');
     await listCcpodContainers(
-      { all: true, profile: 'work', project: 'deadbeefdeadbeef' },
+      {
+        all: true,
+        profile: 'work',
+        project: 'deadbeefdeadbeef',
+        service: 'redis',
+      },
       exec,
     );
     const args = (exec as unknown as ReturnType<typeof mock>).mock
@@ -50,6 +56,64 @@ describe('listCcpodContainers', () => {
     expect(args).toContain('-a');
     expect(args).toContain('label=ccpod.profile=work');
     expect(args).toContain('label=ccpod.project=deadbeefdeadbeef');
+    expect(args).toContain('label=ccpod.type=redis');
+  });
+
+  it('inspects exit code and health only when details are requested', async () => {
+    const calls: string[][] = [];
+    const exec = mock(async (args: string[]) => {
+      calls.push(args);
+      return args[0] === 'ps'
+        ? {
+            exitCode: 0,
+            stderr: '',
+            stdout: [
+              'abc123',
+              '/ccpod-x',
+              'exited',
+              'img',
+              'Exited (7)',
+              'work',
+              'deadbeefdeadbeef',
+              '/tmp',
+              'main',
+            ].join('\t'),
+          }
+        : { exitCode: 0, stderr: '', stdout: ['7', 'unhealthy'].join('\t') };
+    }) as unknown as Exec;
+    const rows = await listCcpodContainers({ all: true, details: true }, exec);
+    expect(rows[0]).toMatchObject({
+      exitCode: 7,
+      health: 'unhealthy',
+      running: false,
+      state: 'exited',
+    });
+    expect(calls.map((call) => call[0])).toEqual(['ps', 'inspect']);
+  });
+
+  it('reports disappearing inspect failures as unknown detail, not healthy', async () => {
+    const exec = mock(async (args: string[]) =>
+      args[0] === 'ps'
+        ? {
+            exitCode: 0,
+            stderr: '',
+            stdout: [
+              'abc123',
+              '/ccpod-x',
+              'running',
+              'img',
+              'Up',
+              'work',
+              'deadbeefdeadbeef',
+              '/tmp',
+              'main',
+            ].join('\t'),
+          }
+        : { exitCode: 1, stderr: 'No such object', stdout: '' },
+    ) as unknown as Exec;
+    const rows = await listCcpodContainers({ details: true }, exec);
+    expect(rows[0]?.health).toBeNull();
+    expect(rows[0]?.exitCode).toBeNull();
   });
 
   it('throws when docker fails instead of reporting an empty list', async () => {

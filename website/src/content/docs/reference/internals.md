@@ -17,7 +17,7 @@ Implementation details for contributors and advanced users.
 | `simple-git` | Git operations for profile sync |
 | `chalk` | Terminal output colouring |
 
-Docker operations use the `docker` CLI via `Bun.spawn` — no Docker SDK dependency.
+Docker operations use the `docker` CLI via `Bun.spawn` — no Docker SDK dependency. Captured commands support optional kill-and-reap timeouts. Resolved env for `run`/`create` is transported with a private temporary env-file, never in the Docker client's environment or argv, then cleaned up after the child completes.
 
 ## Core types
 
@@ -200,9 +200,13 @@ write_merged_config(result) → ${TMPDIR}/ccpod-u<uid>/ccpod-<sha256(content)>/
   // deterministic path: same content = same dir = skip re-write
 ```
 
+### Git profile checkout ownership
+
+`syncGitConfig` verifies every existing cached config directory before reuse, even when the sync policy is `daily` or `pin`: the path cannot be a symlink, must resolve to the Git worktree root, must have the configured `origin`, and must be clean. It verifies again after fetch and immediately before `reset --hard FETCH_HEAD`. Unsafe checkouts fail closed without reset or use. A failed remote fetch may use the previously verified clean checkout; partial initial clones are made in a temporary directory and renamed into place.
+
 ### Env forwarding (`resolveEnvForwarding`)
 
-`src/auth/resolver.ts:resolveEnvForwarding` collapses `profile.env`, `projectConfig.env`, and CLI `--env` overrides into a single `Record<string, string>`. Each entry has one of three forms:
+`src/auth/resolver.ts:resolveEnvForwarding` collapses `profile.env`, `projectConfig.env`, and CLI `--env` overrides into a single `Record<string, string>`. The runtime transports that map through a private temporary env-file and removes it after the Docker command exits. Each entry has one of three forms:
 
 - `KEY` — forward `process.env.KEY` (entry skipped if unset on host)
 - `KEY=value` — literal value
@@ -239,7 +243,7 @@ To opt out, the profile may set `allowProjectHostMounts: true` (for sidecar volu
 
 `ccpod update` requires each release to publish a `SHASUMS256.txt` asset alongside the binaries. The updater fetches `SHASUMS256.txt` and the platform asset in parallel, then streams the response body through `createHash('sha256')` into a write pipeline (`node:stream/promises#pipeline`). The hash is computed as bytes arrive, so the 50–80 MB binary is never buffered twice in memory; it is compared to the entry for the platform asset before the temp file is moved into place. A missing `SHASUMS256.txt`, a missing entry, or a mismatch all refuse the install with a clear error and leave nothing on disk.
 
-The `install.sh` bootstrap performs the same verification: after downloading the binary it fetches `SHASUMS256.txt`, computes the digest with `sha256sum` (or `shasum -a 256`), and aborts on mismatch. It only warns-and-proceeds when the release definitively has no checksum asset (HTTP 404 — a release predating it). A mismatch, any other download error, a missing entry, or a missing sha256 tool aborts the install; set `CCPOD_INSTALL_SKIP_VERIFY=1` to override the latter group explicitly.
+The updater stages under the destination directory's parent, streams and hashes the download, applies executable permissions, and atomically renames the verified file into place; any failure removes the staging directory without replacing the existing binary. The `install.sh` bootstrap performs the same verification: after downloading the binary it fetches `SHASUMS256.txt`, computes the digest with `sha256sum` (or `shasum -a 256`), and aborts on mismatch. It only warns-and-proceeds when the release definitively has no checksum asset (HTTP 404 — a release predating it). A mismatch, any other download error, a missing entry, or a missing sha256 tool aborts the install; set `CCPOD_INSTALL_SKIP_VERIFY=1` to override the latter group explicitly.
 
 ### Release pipeline
 
@@ -316,9 +320,11 @@ ccpod run [-- claude-args]
 │     extract HTTP/SSE entries → additional port mappings
 │
 ├─ 8. Start sidecars (if services: declared)
+│     validate dependency graph before Docker changes; stable topological order
 │     create network: ccpod-net-<sha256($PWD)>
 │     docker run -d --network <network> per service
-│     env values via bare -e KEY + docker extraEnv (not in argv)
+│     optional healthcheck readiness with bounded inspections and timeout
+│     rollback only IDs created by this invocation on failure
 │     labels: ccpod.profile, ccpod.project, ccpod.type=<service-name>
 │
 ├─ 9. Build ContainerSpec

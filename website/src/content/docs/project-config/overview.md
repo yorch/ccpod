@@ -73,7 +73,8 @@ services:
 
 ```sh
 ccpod config show              # print resolved merged config
+ccpod config show --explain    # explain sources, ignored inputs and runtime-rejected values
 ccpod config validate          # validate without running
 ```
 
-`ccpod config show` is the source of truth — what you see is what `ccpod run` will use, including which project entries were ignored.
+`ccpod config show` displays the merged view; `--explain` adds the provenance of effective values and explains project entries ignored by policy. It reports runtime-rejected project inputs as errors and exits non-zero, rather than implying that `ccpod run` can use them. Env values are redacted; host environment values are not resolved by this command.

@@ -100,6 +100,10 @@ function copyTreeSkipSymlinks(src: string, dest: string): void {
 
 const RESERVED_ASSETS = new Set(['CLAUDE.md', 'settings.json', 'post-init.sh']);
 
+// Bump this when the safety contract for generated cache contents changes. A
+// new namespace prevents adopting a pre-existing cache built under old rules.
+const CACHE_FORMAT_VERSION = 2;
+
 function copyAssets(srcDir: string, destDir: string): void {
   if (!existsSync(srcDir)) {
     return;
@@ -120,14 +124,15 @@ function copyAssets(srcDir: string, destDir: string): void {
   }
 }
 
-export function writeMergedConfig(
+export function writeMergedConfig<T extends object>(
   profileConfigDir: string,
   mergedClaudeMd: string,
-  mergedSettings: object,
+  mergedSettings: T,
   projectClaudeDir?: string,
   initCommands: string[] = [],
 ): string {
   const content = JSON.stringify({
+    cacheFormatVersion: CACHE_FORMAT_VERSION,
     claudeMd: mergedClaudeMd,
     initCommands,
     profileDirHash: hashProfileDir(profileConfigDir),

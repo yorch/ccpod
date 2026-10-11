@@ -2,7 +2,6 @@ import {
   chmodSync,
   copyFileSync,
   existsSync,
-  mkdirSync,
   readFileSync,
   writeFileSync,
 } from 'node:fs';
@@ -29,7 +28,10 @@ import {
   profileExists,
 } from '../profile/manager.ts';
 import { detectRuntime } from '../runtime/detector.ts';
-import { buildAnnotatedProfileYaml } from './profile-yaml.ts';
+import {
+  buildAnnotatedProfileYaml,
+  writeValidatedProfile,
+} from './profile-yaml.ts';
 
 type DetectedAuth = {
   envKey: string | undefined;
@@ -217,7 +219,7 @@ export async function runWizard(profileName = 'default'): Promise<void> {
     authConfig = { keyEnv, type: 'api-key' };
   } else if (authMethod === 'file') {
     const keyFile = await input({
-      default: '~/.anthropic/api_key',
+      default: `~/.ccpod/credentials/${profileName}/api_key`,
       message: '     Key file path',
     });
     authConfig = { keyFile, type: 'api-key' };
@@ -531,12 +533,6 @@ async function writeProfile(
     return false;
   }
 
-  ensureCcpodDirs();
-  mkdirSync(profileDir, { recursive: true });
-  if (opts.createConfigDir && opts.config?.path) {
-    mkdirSync(opts.config.path, { recursive: true });
-  }
-
   const profile: ProfileConfigInput = {
     auth: opts.auth,
     claudeArgs: [],
@@ -554,10 +550,16 @@ async function writeProfile(
     state: opts.state,
   };
 
-  writeFileSync(
-    join(profileDir, 'profile.yml'),
-    buildAnnotatedProfileYaml(profile),
-    'utf8',
+  const profileYaml = buildAnnotatedProfileYaml(profile);
+  // Validate the exact serialized artifact before creating directories or
+  // overwriting an existing profile.
+  profileConfigSchema.parse(parse(profileYaml));
+
+  ensureCcpodDirs();
+  writeValidatedProfile(
+    profileDir,
+    profile,
+    opts.createConfigDir ? opts.config?.path : undefined,
   );
 
   console.log(chalk.green(`\n✓ Profile '${profileName}' created.`));

@@ -1,8 +1,15 @@
 import { describe, expect, it } from 'bun:test';
+import { existsSync, mkdtempSync, rmSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
 import { parse as yamlParse } from 'yaml';
-import type { ProfileConfigInput } from '../../../src/config/schema.ts';
+import {
+  type ProfileConfigInput,
+  profileConfigSchema,
+} from '../../../src/config/schema.ts';
 import {
   buildAnnotatedProfileYaml,
+  writeValidatedProfile,
   yamlQuote,
 } from '../../../src/init/profile-yaml.ts';
 
@@ -25,10 +32,10 @@ const baseProfile: ProfileConfigInput = {
 };
 
 describe('yamlQuote()', () => {
-  it('passes plain strings through unchanged', () => {
-    expect(yamlQuote('simple')).toBe('simple');
-    expect(yamlQuote('api-key')).toBe('api-key');
-    expect(yamlQuote('ANTHROPIC_API_KEY')).toBe('ANTHROPIC_API_KEY');
+  it('quotes plain strings as valid YAML scalars', () => {
+    expect(yamlQuote('simple')).toBe('"simple"');
+    expect(yamlQuote('api-key')).toBe('"api-key"');
+    expect(yamlQuote('ANTHROPIC_API_KEY')).toBe('"ANTHROPIC_API_KEY"');
   });
 
   it('quotes strings with spaces', () => {
@@ -59,9 +66,40 @@ describe('yamlQuote()', () => {
     expect(yamlQuote('*alias')).toBe('"*alias"');
     expect(yamlQuote('-flag')).toBe('"-flag"');
   });
+
+  it('round-trips multiline and YAML-typed scalar text', () => {
+    for (const value of [
+      'true',
+      'null',
+      '001',
+      'a\\nb',
+      '#comment',
+      'TOKEN #comment',
+      'TOKEN\\nauth: { keyEnv: INJECTED }',
+    ]) {
+      expect(yamlParse(`value: ${yamlQuote(value)}`).value).toBe(value);
+    }
+  });
 });
 
 describe('buildAnnotatedProfileYaml()', () => {
+  it('quotes keyEnv as a YAML scalar so comments and newlines cannot inject fields', () => {
+    for (const keyEnv of [
+      'TOKEN #comment',
+      'TOKEN\\nauth: { keyEnv: INJECTED }',
+    ]) {
+      const yaml = buildAnnotatedProfileYaml({
+        ...baseProfile,
+        auth: { keyEnv, type: 'api-key' },
+      });
+      const parsed = yamlParse(yaml);
+      expect(parsed.auth.keyEnv).toBe(keyEnv);
+      expect(parsed.auth.type).toBe('api-key');
+      expect(parsed.auth.injected).toBeUndefined();
+      expect(profileConfigSchema.parse(parsed).auth.keyEnv).toBe(keyEnv);
+    }
+  });
+
   it('produces valid YAML that round-trips through the parser', () => {
     const yaml = buildAnnotatedProfileYaml(baseProfile);
     expect(() => yamlParse(yaml)).not.toThrow();
@@ -109,14 +147,14 @@ describe('buildAnnotatedProfileYaml()', () => {
     it('renders api-key with keyEnv', () => {
       const yaml = buildAnnotatedProfileYaml(baseProfile);
       expect(yaml).toContain('type: api-key');
-      expect(yaml).toContain('keyEnv: ANTHROPIC_API_KEY');
+      expect(yaml).toContain('keyEnv: "ANTHROPIC_API_KEY"');
       expect(yaml).not.toContain('keyFile');
     });
 
     it('renders api-key with keyFile', () => {
       const profile: ProfileConfigInput = {
         ...baseProfile,
-        auth: { keyFile: '/home/user/.keys/anthropic', type: 'api-key' },
+        auth: { keyFile: '~/.ccpod/credentials/default/key', type: 'api-key' },
       };
       const yaml = buildAnnotatedProfileYaml(profile);
       expect(yaml).toContain('type: api-key');
@@ -158,7 +196,7 @@ describe('buildAnnotatedProfileYaml()', () => {
       const yaml = buildAnnotatedProfileYaml(profile);
       expect(yaml).toContain('source: git');
       expect(yaml).toContain('repo:');
-      expect(yaml).toContain('ref: main');
+      expect(yaml).toContain('ref: "main"');
       expect(yaml).toContain('sync: daily');
       expect(yaml).not.toContain('path:');
       const parsed = yamlParse(yaml);
@@ -188,6 +226,35 @@ describe('buildAnnotatedProfileYaml()', () => {
   it('quotes image refs containing colons', () => {
     const yaml = buildAnnotatedProfileYaml(baseProfile);
     expect(yaml).toContain('"ghcr.io/yorch/ccpod:latest"');
+  });
+
+  it('does not create or overwrite files when generated profile validation fails', () => {
+    const root = mkdtempSync(join(tmpdir(), 'ccpod-invalid-profile-'));
+    const profileDir = join(root, 'profile');
+    const invalid = {
+      ...baseProfile,
+      auth: { keyFile: '/outside/private-key', type: 'api-key' },
+    } as ProfileConfigInput;
+    try {
+      expect(() => writeValidatedProfile(profileDir, invalid)).toThrow();
+      expect(existsSync(profileDir)).toBe(false);
+    } finally {
+      rmSync(root, { force: true, recursive: true });
+    }
+  });
+
+  it('validates the full generated profile and uses schema-compliant keyFile paths', () => {
+    const profile: ProfileConfigInput = {
+      ...baseProfile,
+      auth: {
+        keyFile: '~/.ccpod/credentials/default/api_key',
+        type: 'api-key',
+      },
+    };
+    const serialized = buildAnnotatedProfileYaml(profile);
+    expect(profileConfigSchema.parse(yamlParse(serialized)).auth.keyFile).toBe(
+      profile.auth.keyFile,
+    );
   });
 
   it('ends with a trailing newline', () => {

@@ -29,10 +29,11 @@ mock.module('../../../../src/runtime/docker.ts', () => ({
   dockerSpawn: dockerSpawnMock,
 }));
 
-// Mock image manager to avoid real docker calls
+// Mock image manager to avoid real docker calls.
+const ensureImageMock = mock(async () => {});
 mock.module('../../../../src/image/manager.ts', () => ({
   buildImage: mock(async () => {}),
-  ensureImage: mock(async () => {}),
+  ensureImage: ensureImageMock,
   ensureLocalImage: mock(async () => {}),
 }));
 
@@ -44,10 +45,16 @@ mock.module('../../../../src/config/writer.ts', () => ({
   writeMergedConfig: mock(() => '/tmp/fake-merged-config'),
 }));
 
-// Mock sidecars
+// Reuse the pure validator while keeping sidecar startup mocked.
+const { validateServiceDependencies } = await import(
+  '../../../../src/container/sidecars.ts'
+);
+const sidecarNetworkNameMock = mock(() => 'ccpod-net-fake');
+const startSidecarsMock = mock(async () => {});
 mock.module('../../../../src/container/sidecars.ts', () => ({
-  sidecarNetworkName: mock(() => 'ccpod-net-fake'),
-  startSidecars: mock(async () => {}),
+  sidecarNetworkName: sidecarNetworkNameMock,
+  startSidecars: startSidecarsMock,
+  validateServiceDependencies,
 }));
 
 // Mock git sync
@@ -73,6 +80,9 @@ beforeEach(() => {
   delete process.env.ANTHROPIC_AUTH_TOKEN;
   dockerExecMock.mockClear();
   dockerSpawnMock.mockClear();
+  ensureImageMock.mockClear();
+  sidecarNetworkNameMock.mockClear();
+  startSidecarsMock.mockClear();
 });
 
 afterEach(() => {
@@ -91,6 +101,43 @@ describe('setupContainer error handling (M7)', () => {
     await expect(
       setupContainer({ profile: 'nonexistent-profile' }, tmpDir),
     ).rejects.toThrow(/Profile 'nonexistent-profile' not found/);
+  });
+
+  it('rejects invalid merged service dependencies before image or Docker effects', async () => {
+    for (const [name, services, message] of [
+      [
+        'missing',
+        { app: { dependsOn: ['db'], image: 'app' } },
+        /missing service/,
+      ],
+      [
+        'cycle',
+        {
+          a: { dependsOn: ['b'], image: 'a' },
+          b: { dependsOn: ['a'], image: 'b' },
+        },
+        /cycle/,
+      ],
+    ] as const) {
+      const profileDir = join(tmpDir, 'profiles', `service-${name}`);
+      mkdirSync(profileDir, { recursive: true });
+      writeFileSync(
+        join(profileDir, 'profile.yml'),
+        yamlStringify({
+          config: { path: '/tmp', source: 'local' },
+          name: `service-${name}`,
+          services,
+        }),
+      );
+
+      await expect(
+        setupContainer({ profile: `service-${name}` }, tmpDir),
+      ).rejects.toThrow(message);
+      expect(ensureImageMock).not.toHaveBeenCalled();
+      expect(dockerExecMock).not.toHaveBeenCalled();
+      expect(sidecarNetworkNameMock).not.toHaveBeenCalled();
+      expect(startSidecarsMock).not.toHaveBeenCalled();
+    }
   });
 
   it('throws when headless auth required but no API key set', async () => {

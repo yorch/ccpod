@@ -76,11 +76,13 @@ export function isNewer(latest: string, current: string): boolean {
   return !lPre && cPre;
 }
 
-async function fetchLatestVersion(): Promise<string | null> {
+async function fetchLatestVersion(
+  fetchImpl: typeof fetch = fetch,
+): Promise<string | null> {
   const controller = new AbortController();
   const timeout = setTimeout(() => controller.abort(), 1500);
   try {
-    const res = await fetch(
+    const res = await fetchImpl(
       `https://api.github.com/repos/${GITHUB_REPO}/releases/latest`,
       { headers: { 'User-Agent': 'ccpod-updater' }, signal: controller.signal },
     );
@@ -98,17 +100,53 @@ async function fetchLatestVersion(): Promise<string | null> {
 
 // Returns hint version if an update is available, null otherwise.
 // Reads from cache instantly; triggers a background network refresh when stale.
-export function checkForUpdate(currentVersion: string): string | null {
-  const cache = readCache();
+export interface UpdateCheckerDependencies {
+  cachePath?: string;
+  fetch?: typeof fetch;
+  scheduleBackground?: (task: Promise<void>) => void;
+}
+
+function readCacheFrom(path: string): UpdateCache | null {
+  if (!existsSync(path)) {
+    return null;
+  }
+  try {
+    return updateCacheSchema.parse(JSON.parse(readFileSync(path, 'utf8')));
+  } catch {
+    return null;
+  }
+}
+
+function writeCacheTo(path: string, latestVersion: string): void {
+  writeFileSync(
+    path,
+    JSON.stringify({ checkedAt: new Date().toISOString(), latestVersion }),
+    'utf8',
+  );
+}
+
+export function checkForUpdate(
+  currentVersion: string,
+  dependencies: UpdateCheckerDependencies = {},
+): string | null {
+  const path = dependencies.cachePath ?? cachePath();
+  const cache = dependencies.cachePath ? readCacheFrom(path) : readCache();
 
   if (!cache || !isFresh(cache)) {
-    fetchLatestVersion()
-      .then((v) => {
-        if (v) {
-          writeCache(v);
+    const task = fetchLatestVersion(dependencies.fetch).then((version) => {
+      if (version) {
+        if (dependencies.cachePath) {
+          writeCacheTo(path, version);
+        } else {
+          writeCache(version);
         }
-      })
-      .catch(() => {});
+      }
+    });
+    if (dependencies.scheduleBackground) {
+      dependencies.scheduleBackground(task);
+    } else {
+      task.catch(() => {});
+    }
   }
 
   if (!cache) {

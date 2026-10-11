@@ -1,19 +1,19 @@
 ---
-title: "Auth Proxy Design: OAuth Without Refresh Races"
-description: Why copying OAuth credentials into containers causes refresh-token races, the architectures considered, and why ccpod's proxy auth mode translates API keys.
+title: "Auth Proxy Design: Coordinating OAuth Refresh"
+description: How ccpod keeps OAuth credentials host-side, translates sentinel API-key requests, and serializes refresh-token rotation across ccpod processes.
 ---
 
 ## The problem: OAuth refresh-token rotation
 
 ccpod copies OAuth credentials (`.credentials.json`) from the host macOS Keychain or another ccpod profile into each profile's credentials directory. Anthropic's OAuth refresh tokens **rotate on use** — each refresh invalidates the previous refresh token server-side. When two independent credential stores hold the same original refresh token, whichever side refreshes first silently logs the other out.
 
-The access token expires every **~8 hours**, so this collision happens within a single workday when host `claude` and a ccpod container run concurrently. The refresh token lasts ~14 days, so the problem can also surface across sessions.
+The access token expires every **~8 hours**, so independent consumers can collide within a single workday. `auth.type: proxy` keeps OAuth credentials host-side and coordinates refresh across ccpod processes; the limitation that remains is a native `claude` process outside ccpod's lock.
 
 ### How native Claude avoids it
 
 Multiple `claude` processes on the same host share a single credential store (macOS Keychain or `~/.claude/.credentials.json`). When one refreshes, it writes the new token back to the shared store. Other processes read the updated token on their next refresh attempt. There's a narrow race window, but it's **recoverable** because both sides read/write the same store.
 
-ccpod's problem is that it **forks** the credential store — each profile has its own copy that never converges with the source. The entrypoint copies credentials in at start and writes them back at exit, creating a fork for the entire run duration. With multiple concurrent containers, the last one to exit overwrites newer rotated credentials.
+With the container-OAuth mode, ccpod copies credentials into the profile's credentials directory and the entrypoint copies them in at start and writes them back at exit. That fork can overwrite a newer rotated token. Proxy auth avoids this path entirely: no OAuth credential file or credential mount enters the container.
 
 ### How Docker Sandbox (`sbx`) solves it
 
@@ -82,29 +82,27 @@ Host:
   - Proxy started before container, stopped after
 ```
 
-### Why this eliminates the race
+### Cross-process coordination
 
 - The container **never has a refresh token** — it's in API-key mode, which has no refresh flow.
-- The proxy owns the **only** OAuth session and refreshes with a single-flight lock.
-- Multiple containers share the same proxy, which serializes refreshes and serves all consumers from one cache.
+- Each `ccpod run` / `ccpod shell` invocation owns a short-lived proxy and in-process single-flight cache; no proxy daemon is kept running.
+- Concurrent ccpod processes use a private SQLite transaction lock keyed to the selected credential store. Each contender re-reads credentials after acquiring the lock, so a process that waited can use a token already refreshed by its peer.
+- Native `claude` is outside ccpod's lock and can still race, causing a brief 401 window while the proxy re-reads/reconciles credentials.
 
 ### Concurrency model
 
 ```
-3 containers sharing one proxy:
+Two ccpod processes with separate proxies:
 
 T=8h  AT expires
-      ├─ container A sends request → proxy checks cache: expired
-      │   → acquires single-flight lock → refreshes with real RT
-      │   → stores new AT in cache → releases lock
-      │   → injects real AT → forwards request
-      │
-      ├─ container B sends request → cache is now fresh (A refreshed it)
-      │   → injects cached AT → forwards
-      │
-      └─ container C sends request → same as B, cached AT
+      ├─ process A acquires the SQLite transaction lock
+      │   → reads current credential generation, refreshes if needed
+      │   → persists the rotated token, commits, serves its request
+      └─ process B waits for the lock
+          → acquires it after A commits, re-reads the store
+          → uses A's current token instead of refreshing the stale copy
 
-No race. One refresh, one store, all consumers served from cache.
+Concurrent ccpod refreshes are serialized. Native Claude does not participate.
 ```
 
 ### Known limitation: concurrent native claude
@@ -138,7 +136,7 @@ The following was verified by hand against `api.anthropic.com` during developmen
 | Access token | ~8 hours (`expiresAt: T + 8h`) |
 | Refresh token | ~14 days (`refreshTokenExpiresAt: T + 14d`) |
 
-The proxy proactively refreshes the access token 1 hour before expiry and on-demand when the upstream returns 401. Refreshed tokens are written back to the host Keychain (or `~/.claude/.credentials.json` on non-macOS).
+The proxy proactively refreshes the access token 1 hour before expiry and on-demand when the upstream returns 401. Refreshed tokens are written back to the selected host credential entry. A pending rotated token is retained and persistence retried while the process remains alive; forced termination before reconciliation remains a limitation. On file-backed systems the refreshed JSON is staged privately and atomically renamed over the existing credential file. On macOS, selection and updates are scoped to the exact Keychain item identity.
 
 ## OAuth endpoints
 

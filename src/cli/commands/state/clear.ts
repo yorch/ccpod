@@ -1,15 +1,53 @@
 import { rmSync } from 'node:fs';
+import { join } from 'node:path';
 import { confirm } from '@inquirer/prompts';
 import chalk from 'chalk';
 import { defineCommand } from 'citty';
 import { loadProfileConfig } from '../../../config/loader.ts';
 import { computeProjectHash } from '../../../container/builder.ts';
 import { listCcpodContainers } from '../../../container/list.ts';
-import { getProfileDir, getStateDir } from '../../../profile/manager.ts';
+import { getCcpodHome, getProfileDir } from '../../../profile/manager.ts';
 import { rejectExtraPositionals } from '../../args.ts';
 import { exitWithError } from '../../errors.ts';
 import { resolveProfileName } from '../../profile-arg.ts';
 
+type StateFilter = Parameters<typeof listCcpodContainers>[0];
+interface ClearDeps {
+  confirmRemoval: () => Promise<boolean>;
+  list: (filter: StateFilter) => ReturnType<typeof listCcpodContainers>;
+  remove: () => void;
+}
+export async function clearStateSafely(
+  profileName: string,
+  scope: string,
+  filter: StateFilter,
+  force: boolean,
+  deps: ClearDeps,
+): Promise<boolean> {
+  const verifyInactive = async () => {
+    const containers = await deps.list(filter);
+    const active = containers.find(
+      (container) => !['exited', 'dead', 'removing'].includes(container.state),
+    );
+    if (active) {
+      throw new Error(
+        `A ccpod container for '${profileName}' (${scope}) is ${active.state}. Stop it first with: ccpod down`,
+      );
+    }
+  };
+  await verifyInactive();
+  if (!force) {
+    const confirmed = await deps.confirmRemoval();
+    if (!confirmed) {
+      return false;
+    }
+  }
+  // Re-query after confirmation (and also on --force) to close the race with a
+  // container starting between the first check and deletion.
+  await verifyInactive();
+  deps.remove();
+  return true;
+}
 export default defineCommand({
   args: {
     all: {
@@ -25,64 +63,48 @@ export default defineCommand({
     },
     profile: { description: 'Profile name', type: 'string' },
   },
-  meta: {
-    description: 'Clear persistent state for a profile',
-    name: 'clear',
-  },
+  meta: { description: 'Clear persistent state for a profile', name: 'clear' },
   async run({ args }) {
     rejectExtraPositionals(args);
     const profileName = resolveProfileName(args.profile);
-
-    // Determine state isolation mode from the profile config
     const profile = loadProfileConfig(getProfileDir(profileName));
     const perProject = profile.stateIsolation === 'per-project';
-
-    // In per-project mode (without --all), check only the current project's
-    // container. Otherwise, check all containers for the profile.
-    let projectHash: string | undefined;
-    if (perProject && !args.all) {
-      projectHash = computeProjectHash(process.cwd());
-    }
-
-    let running: Awaited<ReturnType<typeof listCcpodContainers>>;
+    const projectHash =
+      perProject && !args.all ? computeProjectHash(process.cwd()) : undefined;
+    const filter = {
+      all: true,
+      profile: profileName,
+      ...(projectHash ? { project: projectHash } : {}),
+    };
+    const stateDir = projectHash
+      ? join(getCcpodHome(), 'state', profileName, projectHash)
+      : join(getCcpodHome(), 'state', profileName);
+    const scope = perProject && !args.all ? 'this project' : 'this profile';
+    let confirmed = false;
     try {
-      running = await listCcpodContainers({
-        profile: profileName,
-        ...(projectHash ? { project: projectHash } : {}),
-      });
+      confirmed = await clearStateSafely(
+        profileName,
+        scope,
+        filter,
+        args.force,
+        {
+          confirmRemoval: () =>
+            confirm({
+              default: false,
+              message: `Remove state at ${chalk.cyan(stateDir)}? This deletes saved projects, todos, and conversation history for ${scope}.`,
+            }),
+          list: listCcpodContainers,
+          remove: () => rmSync(stateDir, { force: true, recursive: true }),
+        },
+      );
     } catch (err) {
-      // Can't tell whether the state is in use — never delete it blind.
       exitWithError(err);
     }
-    if (running.length > 0) {
-      const scope = projectHash ? 'this project' : 'this profile';
-      console.error(
-        `A ccpod container for '${profileName}' (${scope}) is still running. Stop it first with: ccpod down`,
-      );
-      process.exit(1);
+    if (!confirmed) {
+      console.log('Aborted.');
+      return;
     }
-
-    let stateDir: string;
-    if (projectHash) {
-      stateDir = getStateDir(profileName, projectHash);
-    } else {
-      stateDir = getStateDir(profileName);
-    }
-
-    if (!args.force) {
-      const scope = perProject && !args.all ? 'this project' : 'all projects';
-      const ok = await confirm({
-        default: false,
-        message: `Remove state at ${chalk.cyan(stateDir)}? This deletes saved projects, todos, and conversation history for ${scope}.`,
-      });
-      if (!ok) {
-        console.log('Aborted.');
-        return;
-      }
-    }
-
     process.stdout.write(`Removing ${chalk.cyan(stateDir)}... `);
-    rmSync(stateDir, { force: true, recursive: true });
     console.log(chalk.green('done'));
   },
 });
