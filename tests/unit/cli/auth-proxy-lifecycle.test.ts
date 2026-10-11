@@ -4,6 +4,7 @@ import type { RunnerDeps } from '../../../src/container/runner.ts';
 
 const lifecycle: string[] = [];
 let proxyStartGate: Promise<void> | null = null;
+let onProxyStart: (() => void) | null = null;
 const runtimeExec = mock(async (args: string[]) => {
   lifecycle.push(`docker:${args[0]}`);
   return { exitCode: 1, stderr: 'not found', stdout: '' };
@@ -22,6 +23,7 @@ mock.module('../../../src/auth/proxy.ts', () => ({
 
     async start() {
       lifecycle.push('proxy:start');
+      onProxyStart?.();
       await proxyStartGate;
     }
 
@@ -55,6 +57,11 @@ describe('withAuthProxy owned-container lifecycle', () => {
   it('keeps the caller pending until startup credential reconciliation completes', async () => {
     lifecycle.length = 0;
     let releaseStartup: (() => void) | undefined;
+    let signalProxyStarted: (() => void) | undefined;
+    const proxyStarted = new Promise<void>((resolve) => {
+      signalProxyStarted = resolve;
+    });
+    onProxyStart = () => signalProxyStarted?.();
     proxyStartGate = new Promise<void>((resolve) => {
       releaseStartup = resolve;
     });
@@ -68,15 +75,20 @@ describe('withAuthProxy owned-container lifecycle', () => {
       return 0;
     });
 
-    await Promise.resolve();
-    expect(callbackEntered).toBe(false);
-    expect(lifecycle).toEqual(['proxy:start']);
+    await proxyStarted;
+    const callbackEnteredBeforeRelease = callbackEntered;
     releaseStartup?.();
     await operation;
 
+    expect(callbackEnteredBeforeRelease).toBe(false);
     expect(callbackEntered).toBe(true);
+    expect(lifecycle.indexOf('proxy:start')).toBeGreaterThan(-1);
+    expect(lifecycle.indexOf('proxy:start')).toBeLessThan(
+      lifecycle.indexOf('callback:complete'),
+    );
     expect(lifecycle.at(-1)).toBe('proxy:stop');
     proxyStartGate = null;
+    onProxyStart = null;
   });
 
   it('waits for owned container stop and verification before proxy teardown', async () => {

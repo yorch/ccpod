@@ -130,7 +130,7 @@ function runtimeContext(): { binary: string; env: NodeJS.ProcessEnv } {
     // Resolve against ccpod's own PATH before constructing the child env. The
     // forwarded container environment is carried by a private env-file and
     // must never influence which Docker/Podman executable is launched.
-    binary: Bun.which(name) ?? name,
+    binary: Bun.which(name, { PATH: process.env.PATH }) ?? name,
     env: {
       ...process.env,
       DOCKER_HOST: runtime.dockerHost ?? `unix://${runtime.socketPath}`,
