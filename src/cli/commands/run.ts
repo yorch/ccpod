@@ -10,15 +10,21 @@ import { withAuthProxy } from '../auth-proxy.ts';
 import { exitWithError } from '../errors.ts';
 import { setupContainer } from './_setup.ts';
 
-function installSignalForwarding(containerName: string): () => void {
+function installSignalForwarding(keepListeningAfterSignal = false): {
+  detach: () => void;
+  signal: AbortSignal;
+} {
   let triggered = false;
+  const controller = new AbortController();
   const handler = () => {
     if (triggered) {
       return;
     }
     triggered = true;
-    void dockerExec(['stop', '-t', '5', containerName]).catch(() => {});
-    detach();
+    controller.abort();
+    if (!keepListeningAfterSignal) {
+      detach();
+    }
   };
   const detach = () => {
     process.off('SIGINT', handler);
@@ -26,7 +32,7 @@ function installSignalForwarding(containerName: string): () => void {
   };
   process.on('SIGINT', handler);
   process.on('SIGTERM', handler);
-  return detach;
+  return { detach, signal: controller.signal };
 }
 
 const MAX_PROMPT_BYTES = 100_000;
@@ -162,25 +168,33 @@ export default defineCommand({
 
       const tty = !headless;
 
-      // In TTY mode docker -it forwards Ctrl+C to the container natively;
-      // only headless mode needs ccpod-side signal forwarding to stop the
-      // container so it is not orphaned.
-      const { exitCode, spec } = await withAuthProxy(
-        config,
-        true,
-        async (proxy) => {
-          const spec = buildContainerSpec(config, cwd, tty, networkName, {
-            ...(proxy ? { proxy } : {}),
-          });
-          console.log(chalk.dim('Starting container...'));
-          const detach = tty ? () => {} : installSignalForwarding(spec.name);
-          try {
-            return { exitCode: await runContainer(spec), spec };
-          } finally {
-            detach();
-          }
-        },
-      );
+      // Ordinary non-proxy interactive Docker attach keeps native Ctrl+C and
+      // detach behavior. Proxy-backed containers need ccpod-owned cancellation
+      // so their owned ID is stopped before the per-run proxy is torn down.
+      const forwarding =
+        !tty || config.auth.type === 'proxy'
+          ? installSignalForwarding(config.auth.type === 'proxy')
+          : undefined;
+      let exitCode: number;
+      let spec: ReturnType<typeof buildContainerSpec>;
+      try {
+        ({ exitCode, spec } = await withAuthProxy(
+          config,
+          true,
+          async (proxy) => {
+            const spec = buildContainerSpec(config, cwd, tty, networkName, {
+              ...(proxy ? { proxy } : {}),
+            });
+            console.log(chalk.dim('Starting container...'));
+            return {
+              exitCode: await runContainer(spec, undefined, forwarding?.signal),
+              spec,
+            };
+          },
+        ));
+      } finally {
+        forwarding?.detach();
+      }
 
       // Proxy mode: the proxy just stopped. If the user detached
       // (Ctrl-P Ctrl-Q) rather than exiting, the container is still running

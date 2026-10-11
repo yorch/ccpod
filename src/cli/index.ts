@@ -3,6 +3,7 @@ import { defineCommand, runMain } from 'citty';
 import { loadGlobalConfig } from '../global/config.ts';
 import { checkForUpdate } from '../update/checker.ts';
 import { VERSION } from '../version.ts';
+import { isDoctorCommandIntent } from './command-intent.ts';
 
 function handleFatalError(err: unknown): never {
   const msg = err instanceof Error ? err.message : String(err);
@@ -14,7 +15,12 @@ process.on('unhandledRejection', handleFatalError);
 process.on('uncaughtException', handleFatalError);
 
 const globalConfig = loadGlobalConfig();
-if (globalConfig.autoCheckUpdates) {
+// `doctor` is explicitly passive by default; don't let the global update check
+// turn it into an implicit network request.
+if (
+  globalConfig.autoCheckUpdates &&
+  !isDoctorCommandIntent(process.argv.slice(2))
+) {
   const newer = checkForUpdate(VERSION);
   if (newer) {
     console.log(
@@ -37,6 +43,7 @@ const main = defineCommand({
     exec: () => import('./commands/exec.ts').then((m) => m.default),
     image: () => import('./commands/image/index.ts').then((m) => m.default),
     init: () => import('./commands/init.ts').then((m) => m.default),
+    logs: () => import('./commands/logs.ts').then((m) => m.default),
     plugins: () => import('./commands/plugins/index.ts').then((m) => m.default),
     profile: () => import('./commands/profile/index.ts').then((m) => m.default),
     prune: () => import('./commands/prune.ts').then((m) => m.default),

@@ -1,9 +1,11 @@
 import { afterEach, describe, expect, it } from 'bun:test';
 import {
   existsSync,
+  mkdirSync,
   mkdtempSync,
   readFileSync,
   rmSync,
+  symlinkSync,
   writeFileSync,
 } from 'node:fs';
 import { tmpdir } from 'node:os';
@@ -15,9 +17,7 @@ const cleanup: string[] = [];
 
 afterEach(() => {
   for (const dir of cleanup) {
-    try {
-      rmSync(dir, { force: true, recursive: true });
-    } catch {}
+    rmSync(dir, { force: true, recursive: true });
   }
   cleanup.length = 0;
 });
@@ -206,5 +206,124 @@ describe('syncGitConfig', () => {
       'initial content',
     );
     expect(existsSync(join(configDir, 'later.txt'))).toBe(false);
+  });
+
+  it('refuses to replace a non-git local config directory', async () => {
+    const profileDir = makeTempDir();
+    const configDir = join(profileDir, 'config');
+    mkdirSync(configDir);
+    writeFileSync(join(configDir, 'user.txt'), 'local user data');
+
+    await expect(
+      syncGitConfig(profileDir, '/unused/remote', 'main', 'always'),
+    ).rejects.toThrow('not a git checkout; no reset was performed');
+    expect(readFileSync(join(configDir, 'user.txt'), 'utf8')).toBe(
+      'local user data',
+    );
+  });
+
+  it('refuses an origin mismatch without changing cached files', async () => {
+    const { repoDir, ref } = makeLocalRepo();
+    const profileDir = makeTempDir();
+    await syncGitConfig(profileDir, repoDir, ref, 'always');
+    const configDir = join(profileDir, 'config');
+    git(['remote', 'set-url', 'origin', '/different/repo'], configDir);
+
+    await expect(
+      syncGitConfig(profileDir, repoDir, ref, 'always'),
+    ).rejects.toThrow(
+      'origin does not match profile config.repo; no reset was performed',
+    );
+    expect(readFileSync(join(configDir, 'config.txt'), 'utf8')).toBe(
+      'initial content',
+    );
+  });
+
+  it('refuses to use a mismatched pin checkout before any cached fast return', async () => {
+    const { repoDir, ref } = makeLocalRepo();
+    const profileDir = makeTempDir();
+    await syncGitConfig(profileDir, repoDir, ref, 'always');
+    const configDir = join(profileDir, 'config');
+    git(['remote', 'set-url', 'origin', '/different/repo'], configDir);
+
+    await expect(
+      syncGitConfig(profileDir, repoDir, ref, 'pin'),
+    ).rejects.toThrow(
+      'origin does not match profile config.repo; no reset was performed',
+    );
+    expect(readFileSync(join(configDir, 'config.txt'), 'utf8')).toBe(
+      'initial content',
+    );
+  });
+
+  it('verifies cleanliness before daily fast return when the sync lock is current', async () => {
+    const { repoDir, ref } = makeLocalRepo();
+    const profileDir = makeTempDir();
+    await syncGitConfig(profileDir, repoDir, ref, 'always');
+    const file = join(profileDir, 'config', 'config.txt');
+    writeFileSync(file, 'user edit');
+    writeSyncLock(profileDir);
+
+    await expect(
+      syncGitConfig(profileDir, repoDir, ref, 'daily'),
+    ).rejects.toThrow('local changes; no reset was performed');
+    expect(readFileSync(file, 'utf8')).toBe('user edit');
+  });
+
+  it('rejects a config directory nested inside an enclosing git worktree', async () => {
+    const { repoDir, ref } = makeLocalRepo();
+    const profileDir = join(repoDir, 'nested-profile');
+    const configDir = join(profileDir, 'config');
+    mkdirSync(configDir, { recursive: true });
+    const beforeHead = Bun.spawnSync(['git', 'rev-parse', 'HEAD'], {
+      cwd: repoDir,
+    })
+      .stdout.toString()
+      .trim();
+
+    await expect(
+      syncGitConfig(profileDir, repoDir, ref, 'always'),
+    ).rejects.toThrow(
+      'worktree root does not match config directory; no reset was performed',
+    );
+    expect(
+      Bun.spawnSync(['git', 'rev-parse', 'HEAD'], { cwd: repoDir })
+        .stdout.toString()
+        .trim(),
+    ).toBe(beforeHead);
+    expect(existsSync(join(configDir, 'config.txt'))).toBe(false);
+  });
+
+  it('rejects symlink config destinations before returning or mutating their target', async () => {
+    const { repoDir, ref } = makeLocalRepo();
+    const profileDir = makeTempDir();
+    symlinkSync(repoDir, join(profileDir, 'config'));
+    const beforeHead = Bun.spawnSync(['git', 'rev-parse', 'HEAD'], {
+      cwd: repoDir,
+    })
+      .stdout.toString()
+      .trim();
+
+    await expect(
+      syncGitConfig(profileDir, repoDir, ref, 'pin'),
+    ).rejects.toThrow('config directory is a symlink; no reset was performed');
+    expect(
+      Bun.spawnSync(['git', 'rev-parse', 'HEAD'], { cwd: repoDir })
+        .stdout.toString()
+        .trim(),
+    ).toBe(beforeHead);
+  });
+
+  it('refuses to reset a dirty owned checkout and preserves local edits', async () => {
+    const { repoDir, ref } = makeLocalRepo();
+    const profileDir = makeTempDir();
+    await syncGitConfig(profileDir, repoDir, ref, 'always');
+    const file = join(profileDir, 'config', 'config.txt');
+    writeFileSync(file, 'user edit');
+
+    await expect(
+      syncGitConfig(profileDir, repoDir, ref, 'always'),
+    ).rejects.toThrow('local changes; no reset was performed');
+    expect(readFileSync(file, 'utf8')).toBe('user edit');
   });
 });

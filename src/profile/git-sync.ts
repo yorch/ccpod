@@ -1,4 +1,10 @@
-import { existsSync, mkdirSync, renameSync, rmSync } from 'node:fs';
+import {
+  lstatSync,
+  mkdirSync,
+  realpathSync,
+  renameSync,
+  rmSync,
+} from 'node:fs';
 import chalk from 'chalk';
 import simpleGit from 'simple-git';
 import type { SyncStrategy } from '../types/index.ts';
@@ -12,7 +18,7 @@ export async function syncGitConfig(
 ): Promise<void> {
   const configDir = `${profileDir}/config`;
 
-  if (!existsSync(configDir)) {
+  if (!pathExists(configDir)) {
     console.log(chalk.dim('Cloning profile config...'));
     // Clone into a per-process temp dir and rename into place atomically. This
     // (1) keeps a crashed/partial clone from leaving a corrupt `config/` that a
@@ -48,20 +54,26 @@ export async function syncGitConfig(
       // If configDir still isn't there, the rename failed for a real reason
       // (e.g. a permission error or a file squatting the path) — surface it
       // instead of writing a sync lock that claims success.
-      if (!existsSync(configDir)) {
+      if (!pathExists(configDir)) {
         throw err;
       }
     }
+    // The destination may have been populated by another process. Validate
+    // both freshly cloned and race-lost destinations before recording/reusing.
+    await verifyGitCheckout(configDir, repo);
     writeSyncLock(profileDir);
     return;
   }
 
+  // Validate every reused checkout, even when pin/daily means no fetch. Those
+  // strategies control freshness only; they are not an ownership boundary.
+  await verifyGitCheckout(configDir, repo);
   if (!shouldSync(profileDir, strategy)) {
     return;
   }
 
   console.log(chalk.dim('Syncing profile config...'));
-  const git = simpleGit(configDir);
+  const git = simpleGit(realpathSync(configDir));
   // Reset to FETCH_HEAD rather than `origin/<ref>`: a shallow single-branch
   // clone only tracks its clone branch, so a tag or a since-changed ref has no
   // `origin/<ref>` remote-tracking ref and `reset --hard origin/<ref>` fails
@@ -69,11 +81,9 @@ export async function syncGitConfig(
   // ref, which works for branches, tags, and SHAs alike.
   try {
     await git.fetch('origin', ref, { '--depth': '1' });
-    await git.reset(['--hard', 'FETCH_HEAD']);
   } catch (err) {
-    // Offline / remote unreachable: a usable cached config exists, so don't
-    // block the run on a refresh. No sync lock is written, so the next run
-    // tries again.
+    // A failed fetch does not mutate the checkout, so a previously verified
+    // cached config remains safe to use for this run.
     console.warn(
       chalk.yellow(
         `Warning: could not sync profile config (${err instanceof Error ? err.message : String(err)}); using the cached copy.`,
@@ -81,7 +91,80 @@ export async function syncGitConfig(
     );
     return;
   }
+  // Recheck after fetch, immediately before the only destructive operation.
+  await verifyGitCheckout(configDir, repo);
+  await git.reset(['--hard', 'FETCH_HEAD']);
   writeSyncLock(profileDir);
+}
+
+function pathExists(path: string): boolean {
+  try {
+    lstatSync(path);
+    return true;
+  } catch (error) {
+    if (
+      error &&
+      typeof error === 'object' &&
+      'code' in error &&
+      error.code === 'ENOENT'
+    ) {
+      return false;
+    }
+    throw error;
+  }
+}
+
+async function verifyGitCheckout(
+  configDir: string,
+  repo: string,
+): Promise<void> {
+  let reason: string | undefined;
+  try {
+    const stat = lstatSync(configDir);
+    if (stat.isSymbolicLink()) {
+      reason = 'config directory is a symlink';
+    } else if (!stat.isDirectory()) {
+      reason = 'config path is not a directory';
+    }
+    if (!reason) {
+      const canonicalDir = realpathSync(configDir);
+      const git = simpleGit(canonicalDir);
+      if (!(await git.checkIsRepo())) {
+        reason = 'config directory is not a git checkout';
+      } else {
+        const worktree = realpathSync(
+          (await git.revparse(['--show-toplevel'])).trim(),
+        );
+        if (worktree !== canonicalDir) {
+          reason = 'git worktree root does not match config directory';
+        } else {
+          let origin: string | undefined;
+          try {
+            origin = (await git.raw(['remote', 'get-url', 'origin'])).trim();
+          } catch {
+            reason = 'could not verify checkout origin';
+          }
+          if (origin !== undefined && origin !== repo) {
+            reason = 'checkout origin does not match profile config.repo';
+          }
+          if (
+            origin !== undefined &&
+            !reason &&
+            !(await git.status()).isClean()
+          ) {
+            reason = 'checkout has local changes';
+          }
+        }
+      }
+    }
+  } catch {
+    reason ??= 'could not verify git checkout ownership';
+  }
+  if (reason) {
+    throw new Error(
+      `Cannot safely sync profile config: ${reason}; no reset was performed.`,
+    );
+  }
 }
 
 async function cloneAtRef(

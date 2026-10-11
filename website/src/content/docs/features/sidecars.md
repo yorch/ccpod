@@ -23,6 +23,13 @@ services:
     image: redis:7
     ports:
       - "6379:6379"
+
+  # Optional dependency ordering and image healthcheck readiness:
+  worker:
+    image: example/worker:latest
+    dependsOn: [postgres, redis]
+    ready:
+      timeoutSeconds: 90   # requires an image HEALTHCHECK; default 60, range 1–3600
 ```
 
 ## How they wire up
@@ -32,6 +39,8 @@ Before starting the Claude container, ccpod:
 1. Creates a shared Docker network: `ccpod-net-<projectHash>`.
 2. Starts each declared sidecar with `docker run -d --network ccpod-net-<projectHash>`.
 3. Labels each container so `ccpod ps` and `ccpod down` can find them.
+
+Dependencies are checked for missing services and cycles before network/container changes, then started in deterministic dependency order. If `ready` is configured, ccpod bounds container creation/start and waits for the image healthcheck to report `healthy` within the timeout. Configuring `ready` on an image without a healthcheck is an error. Without `ready`, ccpod does not wait for health after Docker starts the container. A failed startup/readiness check rolls back only containers created by that invocation.
 
 The Claude container joins the same network, so sidecars are reachable **by service name as hostname**:
 
@@ -64,6 +73,6 @@ Under deep merge, the two are combined by service name. A project entry with the
 
 ## Security
 
-- **Sidecar env values** are passed to Docker as bare `-e KEY` flags with the values injected into the Docker CLI's own environment — they never appear in the process command line (`ps` / `/proc/<pid>/cmdline`).
+- **Sidecar env values** are transported through a private temporary env-file (directory mode `0700`, file mode `0600`) supplied to Docker by path. Values are not put in Docker argv or the Docker client's process environment; unsafe line breaks and NULs are rejected, and the file is removed after the Docker command completes.
 - **Project-declared services** are ignored unless the profile sets `allowProjectServices: true`. When enabled, project service volumes and ports are still sanitized (named volumes only, loopback-only ports) unless `allowProjectHostMounts` is also set.
 - **Sidecar startup failure** rolls back any sidecars started earlier in the same call, so a partial failure does not leave orphaned containers.

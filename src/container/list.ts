@@ -1,7 +1,14 @@
 import { dockerExec } from '../runtime/docker.ts';
-import { LABEL_PROFILE, LABEL_PROJECT, LABEL_WORKDIR } from './builder.ts';
+import {
+  LABEL_PROFILE,
+  LABEL_PROJECT,
+  LABEL_TYPE,
+  LABEL_WORKDIR,
+} from './builder.ts';
 
 export interface CcpodContainer {
+  exitCode?: number | null;
+  health?: string | null;
   id: string;
   image: string;
   name: string;
@@ -11,18 +18,22 @@ export interface CcpodContainer {
   /** Docker lifecycle state: running, paused, restarting, exited, created, dead, removing. */
   state: string;
   status: string;
+  type: string;
   workdir: string;
 }
 
 export interface ListFilter {
   /** Include stopped containers (default: running only). */
   all?: boolean;
+  /** Inspect lifecycle details (failures produce null detail fields). */
+  details?: boolean;
   profile?: string;
   project?: string;
+  service?: string;
 }
 
-// Tab can't appear in a container id/name/state/image or a ccpod label value
-// we wrote ourselves, unlike ',' or '|' (workdir paths may contain either).
+// Tab can't appear in a container id/name/state/image or a ccpod label value,
+// unlike ',' or '|' (workdir paths may contain either).
 const SEP = '\t';
 const FORMAT = [
   '{{.ID}}',
@@ -33,6 +44,7 @@ const FORMAT = [
   `{{.Label "${LABEL_PROFILE}"}}`,
   `{{.Label "${LABEL_PROJECT}"}}`,
   `{{.Label "${LABEL_WORKDIR}"}}`,
+  `{{.Label "${LABEL_TYPE}"}}`,
 ].join(SEP);
 
 /**
@@ -55,6 +67,9 @@ export async function listCcpodContainers(
   if (filter.project) {
     args.push('--filter', `label=${LABEL_PROJECT}=${filter.project}`);
   }
+  if (filter.service) {
+    args.push('--filter', `label=${LABEL_TYPE}=${filter.service}`);
+  }
   args.push('--format', FORMAT);
 
   const { exitCode, stderr, stdout } = await exec(args);
@@ -62,7 +77,7 @@ export async function listCcpodContainers(
     throw new Error(`docker ps failed: ${stderr || 'unknown error'}`);
   }
 
-  return stdout
+  const containers: CcpodContainer[] = stdout
     .split('\n')
     .filter((line) => line.trim() !== '')
     .map((line) => {
@@ -75,6 +90,7 @@ export async function listCcpodContainers(
         profile = '',
         project = '',
         workdir = '',
+        type = '',
       ] = line.split(SEP);
       return {
         id,
@@ -85,8 +101,31 @@ export async function listCcpodContainers(
         running: state === 'running',
         state,
         status,
+        type,
         workdir,
-      };
+      } satisfies CcpodContainer;
     })
-    .filter((c) => c.id !== '');
+    .filter((container) => container.id !== '');
+
+  if (filter.details) {
+    await Promise.all(
+      containers.map(async (container) => {
+        const result = await exec([
+          'inspect',
+          '--format',
+          '{{.State.ExitCode}}\t{{if .State.Health}}{{.State.Health.Status}}{{else}}none{{end}}',
+          container.id,
+        ]).catch(() => null);
+        if (!result || result.exitCode !== 0) {
+          container.exitCode = null;
+          container.health = null;
+          return;
+        }
+        const [exit, health] = result.stdout.split(SEP);
+        container.exitCode = /^-?\d+$/.test(exit ?? '') ? Number(exit) : null;
+        container.health = health === 'none' ? null : health || null;
+      }),
+    );
+  }
+  return containers;
 }

@@ -1,6 +1,6 @@
 ---
 title: "CLI Reference: Every Command and Flag"
-description: Complete reference for every ccpod command and flag — run, shell, exec, doctor, init, update, profile, plugins, image, config, ps, down, prune, and state.
+description: Complete reference for every ccpod command and flag — run, shell, exec, doctor, init, update, profile, plugins, image, config, ps, logs, down, prune, and state.
 ---
 
 `ccpod` is a single binary. All commands accept `--help`.
@@ -75,11 +75,12 @@ Everything after `--` is the command. It uses the same container selection as `c
 
 ## `ccpod doctor`
 
-Check that everything `ccpod run` needs is in place: container runtime and daemon, project and profile config validity, auth, the image, and git config sync freshness. Exits non-zero if any check fails.
+Passively checks local runtime configuration, project/profile config validity, credential-source presence (not credential contents), image configuration, and profile sync freshness. It does not contact Docker unless you pass `--probe`; that read-only daemon probe has a 5-second timeout. `--json` prints the check summary, and the command exits non-zero if any check fails.
 
 ```sh
 ccpod doctor
 ccpod doctor --profile team
+ccpod doctor --probe --json
 ```
 
 ## `ccpod init`
@@ -200,7 +201,8 @@ After editing the Dockerfile, run `ccpod image build --apply` to build and activ
 ## Lifecycle commands
 
 ```sh
-ccpod ps [--all] [--profile <name>] [--json]   # list ccpod containers
+ccpod ps [--all] [--profile <name>] [--json] [--details]  # list ccpod containers
+ccpod logs [--tail <n|all>] [--follow] [--all] [--profile <name>] [--service <name>]
 ccpod down [--all] [--profile <name>]          # stop + remove containers (and sidecars)
 ccpod prune [--dry-run] [--force] [--profile <name>]
 ccpod state clear [--profile <name>] [--all] [--force]
@@ -208,7 +210,17 @@ ccpod state clear [--profile <name>] [--all] [--force]
 
 ### `ccpod ps`
 
-Lists ccpod containers (running only by default). `--all` includes stopped ones, `--profile` filters, and `--json` prints a machine-readable array.
+Lists ccpod containers (running only by default). `--all` includes stopped ones, `--profile` filters, and `--json` prints a machine-readable array with inspected lifecycle fields. `--details` adds exit code and health status to the human-readable output.
+
+### `ccpod logs`
+
+Shows logs for containers belonging to the current project and selected profile. Use `--all` for all projects, `--service <name>` to select a sidecar, `--tail <n|all>` (default `100`) to bound output, and `--follow` to stream. Logs can contain application secrets; ccpod prints a warning before streaming them.
+
+```sh
+ccpod logs
+ccpod logs --tail 200 --service postgres
+ccpod logs --all --follow --profile team
+```
 
 ### `ccpod down`
 
@@ -240,7 +252,7 @@ Deletes the persistent state directory: `~/.ccpod/state/<profile>/` (or only the
 ## Config commands
 
 ```sh
-ccpod config show [--json] [--profile <name>]   # print the effective merged config
+ccpod config show [--json] [--explain] [--profile <name>]   # print the effective merged config
 ccpod config validate [--profile <name>]        # validate .ccpod.yml + profile without running
 ccpod config get <key>                          # get a global config value
 ccpod config set <key> <value>                  # set a global config value
@@ -248,7 +260,7 @@ ccpod config set <key> <value>                  # set a global config value
 
 ### `ccpod config show`
 
-Prints the merged result for the current directory: auth, image, network, ports, services, init, plugins, claudeArgs, isolation, permissions, the `allowProject*` flags, and env (keys only; project bare names the profile has not allowed are marked as ignored), followed by a CLAUDE.md preview. `--json` emits the same data as JSON.
+Prints the merged result for the current directory: auth, image, network, ports, services, init, plugins, claudeArgs, isolation, permissions, the `allowProject*` flags, and env (keys only), followed by a CLAUDE.md preview. `--json` emits JSON. `--explain` adds each value's source, merge/provenance details, project inputs ignored by policy, and any inputs runtime would reject; rejected inputs cause a non-zero exit rather than being presented as usable config. Env values are redacted and host env values are never resolved.
 
 ### `ccpod config get/set`
 

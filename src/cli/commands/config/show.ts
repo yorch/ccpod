@@ -3,6 +3,12 @@ import { join } from 'node:path';
 import chalk from 'chalk';
 import { defineCommand } from 'citty';
 import { stringify as yamlStringify } from 'yaml';
+import { explainProjectEnvEntry } from '../../../auth/resolver.ts';
+import {
+  explainConfig,
+  redactLiteral,
+  redactServiceEnv,
+} from '../../../config/explain.ts';
 import {
   loadProfileConfig,
   loadProjectConfig,
@@ -17,6 +23,11 @@ import { resolveProfileName } from '../../profile-arg.ts';
 
 export default defineCommand({
   args: {
+    explain: {
+      default: false,
+      description: 'Include effective sources and ignored project inputs',
+      type: 'boolean',
+    },
     json: { default: false, description: 'Output as JSON', type: 'boolean' },
     profile: { description: 'Override profile name', type: 'string' },
   },
@@ -39,20 +50,29 @@ export default defineCommand({
     const envDisplay: Record<string, string> = {};
     const addEnv = (entry: string, fromProject: boolean) => {
       const eqIdx = entry.indexOf('=');
+      const key = (eqIdx === -1 ? entry : entry.slice(0, eqIdx)).trim();
+      if (fromProject) {
+        const decision = explainProjectEnvEntry(
+          entry,
+          profile.allowProjectEnvForward,
+        );
+        if (!decision.eligible) {
+          if (decision.disposition === 'rejected') {
+            // Preserve legacy plain output, but --explain reports the shared
+            // runtime-blocking error below instead of presenting success.
+            if (!args.explain && envDisplay[key] === undefined) {
+              envDisplay[key] = redactLiteral(entry.slice(eqIdx + 1));
+            }
+          } else if (envDisplay[key] === undefined) {
+            envDisplay[key] = `<ignored: ${decision.reason}>`;
+          }
+          return;
+        }
+      }
       if (eqIdx !== -1) {
-        const k = entry.slice(0, eqIdx);
-        const v = entry.slice(eqIdx + 1);
-        envDisplay[k] =
-          k.toLowerCase().includes('key') || k.toLowerCase().includes('token')
-            ? `${'*'.repeat(Math.min(v.length, 8))} (${v.length} chars)`
-            : v;
-      } else if (
-        fromProject &&
-        !profile.allowProjectEnvForward.includes(entry)
-      ) {
-        envDisplay[entry] = '<ignored: not in profile allowProjectEnvForward>';
+        envDisplay[key] = redactLiteral(entry.slice(eqIdx + 1));
       } else {
-        envDisplay[entry] = '<forwarded from host env>';
+        envDisplay[key] = '<forwarded from host env>';
       }
     };
     for (const entry of profile.env) {
@@ -84,14 +104,42 @@ export default defineCommand({
       plugins: merged.plugins,
       ports: merged.ports,
       profile: merged.profileName,
-      services: merged.services,
+      services: redactServiceEnv(merged.services),
       ssh: merged.ssh,
       state: merged.state,
       stateIsolation: merged.stateIsolation,
     };
 
+    const explanation = args.explain
+      ? explainConfig(profile, projectConfig)
+      : undefined;
+    if (explanation?.errors.length) {
+      const details = explanation.errors
+        .map(
+          (error) =>
+            `  ${error.path.replace(/[^\x20-\x7e]/g, '?')}: ${error.reason} (runtime setup rejects this entry)`,
+        )
+        .join('\n');
+      console.error(
+        `${chalk.red('error:')} Project config contains runtime-rejected entries:\n${details}`,
+      );
+      process.exit(1);
+      return;
+    }
+
     if (args.json) {
-      console.log(JSON.stringify(display, null, 2));
+      console.log(
+        JSON.stringify(
+          explanation ? { ...display, explain: explanation } : display,
+          null,
+          2,
+        ),
+      );
+      return;
+    }
+    if (args.explain) {
+      console.log(chalk.bold(`\nMerged config — profile '${profileName}'\n`));
+      console.log(yamlStringify({ ...display, explain: explanation }));
       return;
     }
 

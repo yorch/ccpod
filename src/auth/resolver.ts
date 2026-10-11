@@ -147,6 +147,54 @@ const PROJECT_ENV_DENYLIST = new Set([
 // receives them. Compared case-insensitively against the upper-cased key name.
 const PROJECT_ENV_PREFIX_DENYLIST = ['CCPOD_', 'DOCKER_', 'LD_', 'DYLD_'];
 
+export type ProjectEnvEligibility =
+  | { eligible: true; name: string; kind: 'literal' | 'forward' }
+  | {
+      eligible: false;
+      disposition: 'ignored' | 'rejected';
+      name: string;
+      reason: string;
+    };
+
+/** Explain whether an untrusted project env entry is eligible without reading host env values. */
+export function explainProjectEnvEntry(
+  entry: string,
+  projectForwardAllowlist: string[] = [],
+): ProjectEnvEligibility {
+  const eqIdx = entry.indexOf('=');
+  const name = (eqIdx === -1 ? entry : entry.slice(0, eqIdx)).trim();
+  const upperName = name.toUpperCase();
+  if (
+    PROJECT_ENV_DENYLIST.has(upperName) ||
+    PROJECT_ENV_PREFIX_DENYLIST.some((prefix) => upperName.startsWith(prefix))
+  ) {
+    return {
+      disposition: 'ignored',
+      eligible: false,
+      name,
+      reason: 'blocked project env key',
+    };
+  }
+  if (eqIdx !== -1 && /\$\{[A-Za-z_]/.test(entry.slice(eqIdx + 1))) {
+    return {
+      disposition: 'rejected',
+      eligible: false,
+      name,
+      reason: 'project env interpolation is not allowed',
+    };
+  }
+  if (eqIdx === -1 && !projectForwardAllowlist.includes(name)) {
+    return {
+      disposition: 'ignored',
+      eligible: false,
+      name,
+      reason:
+        'host forwarding is not allowed by profile allowProjectEnvForward',
+    };
+  }
+  return { eligible: true, kind: eqIdx === -1 ? 'forward' : 'literal', name };
+}
+
 export function resolveEnvForwarding(
   profileKeys: string[],
   projectKeys: string[],
@@ -169,26 +217,31 @@ export function resolveEnvForwarding(
       // but we want to fail consistently rather than silently forward them.
       const name = rawName.trim();
       // Only project entries are untrusted; profile/CLI use interpolation.
-      const upperName = name.toUpperCase();
-      const isDenylisted = PROJECT_ENV_DENYLIST.has(upperName);
-      const isPrefixDenylisted = PROJECT_ENV_PREFIX_DENYLIST.some((p) =>
-        upperName.startsWith(p),
-      );
-      if (!allowInterpolation && (isDenylisted || isPrefixDenylisted)) {
-        console.warn(
-          `Warning: project .ccpod.yml env entry '${name}' is not allowed ` +
-            '(it could redirect API traffic, bypass sandbox controls, or ' +
-            'redirect the docker client) — ignoring it.',
-        );
-        continue;
-      }
-      if (eqIdx !== -1) {
-        const rawValue = entry.slice(eqIdx + 1);
-        if (!allowInterpolation && /\$\{[A-Za-z_]/.test(rawValue)) {
+      const projectEligibility = allowInterpolation
+        ? null
+        : explainProjectEnvEntry(entry, projectForwardAllowlist);
+      if (projectEligibility && !projectEligibility.eligible) {
+        if (projectEligibility.disposition === 'rejected') {
           throw new Error(
             `${source} entry '${name}=…' uses \${VAR} interpolation, which is only allowed in profile or --env entries. Use a literal value, or have the profile list the variable in allowProjectEnvForward and forward it bare.`,
           );
         }
+        if (projectEligibility.reason === 'blocked project env key') {
+          console.warn(
+            `Warning: project .ccpod.yml env entry '${name}' is not allowed ` +
+              '(it could redirect API traffic, bypass sandbox controls, or ' +
+              'redirect the docker client) — ignoring it.',
+          );
+        } else {
+          console.warn(
+            `Warning: project .ccpod.yml env entry '${name}' forwards a host variable, ` +
+              `but the profile does not list it in allowProjectEnvForward — ignoring it.`,
+          );
+        }
+        continue;
+      }
+      if (eqIdx !== -1) {
+        const rawValue = entry.slice(eqIdx + 1);
         resolved[name] = allowInterpolation
           ? interpolateHostEnv(rawValue, { source }, warned)
           : rawValue;

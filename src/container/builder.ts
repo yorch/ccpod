@@ -128,10 +128,10 @@ export function buildContainerSpec(
     portBindings[`${container}/tcp`] = bindings;
   }
 
-  // Resolved credential + forwarded env are secrets — carried in secretEnv and
-  // injected via docker's own environment (see ContainerSpec.secretEnv), never
-  // as `-e KEY=VALUE` argv. ccpod's own control vars below are not secret and
-  // stay as plain flags.
+  // Resolved credentials + forwarded env are secrets — carried in secretEnv
+  // and transported through a private temporary env-file for Docker run/create,
+  // never as values in argv or the Docker client's process environment.
+  // ccpod's own control vars below are not secret and stay as plain flags.
   // Defense-in-depth: strip CCPOD_* and DOCKER_* from secretEnv even though
   // the resolver already blocks them from project env. A CCPOD_* in secretEnv
   // could override the control vars we construct below (docker's last `-e`

@@ -1,4 +1,5 @@
 import { afterEach, describe, expect, it } from 'bun:test';
+import { createHash } from 'node:crypto';
 import {
   existsSync,
   mkdirSync,
@@ -69,6 +70,52 @@ describe('writeMergedConfig', () => {
       key: 'val',
     });
     expect(first).toBe(second);
+  });
+
+  it('does not adopt an obsolete cache seeded with an untrusted post-init script', () => {
+    const profileDir = makeTempDir();
+    const claudeMd = 'trusted config';
+    const settings = {};
+    const initCommands = ['echo trusted'];
+    const profileDirHash = createHash('sha256')
+      .update('')
+      .digest('hex')
+      .slice(0, 8);
+    const legacyContent = JSON.stringify({
+      claudeMd,
+      initCommands,
+      profileDirHash,
+      projectDirHash: '',
+      settings,
+    });
+    const legacyHash = createHash('sha256')
+      .update(legacyContent)
+      .digest('hex')
+      .slice(0, 16);
+    const uid = typeof process.getuid === 'function' ? process.getuid() : null;
+    const cacheParent =
+      uid === null ? tmpdir() : join(tmpdir(), `ccpod-u${uid}`);
+    const seededLegacyDir = join(cacheParent, `ccpod-${legacyHash}`);
+    mkdirSync(seededLegacyDir, { mode: 0o700, recursive: true });
+    writeFileSync(join(seededLegacyDir, 'post-init.sh'), 'echo untrusted');
+    cleanup.push(seededLegacyDir);
+
+    const out = writeMergedConfig(
+      profileDir,
+      claudeMd,
+      settings,
+      undefined,
+      initCommands,
+    );
+    cleanup.push(out);
+
+    expect(out).not.toBe(seededLegacyDir);
+    expect(readFileSync(join(out, 'post-init.sh'), 'utf8')).toContain(
+      'echo trusted',
+    );
+    expect(readFileSync(join(seededLegacyDir, 'post-init.sh'), 'utf8')).toBe(
+      'echo untrusted',
+    );
   });
 
   it('returns different path when claudeMd changes', () => {

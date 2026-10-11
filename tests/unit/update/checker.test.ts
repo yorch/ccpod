@@ -1,5 +1,6 @@
-import { afterEach, beforeEach, describe, expect, it } from 'bun:test';
-import { mkdirSync, rmSync } from 'node:fs';
+import { describe, expect, it } from 'bun:test';
+import { mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { isNewer } from '../../../src/update/checker.ts';
 
@@ -58,48 +59,58 @@ describe('isNewer()', () => {
   });
 });
 
-// checkForUpdate I/O behaviour via CCPOD_TEST_DIR
+// checkForUpdate I/O uses an injected temporary cache and fake fetch only.
 describe('checkForUpdate() — cache behaviour', () => {
-  let tmpDir: string;
-
-  beforeEach(() => {
-    tmpDir = join(import.meta.dir, `__tmp_checker_${Date.now()}`);
-    mkdirSync(tmpDir, { recursive: true });
-    process.env.CCPOD_TEST_DIR = tmpDir;
+  it('uses cached versions and waits for the injected background refresh', async () => {
+    const dir = mkdtempSync(join(tmpdir(), 'ccpod-checker-'));
+    const path = join(dir, 'cache.json');
+    const pending: Promise<void>[] = [];
+    try {
+      const { checkForUpdate } = await import('../../../src/update/checker.ts');
+      const dependencies = {
+        cachePath: path,
+        fetch: (async () =>
+          new Response(JSON.stringify({ tag_name: 'v0.3.0' }))) as typeof fetch,
+        scheduleBackground(task: Promise<void>) {
+          pending.push(task);
+        },
+      };
+      expect(checkForUpdate('0.1.0', dependencies)).toBeNull();
+      await Promise.all(pending);
+      expect(JSON.parse(readFileSync(path, 'utf8')).latestVersion).toBe(
+        'v0.3.0',
+      );
+      expect(checkForUpdate('0.1.0', dependencies)).toBe('v0.3.0');
+    } finally {
+      rmSync(dir, { force: true, recursive: true });
+    }
   });
 
-  afterEach(() => {
-    rmSync(tmpDir, { force: true, recursive: true });
-    delete process.env.CCPOD_TEST_DIR;
-  });
-
-  it('returns null when no cache exists', async () => {
-    const { checkForUpdate } = await import('../../../src/update/checker.ts');
-    expect(checkForUpdate('0.1.0')).toBeNull();
-  });
-
-  it('returns null when cached version equals current', async () => {
-    const { writeCache, checkForUpdate } = await import(
-      '../../../src/update/checker.ts'
+  it('does not let fake fetch or a deferred cache write escape the test', async () => {
+    const dir = mkdtempSync(join(tmpdir(), 'ccpod-checker-'));
+    const path = join(dir, 'cache.json');
+    const pending: Promise<void>[] = [];
+    writeFileSync(
+      path,
+      JSON.stringify({ checkedAt: 'invalid', latestVersion: 'v0.2.0' }),
     );
-    writeCache('v0.1.0');
-    // Make the checkedAt appear recent
-    expect(checkForUpdate('0.1.0')).toBeNull();
-  });
-
-  it('returns latest when cached version is newer', async () => {
-    const { writeCache, checkForUpdate } = await import(
-      '../../../src/update/checker.ts'
-    );
-    writeCache('v0.2.0');
-    expect(checkForUpdate('0.1.0')).toBe('v0.2.0');
-  });
-
-  it('returns null when cache is older than current', async () => {
-    const { writeCache, checkForUpdate } = await import(
-      '../../../src/update/checker.ts'
-    );
-    writeCache('v0.0.9');
-    expect(checkForUpdate('0.1.0')).toBeNull();
+    try {
+      const { checkForUpdate } = await import('../../../src/update/checker.ts');
+      const result = checkForUpdate('0.1.0', {
+        cachePath: path,
+        fetch: (async () =>
+          new Response('offline', { status: 503 })) as typeof fetch,
+        scheduleBackground(task) {
+          pending.push(task);
+        },
+      });
+      expect(result).toBe('v0.2.0');
+      await Promise.all(pending);
+      expect(JSON.parse(readFileSync(path, 'utf8')).latestVersion).toBe(
+        'v0.2.0',
+      );
+    } finally {
+      rmSync(dir, { force: true, recursive: true });
+    }
   });
 });

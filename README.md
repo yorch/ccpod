@@ -148,7 +148,9 @@ ccpod run --resume <session-id>  Resume a previous Claude session
 
 ccpod shell                      Open an interactive shell in the container
 ccpod exec -- <command>          Run a one-off command in the project container
-ccpod doctor                     Check runtime, config, auth and image
+ccpod doctor                     Passively check config and local prerequisites
+ccpod doctor --probe             Also probe the Docker daemon (read-only, bounded)
+ccpod logs                       View current-project container logs (may contain secrets)
 
 ccpod init                       First-run setup wizard
 ccpod init --profile <name>      Create a named profile
@@ -171,7 +173,8 @@ ccpod image build --apply                 Also update profile image.use to the b
 ccpod image pull [--profile <name>]       Pull latest base or declared image
 
 ccpod ps                         List running ccpod containers
-ccpod ps --all                   Include stopped containers (also: --profile, --json)
+ccpod ps --all                   Include stopped containers (also: --profile, --json, --details)
+ccpod logs --all --follow        Follow logs from every project
 ccpod down                       Stop Claude container + sidecars for $PWD
 ccpod down --all                 Stop every ccpod container on this machine
 ccpod down --profile <name>      Limit teardown to a specific profile
@@ -182,6 +185,7 @@ ccpod prune [--dry-run] [--force]         Remove stopped containers, orphaned ne
 ccpod config get <key>           Get a global config value
 ccpod config set <key> <value>   Set a global config value
 ccpod config show                Print resolved merged config
+ccpod config show --explain      Include sources, ignored inputs and runtime errors
 ccpod config validate            Validate .ccpod.yml
 
 ccpod update                     Update ccpod to the latest release
