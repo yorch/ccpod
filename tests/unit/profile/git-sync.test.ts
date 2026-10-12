@@ -326,4 +326,142 @@ describe('syncGitConfig', () => {
     ).rejects.toThrow('local changes; no reset was performed');
     expect(readFileSync(file, 'utf8')).toBe('user edit');
   });
+
+  it('ignores untracked files when verifying a reused checkout', async () => {
+    const { repoDir, ref } = makeLocalRepo();
+    const profileDir = makeTempDir();
+    await syncGitConfig(profileDir, repoDir, ref, 'always');
+    const configDir = join(profileDir, 'config');
+    // A leftover editor/Finder artifact must not block every start: reset
+    // --hard never removes untracked files, so they are not a safety concern.
+    writeFileSync(join(configDir, '.DS_Store'), 'junk');
+
+    await syncGitConfig(profileDir, repoDir, ref, 'always');
+
+    expect(existsSync(join(configDir, '.DS_Store'))).toBe(true);
+    expect(readFileSync(join(configDir, 'config.txt'), 'utf8')).toBe(
+      'initial content',
+    );
+  });
+
+  it('accepts an equivalent remote spelling for the same repository', async () => {
+    const { repoDir, ref } = makeLocalRepo();
+    const profileDir = makeTempDir();
+    await syncGitConfig(profileDir, repoDir, ref, 'always');
+    const configDir = join(profileDir, 'config');
+
+    // A trailing slash is spelling, not a different repository.
+    git(['remote', 'set-url', 'origin', `${repoDir}/`], configDir);
+    await syncGitConfig(profileDir, repoDir, ref, 'always');
+    expect(readFileSync(join(configDir, 'config.txt'), 'utf8')).toBe(
+      'initial content',
+    );
+  });
+
+  it('refuses a `.git`-suffixed origin that need not be the same repository', async () => {
+    const { repoDir, ref } = makeLocalRepo();
+    const profileDir = makeTempDir();
+    await syncGitConfig(profileDir, repoDir, ref, 'always');
+    const configDir = join(profileDir, 'config');
+    // On a plain server `repo` and `repo.git` can be distinct repositories, so
+    // this fails closed with an actionable message instead of guessing.
+    git(['remote', 'set-url', 'origin', `${repoDir}.git`], configDir);
+
+    await expect(
+      syncGitConfig(profileDir, repoDir, ref, 'always'),
+    ).rejects.toThrow(/origin does not match profile config\.repo/);
+  });
+
+  it('does not equate scp-style and ssh-URL spellings of the same host', async () => {
+    const { repoDir, ref } = makeLocalRepo();
+    const profileDir = makeTempDir();
+    await syncGitConfig(profileDir, repoDir, ref, 'always');
+    const configDir = join(profileDir, 'config');
+    // `host:repo` is home-relative while `ssh://host/repo` is absolute, so the
+    // two spellings can address different repositories and must not match.
+    git(
+      ['remote', 'set-url', 'origin', 'ssh://git@example.invalid/repo'],
+      configDir,
+    );
+
+    await expect(
+      syncGitConfig(profileDir, repoDir, ref, 'always'),
+    ).rejects.toThrow('origin does not match profile config.repo');
+  });
+
+  it('refuses a reset that would overwrite an untracked local file', async () => {
+    const { repoDir, ref } = makeLocalRepo();
+    const profileDir = makeTempDir();
+    await syncGitConfig(profileDir, repoDir, ref, 'always');
+    const configDir = join(profileDir, 'config');
+    writeFileSync(join(repoDir, 'incoming.txt'), 'from upstream');
+    git(['add', '.'], repoDir);
+    git(['commit', '-m', 'add incoming'], repoDir);
+    // The incoming revision tracks a path the checkout already has as untracked
+    // local work; `reset --hard` would destroy it.
+    writeFileSync(join(configDir, 'incoming.txt'), 'local untracked work');
+
+    await expect(
+      syncGitConfig(profileDir, repoDir, ref, 'always'),
+    ).rejects.toThrow('would be overwritten');
+    expect(readFileSync(join(configDir, 'incoming.txt'), 'utf8')).toBe(
+      'local untracked work',
+    );
+  });
+
+  it('refuses an incoming file that an untracked directory would replace', async () => {
+    const { repoDir, ref } = makeLocalRepo();
+    const profileDir = makeTempDir();
+    await syncGitConfig(profileDir, repoDir, ref, 'always');
+    const configDir = join(profileDir, 'config');
+    writeFileSync(join(repoDir, 'notes'), 'incoming file');
+    git(['add', '.'], repoDir);
+    git(['commit', '-m', 'add notes file'], repoDir);
+    mkdirSync(join(configDir, 'notes'));
+    writeFileSync(join(configDir, 'notes', 'draft.txt'), 'local work');
+
+    await expect(
+      syncGitConfig(profileDir, repoDir, ref, 'always'),
+    ).rejects.toThrow('would be overwritten');
+    expect(readFileSync(join(configDir, 'notes', 'draft.txt'), 'utf8')).toBe(
+      'local work',
+    );
+  });
+
+  it('refuses an untracked file that an incoming path nests under', async () => {
+    const { repoDir, ref } = makeLocalRepo();
+    const profileDir = makeTempDir();
+    await syncGitConfig(profileDir, repoDir, ref, 'always');
+    const configDir = join(profileDir, 'config');
+    mkdirSync(join(repoDir, 'notes'));
+    writeFileSync(join(repoDir, 'notes', 'draft.txt'), 'incoming nested file');
+    git(['add', '.'], repoDir);
+    git(['commit', '-m', 'add nested file'], repoDir);
+    writeFileSync(join(configDir, 'notes'), 'local untracked file');
+
+    await expect(
+      syncGitConfig(profileDir, repoDir, ref, 'always'),
+    ).rejects.toThrow('would be overwritten');
+    expect(readFileSync(join(configDir, 'notes'), 'utf8')).toBe(
+      'local untracked file',
+    );
+  });
+
+  it('still syncs when untracked files do not collide with the incoming revision', async () => {
+    const { repoDir, ref } = makeLocalRepo();
+    const profileDir = makeTempDir();
+    await syncGitConfig(profileDir, repoDir, ref, 'always');
+    const configDir = join(profileDir, 'config');
+    writeFileSync(join(repoDir, 'incoming.txt'), 'from upstream');
+    git(['add', '.'], repoDir);
+    git(['commit', '-m', 'add incoming'], repoDir);
+    writeFileSync(join(configDir, '.DS_Store'), 'junk');
+
+    await syncGitConfig(profileDir, repoDir, ref, 'always');
+
+    expect(readFileSync(join(configDir, 'incoming.txt'), 'utf8')).toBe(
+      'from upstream',
+    );
+    expect(existsSync(join(configDir, '.DS_Store'))).toBe(true);
+  });
 });

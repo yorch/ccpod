@@ -27,7 +27,13 @@ export async function clearStateSafely(
   const verifyInactive = async () => {
     const containers = await deps.list(filter);
     const active = containers.find(
-      (container) => !['exited', 'dead', 'removing'].includes(container.state),
+      (container) =>
+        // Only the main and shell containers mount /ccpod/state. A running
+        // sidecar (redis, postgres, ...) shares the profile label but never
+        // touches this profile's conversation state, so it must not block
+        // clearing it.
+        (container.type === 'main' || container.type === 'shell') &&
+        !['exited', 'dead', 'removing'].includes(container.state),
     );
     if (active) {
       throw new Error(

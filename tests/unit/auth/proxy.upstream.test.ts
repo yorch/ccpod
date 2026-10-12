@@ -15,7 +15,7 @@ import type {
   OAuthCredentialStoreIdentity,
   OAuthCredentials,
 } from '../../../src/auth/keychain.ts';
-import { AuthProxy } from '../../../src/auth/proxy.ts';
+import { AuthProxy, isOriginFormTarget } from '../../../src/auth/proxy.ts';
 
 // End-to-end tests for AuthProxy against local fake "Anthropic API" and
 // "OAuth token" servers: header rewriting, 401 retry, single-flight refresh,
@@ -72,6 +72,8 @@ async function startProxy(opts: {
   readCredentials?: () => OAuthCredentials | undefined;
   tokenEndpoint?: string;
   lockRoot?: string;
+  persistDeadlineMs?: number;
+  stopRefreshWaitMs?: number;
   writeCredentials?: (creds: OAuthCredentials) => void;
   readCredentialEntry?: (
     identity?: OAuthCredentialStoreIdentity,
@@ -107,6 +109,12 @@ async function startProxy(opts: {
       })(),
     sentinelKey: SENTINEL,
     tokenEndpoint: opts.tokenEndpoint ?? `${opts.apiUpstream}/token`,
+    ...(opts.persistDeadlineMs === undefined
+      ? {}
+      : { persistDeadlineMs: opts.persistDeadlineMs }),
+    ...(opts.stopRefreshWaitMs === undefined
+      ? {}
+      : { stopRefreshWaitMs: opts.stopRefreshWaitMs }),
   });
   proxies.push(proxy);
   await proxy.start();
@@ -122,7 +130,24 @@ const call = (base: string, init: RequestInit = {}) =>
   });
 
 describe('AuthProxy → upstream request rewriting', () => {
-  it('rejects authority, absolute, and backslash targets before credential access', async () => {
+  it('never sends credentials to an origin named in the request target', async () => {
+    // The named host is a REAL reachable server, so any regression that
+    // resolves the target against its own authority (for example dropping both
+    // the origin-form check and the origin comparison) leaks the bearer token
+    // here instead of silently succeeding. The assertion is on that invariant
+    // rather than on a 400: an HTTP parser may legitimately collapse a leading
+    // `//` into an ordinary path, which is then just a path on the CONFIGURED
+    // upstream, and asserting the exact status made this test depend on the
+    // parser's normalisation (it failed on Linux while passing elsewhere).
+    let foreignCalls = 0;
+    let foreignAuth: string | undefined;
+    const foreign = await listen((req, res) => {
+      foreignCalls++;
+      foreignAuth = String(req.headers.authorization);
+      req.resume();
+      res.writeHead(200).end('leaked');
+    });
+    const foreignPort = Number(new URL(foreign).port);
     let apiCalls = 0;
     let credentialReads = 0;
     const api = await listen((req, res) => {
@@ -139,14 +164,18 @@ describe('AuthProxy → upstream request rewriting', () => {
     });
     const proxyPort = Number(new URL(base).port);
     for (const path of [
-      '//attacker.invalid/steal',
-      'http://attacker.invalid/steal',
-      '/\\\\attacker.invalid/steal',
+      `//127.0.0.1:${foreignPort}/steal`,
+      `http://127.0.0.1:${foreignPort}/steal`,
+      `/\\127.0.0.1:${foreignPort}/steal`,
     ]) {
-      const response = await new Promise<number>((resolve, reject) => {
+      const status = await new Promise<number>((resolve, reject) => {
         const req = rawHttpRequest(
           {
-            headers: { 'content-length': '4', 'x-api-key': SENTINEL },
+            headers: {
+              connection: 'close',
+              'content-length': '4',
+              'x-api-key': SENTINEL,
+            },
             hostname: '127.0.0.1',
             method: 'POST',
             path,
@@ -160,11 +189,17 @@ describe('AuthProxy → upstream request rewriting', () => {
         req.on('error', reject);
         req.end('body');
       });
-      expect(response).toBe(400);
+      // Rejected outright, or forwarded only to the configured upstream.
+      if (status !== 400) {
+        expect(status).toBe(200);
+        expect(apiCalls).toBeGreaterThan(0);
+      }
     }
+    expect(foreignCalls).toBe(0);
+    expect(foreignAuth).toBeUndefined();
     expect(credentialReads).toBe(1); // initial startup only
-    expect(apiCalls).toBe(0);
   });
+
   it('swaps the sentinel for a bearer token and forwards method, path, query and body', async () => {
     const seen: Seen[] = [];
     let body = '';
@@ -543,6 +578,160 @@ describe('AuthProxy → 401 refresh and retry', () => {
     expect(stopped).toBe(true);
     expect(stored.refreshToken).toBe('r2');
     expect(state.tokenCalls).toEqual(['r1']);
+  });
+
+  it('gives up reconciling an unwritable store instead of holding the lock forever', async () => {
+    const { handler, state } = fakeBackend();
+    const api = await listen(handler);
+    const stored = creds({ expiresAt: 0 });
+    let writes = 0;
+    const diagnostics: string[] = [];
+    const originalWarn = console.warn;
+    console.warn = (...args: unknown[]) => {
+      diagnostics.push(args.join(' '));
+    };
+    let base: string;
+    try {
+      base = await startProxy({
+        apiUpstream: api,
+        persistDeadlineMs: 150,
+        readCredentials: () => stored,
+        stopRefreshWaitMs: 500,
+        writeCredentials: () => {
+          writes++;
+          throw new Error('synthetic unwritable store');
+        },
+      });
+      // The session keeps working from the in-memory rotation...
+      expect((await call(base)).status).toBe(200);
+      // ...and shutdown is not held hostage by the failed reconciliation.
+      const before = Date.now();
+      await proxies.at(-1)?.stop();
+      expect(Date.now() - before).toBeLessThan(1_000);
+    } finally {
+      console.warn = originalWarn;
+    }
+    expect(writes).toBeGreaterThan(1);
+    expect(diagnostics.join('\n')).toContain(
+      'credential persistence unverified after 150ms',
+    );
+    expect(stored.refreshToken).toBe('r1');
+    expect(state.tokenCalls).toEqual(['r1']);
+  });
+
+  it('bounds stop() while a reconciliation is still pending', async () => {
+    const { handler } = fakeBackend();
+    const api = await listen(handler);
+    const stored = creds({ expiresAt: 0 });
+    let signalFirstFailure: (() => void) | undefined;
+    const firstFailure = new Promise<void>((resolve) => {
+      signalFirstFailure = resolve;
+    });
+    const lockRoot = mkdtempSync(join(tmpdir(), 'ccpod-proxy-stop-bound-'));
+    lockDirs.push(lockRoot);
+    const proxy = new AuthProxy({
+      apiUpstream: api,
+      hostname: '127.0.0.1',
+      lockRoot,
+      persistDeadlineMs: 400,
+      readCredentials: () => stored,
+      sentinelKey: SENTINEL,
+      stopRefreshWaitMs: 50,
+      tokenEndpoint: `${api}/token`,
+      writeCredentials: () => {
+        signalFirstFailure?.();
+        throw new Error('synthetic unwritable store');
+      },
+    });
+    proxies.push(proxy);
+    const started = proxy.start().catch(() => {});
+    await firstFailure;
+
+    const before = Date.now();
+    await proxy.stop();
+    // stopRefreshWaitMs (50ms) is far below the reconciliation deadline
+    // (400ms): stop() must return on its own budget, not the loop's.
+    expect(Date.now() - before).toBeLessThan(300);
+
+    // The background reconciliation still terminates on its own deadline.
+    await started;
+  });
+
+  it('never reinstates a consumed generation after persistence gave up', async () => {
+    const tokenCalls: string[] = [];
+    const handler = (req: IncomingMessage, res: ServerResponse) => {
+      if (req.url === '/token') {
+        let raw = '';
+        req.on('data', (c) => {
+          raw += c;
+        });
+        req.on('end', () => {
+          const { refresh_token } = JSON.parse(raw) as {
+            refresh_token: string;
+          };
+          tokenCalls.push(refresh_token);
+          const next: Record<string, [string, number, string]> = {
+            r1: ['access-r1', 0, 'r2'],
+            r2: ['access-r2', 0, 'r3'],
+            r3: ['access-r3', 86_400, 'r4'],
+          };
+          const entry = next[refresh_token];
+          if (!entry) {
+            res.writeHead(400);
+            res.end('{"error":"invalid_grant"}');
+            return;
+          }
+          res.writeHead(200);
+          res.end(
+            JSON.stringify({
+              access_token: entry[0],
+              // r1 and r2 expire instantly so each request refreshes again.
+              expires_in: entry[1],
+              refresh_token: entry[2],
+            }),
+          );
+        });
+        return;
+      }
+      req.resume();
+      if (String(req.headers.authorization).startsWith('Bearer access-r')) {
+        res.writeHead(200);
+        res.end('fine');
+        return;
+      }
+      res.writeHead(401);
+      res.end('expired');
+    };
+    const api = await listen(handler);
+    const stored = creds({
+      accessToken: 'old-access',
+      expiresAt: 0,
+      refreshToken: 'r1',
+    });
+    let writes = 0;
+    const base = await startProxy({
+      apiUpstream: api,
+      persistDeadlineMs: 120,
+      readCredentials: () => stored,
+      stopRefreshWaitMs: 500,
+      tokenEndpoint: `${api}/token`,
+      writeCredentials: () => {
+        writes++;
+        throw new Error('synthetic unwritable store');
+      },
+    });
+    // The first rotation could not be written; the store still holds r1.
+    expect(tokenCalls).toEqual(['r1']);
+
+    // Two more rotations, each failing to persist, then a successful request:
+    // every consumed generation (r1 AND r2) must stay memorable, because the
+    // store still advertises r1 and would otherwise be adopted back.
+    for (let i = 0; i < 3; i++) {
+      expect((await call(base)).status).toBe(200);
+    }
+
+    expect(tokenCalls).toEqual(['r1', 'r2', 'r3']);
+    expect(writes).toBeGreaterThan(3);
   });
 
   it('rechecks after unreadable read-back and adopts a newer generation before retrying the write', async () => {
@@ -1000,5 +1189,15 @@ describe('AuthProxy lifecycle', () => {
     proxies = [];
 
     await expect(call(base)).rejects.toThrow();
+  });
+});
+
+describe('isOriginFormTarget', () => {
+  it('accepts origin-form paths and rejects authority/absolute/backslash forms', () => {
+    expect(isOriginFormTarget('/v1/messages?x=1')).toBe(true);
+    expect(isOriginFormTarget('/')).toBe(true);
+    expect(isOriginFormTarget('//attacker.invalid/steal')).toBe(false);
+    expect(isOriginFormTarget('http://attacker.invalid/steal')).toBe(false);
+    expect(isOriginFormTarget('/\\attacker.invalid/steal')).toBe(false);
   });
 });

@@ -169,13 +169,36 @@ function readServiceFallbackAccount(): string | undefined {
       ['find-generic-password', '-s', KEYCHAIN_SERVICE],
       { encoding: 'utf8', stdio: ['ignore', 'pipe', 'ignore'], timeout: 5000 },
     );
-    const accounts = [...attributes.matchAll(/"acct"<blob>="([^"]+)"/g)].map(
-      (match) => match[1],
-    );
-    return accounts.length === 1 && accounts[0] ? accounts[0] : undefined;
+    return parseKeychainAccountOutput(attributes);
   } catch {
     return undefined;
   }
+}
+
+/**
+ * Read the single `acct` attribute from `security find-generic-password`
+ * metadata. `security` prints printable accounts as `"acct"<blob>="name"` and
+ * everything else as hex (`"acct"<blob>=0x6162`), so both spellings are
+ * decoded; an ambiguous result (zero or several accounts) is refused.
+ */
+export function parseKeychainAccountOutput(
+  attributes: string,
+): string | undefined {
+  const accounts: string[] = [];
+  for (const match of attributes.matchAll(
+    /"acct"<blob>=(?:"((?:[^"\\]|\\.)*)"|0x([0-9A-Fa-f]+))/g,
+  )) {
+    const quoted = match[1];
+    const decoded =
+      quoted !== undefined
+        ? quoted.replace(/\\(.)/g, '$1')
+        : Buffer.from(match[2] ?? '', 'hex').toString('utf8');
+    // An empty account is unusable for `-a`, so treat it as absent.
+    if (decoded !== '') {
+      accounts.push(decoded);
+    }
+  }
+  return accounts.length === 1 ? accounts[0] : undefined;
 }
 
 /**

@@ -11,6 +11,7 @@ import {
 import { tmpdir } from 'node:os';
 import { dirname, join } from 'node:path';
 import { dockerExec, dockerSpawn } from '../../../src/runtime/docker.ts';
+import { sweepStalePrivateDirectories } from '../../../src/runtime/env-file.ts';
 
 let root = '';
 let originalEnv: Record<string, string | undefined> = {};
@@ -469,14 +470,8 @@ describe('docker environment-file transport', () => {
       dockerExec(['run', 'image'], { 'BAD=NAME': 'value' }),
     ).rejects.toThrow('Invalid environment variable name');
     await expect(
-      dockerSpawn(['run', 'image'], { TOKEN: 'first\nINJECTED=yes' }),
-    ).rejects.toThrow('forbidden');
-    await expect(
-      dockerExec(['run', 'image'], { TOKEN: 'first\rINJECTED=yes' }),
-    ).rejects.toThrow('forbidden');
-    await expect(
       dockerSpawn(['run', 'image'], { TOKEN: 'contains\0nul' }),
-    ).rejects.toThrow('forbidden');
+    ).rejects.toThrow('forbidden NUL');
     await expect(
       dockerExec(['run', '--unknown-option', 'value', '-e', 'TOKEN', 'image'], {
         TOKEN: 'forwarded',
@@ -486,5 +481,76 @@ describe('docker environment-file transport', () => {
       directoriesBeforeUnknownOption,
     );
     await expect(readFile(join(dir, 'args.json'))).rejects.toThrow();
+  });
+
+  test('carries line-break values in the Docker CLI environment, not argv or the env-file', async () => {
+    const dir = await setupFakeDocker();
+    const multiline = 'first-line\nINJECTED=yes';
+    const result = await dockerExec(
+      ['run', '-e', 'PEM_KEY', '-e', 'PLAIN_KEY', 'image'],
+      { PEM_KEY: multiline, PLAIN_KEY: 'plain-value' },
+    );
+    expect(result.exitCode).toBe(0);
+    const captured = JSON.parse(
+      await readFile(join(dir, 'args.json'), 'utf8'),
+    ) as { args: string[]; env: Record<string, string> };
+    // The line-break value never reaches argv...
+    expect(captured.args).not.toContain(multiline);
+    // ...and cannot be represented in a line-based env-file, so it rides in
+    // the Docker CLI's own environment (bare `-e PEM_KEY` stays in argv).
+    expect(captured.env.PEM_KEY).toBe(multiline);
+    expect(captured.args).toContain('PEM_KEY');
+    const file = JSON.parse(await readFile(join(dir, 'file.json'), 'utf8')) as {
+      content: string;
+      resolvedEnv: Record<string, string>;
+    };
+    expect(file.content).toContain('PLAIN_KEY=plain-value');
+    expect(file.content).not.toContain('PEM_KEY');
+    expect(captured.env.PLAIN_KEY).toBeUndefined();
+  });
+
+  test('uses no env-file at all when every value carries a line break', async () => {
+    const dir = await setupFakeDocker();
+    const code = await dockerSpawn(
+      ['run', '--name', 'sidecar-test', '-e', 'PEM_KEY', 'image'],
+      { PEM_KEY: 'a\nb' },
+    );
+    expect(code).toBe(0);
+    const captured = JSON.parse(
+      await readFile(join(dir, 'args.json'), 'utf8'),
+    ) as { args: string[]; env: Record<string, string> };
+    expect(captured.args).not.toContain('--env-file');
+    expect(captured.env.PEM_KEY).toBe('a\nb');
+    await expect(readFile(join(dir, 'file.json'))).rejects.toThrow();
+  });
+
+  test('reclaims leftover private directories whose owning process is gone', async () => {
+    const owner = Bun.spawn(['sh', '-c', 'true']);
+    await owner.exited;
+    const uid = process.getuid?.() ?? 'user';
+    const stale: string[] = [];
+    const live: string[] = [];
+    for (const prefix of [`ccpod-env-${uid}-`, `ccpod-owned-cid-${uid}-`]) {
+      const dir = await mkdtemp(join(tmpdir(), `${prefix}${owner.pid}-`));
+      await chmod(dir, 0o700);
+      await Bun.write(join(dir, 'scratch'), 'leftover');
+      stale.push(dir);
+      const kept = await mkdtemp(join(tmpdir(), `${prefix}${process.pid}-`));
+      await chmod(kept, 0o700);
+      live.push(kept);
+    }
+    try {
+      await sweepStalePrivateDirectories();
+      for (const dir of stale) {
+        await expect(stat(dir)).rejects.toThrow();
+      }
+      for (const dir of live) {
+        expect((await stat(dir)).isDirectory()).toBe(true);
+      }
+    } finally {
+      for (const dir of [...live, ...stale]) {
+        await rm(dir, { force: true, recursive: true });
+      }
+    }
   });
 });

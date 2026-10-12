@@ -1,8 +1,10 @@
 import { describe, expect, it, mock } from 'bun:test';
+import { writeFileSync } from 'node:fs';
 import type { ContainerSpec } from '../../../src/container/builder.ts';
 import type { RunnerDeps } from '../../../src/container/runner.ts';
 import {
   findRunningShellTarget,
+  forceRemoveOwnedContainers,
   runContainer,
   shellContainer,
 } from '../../../src/container/runner.ts';
@@ -507,6 +509,46 @@ describe('runContainer', () => {
     ]);
   });
 
+  it('says it stopped the container when the user detached a proxy run', async () => {
+    const ownedId = 'b'.repeat(64);
+    const { deps } = makeDeps([
+      { exitCode: 1, stderr: 'No such container', stdout: '' },
+      { exitCode: 0, stderr: '', stdout: ownedId }, // create
+      { exitCode: 0, stderr: '', stdout: 'running' }, // pre-stop inspect
+      { exitCode: 0, stderr: '', stdout: '' }, // stop
+      { exitCode: 0, stderr: '', stdout: 'exited' }, // verify
+    ]);
+    const logged: string[] = [];
+    const originalLog = console.log;
+    console.log = (...values: unknown[]) => {
+      logged.push(values.join(' '));
+    };
+    try {
+      // The spawned start/attach returns while the container is still running:
+      // exactly what a Ctrl-P Ctrl-Q detach looks like.
+      expect(await runContainer(makeSpec({ proxyAuth: true }), deps)).toBe(0);
+    } finally {
+      console.log = originalLog;
+    }
+    expect(logged.join('\n')).toContain('Detached from ccpod-default-abc123');
+  });
+
+  it('treats a container already being removed as inactive when stopping', async () => {
+    const ownedId = 'c'.repeat(64);
+    const { deps, execMock } = makeDeps([
+      { exitCode: 1, stderr: 'No such container', stdout: '' },
+      { exitCode: 0, stderr: '', stdout: ownedId }, // create
+      { exitCode: 0, stderr: '', stdout: 'removing' }, // pre-stop inspect
+    ]);
+
+    // `docker stop` on a container in `removing` fails; that must not become an
+    // error or replace the container's real exit code.
+    expect(await runContainer(makeSpec({ proxyAuth: true }), deps)).toBe(0);
+    expect(
+      (execMock.mock.calls as [string[]][]).some(([a]) => a[0] === 'stop'),
+    ).toBe(false);
+  });
+
   it('does not clean up a concurrent winner when create fails on name conflict', async () => {
     const { deps, execMock, spawnMock } = makeDeps([
       { exitCode: 1, stderr: 'No such container', stdout: '' },
@@ -539,15 +581,25 @@ describe('runContainer', () => {
     spawnMock.mockImplementation(async () => {
       throw new Error('start attach failed');
     });
-
-    await expect(
-      runContainer(makeSpec({ proxyAuth: true }), deps),
-    ).rejects.toThrow('start attach failed');
+    const logged: string[] = [];
+    const originalLog = console.log;
+    console.log = (...values: unknown[]) => {
+      logged.push(values.join(' '));
+    };
+    try {
+      await expect(
+        runContainer(makeSpec({ proxyAuth: true }), deps),
+      ).rejects.toThrow('start attach failed');
+    } finally {
+      console.log = originalLog;
+    }
     expect(
       execMock.mock.calls.some(
         ([args]) => args[0] === 'stop' && args.at(-1) === ownedId,
       ),
     ).toBe(true);
+    // A failed start is not a detach: no misleading notice.
+    expect(logged.join('\n')).not.toContain('Detached');
   });
 
   it('surfaces a failed stop for an owned proxy container', async () => {
@@ -562,6 +614,9 @@ describe('runContainer', () => {
     await expect(
       runContainer(makeSpec({ proxyAuth: true }), deps),
     ).rejects.toThrow('Failed to stop owned container');
+    // Cleanup failed, so ownership is deliberately retained; drain it so this
+    // test does not leak a registration into the next one.
+    forceRemoveOwnedContainers(() => {});
   });
 
   it('surfaces a final state verification failure after stop', async () => {
@@ -576,6 +631,8 @@ describe('runContainer', () => {
     await expect(
       runContainer(makeSpec({ proxyAuth: true }), deps),
     ).rejects.toThrow('Failed to inspect owned container');
+    // Verification failed, so ownership is deliberately retained; drain it.
+    forceRemoveOwnedContainers(() => {});
   });
 
   it('refuses to reattach in proxy auth mode', async () => {
@@ -881,6 +938,85 @@ describe('shellContainer', () => {
       false,
     );
     expect(spawnMock).not.toHaveBeenCalled();
+  });
+});
+
+describe('forceRemoveOwnedContainers', () => {
+  it('removes the owned ID during a forced exit and deregisters it afterwards', async () => {
+    const ownedId = 'd'.repeat(64);
+    const { deps, spawnMock } = makeDeps([
+      { exitCode: 1, stderr: 'No such container', stdout: '' },
+      { exitCode: 0, stderr: '', stdout: ownedId }, // create
+      { exitCode: 0, stderr: '', stdout: 'running' },
+      { exitCode: 0, stderr: '', stdout: '' }, // stop
+      { exitCode: 0, stderr: '', stdout: 'exited' },
+    ]);
+    const removed: string[] = [];
+    spawnMock.mockImplementation(async () => {
+      // Simulate a forced exit (second Ctrl+C) while the run is in flight.
+      forceRemoveOwnedContainers((id) => removed.push(id));
+      return 0;
+    });
+
+    await runContainer(makeSpec({ proxyAuth: true }), deps);
+    expect(removed).toEqual([ownedId]);
+
+    // The normal path deregisters the ID, so a later forced exit is a no-op.
+    removed.length = 0;
+    forceRemoveOwnedContainers((id) => removed.push(id));
+    expect(removed).toEqual([]);
+  });
+
+  it('keeps ownership when cleanup fails so a forced exit can still remove it', async () => {
+    const ownedId = 'f'.repeat(64);
+    const { deps } = makeDeps([
+      { exitCode: 1, stderr: 'No such container', stdout: '' },
+      { exitCode: 0, stderr: '', stdout: ownedId }, // create
+      { exitCode: 0, stderr: '', stdout: 'running' }, // pre-stop inspect
+      { exitCode: 1, stderr: 'daemon unavailable', stdout: '' }, // stop fails
+    ]);
+
+    await expect(
+      runContainer(makeSpec({ proxyAuth: true }), deps),
+    ).rejects.toThrow('Failed to stop');
+
+    // The container may still be running: a later forced exit must still find it.
+    const removed: string[] = [];
+    forceRemoveOwnedContainers((id) => removed.push(id));
+    expect(removed).toEqual([ownedId]);
+  });
+
+  it('recovers an ID from the cidfile when a create is still in flight', async () => {
+    const ownedId = 'e'.repeat(64);
+    const { deps, execMock } = makeDeps([
+      { exitCode: 1, stderr: 'No such container', stdout: '' },
+      { exitCode: 0, stderr: '', stdout: ownedId }, // create
+      { exitCode: 0, stderr: '', stdout: 'running' },
+      { exitCode: 0, stderr: '', stdout: '' }, // stop
+      { exitCode: 0, stderr: '', stdout: 'exited' },
+    ]);
+    const removed: string[] = [];
+    const originalExec = deps.dockerExec as unknown as (
+      args: string[],
+    ) => Promise<{ exitCode: number; stderr: string; stdout: string }>;
+    deps.dockerExec = (async (args: string[]) => {
+      if (args[0] === 'create') {
+        // Docker has written the cidfile, but the CLI has not returned yet:
+        // this is the window where only the cidfile knows the container ID.
+        const cidfile = args[args.indexOf('--cidfile') + 1] ?? '';
+        writeFileSync(cidfile, `${ownedId}\n`);
+        forceRemoveOwnedContainers((id) => removed.push(id));
+      }
+      return originalExec(args);
+    }) as RunnerDeps['dockerExec'];
+
+    await runContainer(makeSpec({ proxyAuth: true }), deps);
+    expect(removed).toEqual([ownedId]);
+    expect(
+      (execMock.mock.calls as [string[]][]).some(([args]) =>
+        args.includes('--cidfile'),
+      ),
+    ).toBe(true);
   });
 });
 

@@ -1,4 +1,5 @@
 import { existsSync } from 'node:fs';
+import { join } from 'node:path';
 import chalk from 'chalk';
 import { defineCommand } from 'citty';
 import {
@@ -28,6 +29,33 @@ const ICON: Record<Status, string> = {
   ok: chalk.green('✓'),
   warn: chalk.yellow('!'),
 };
+// Non-secret diagnostics, bounded so one bad stderr line cannot flood output.
+const DETAIL_MAX = 160;
+function firstLine(value: string): string {
+  const line =
+    value
+      .split('\n')
+      .map((entry) => entry.trim())
+      .find((entry) => entry !== '') ?? '';
+  // Redact BEFORE truncating: cutting inside `user:password@` would leave the
+  // credential prefix behind with no `@` left for the redactor to match.
+  const redacted = redactLocation(line);
+  return redacted.length > DETAIL_MAX
+    ? `${redacted.slice(0, DETAIL_MAX)}…`
+    : redacted;
+}
+function errorDetail(error: unknown): string {
+  return firstLine(error instanceof Error ? error.message : String(error));
+}
+/**
+ * Hide credentials that can be embedded in a remote daemon URL such as
+ * `ssh://user:password@host`: doctor prints local paths, never secrets. The
+ * match is greedy to the last `@` before the path, so multi-`@` userinfo and
+ * percent-encoded credentials are removed too.
+ */
+function redactLocation(value: string): string {
+  return value.replace(/\/\/[^\s/]*@/g, '//***@');
+}
 /** Passive checks avoid contacting Docker or reading credential contents. */
 export function summarizeChecks(checks: DoctorCheck[]) {
   const failed = checks.filter((check) => check.status === 'fail').length;
@@ -50,7 +78,17 @@ export async function collectChecks(
   let runtime: ReturnType<typeof detectRuntime> | undefined;
   try {
     runtime = findRuntime();
-    add('container runtime', 'ok', `${runtime.name} configured`);
+    // The socket/host tells the user which daemon ccpod would talk to; it is a
+    // local path, not a credential.
+    const location = runtime.dockerHost ?? runtime.socketPath;
+    const shown = location ? redactLocation(location) : undefined;
+    add(
+      'container runtime',
+      'ok',
+      shown
+        ? `${runtime.name} configured (${shown})`
+        : `${runtime.name} configured`,
+    );
   } catch {
     add('container runtime', 'warn', 'no container runtime detected');
   }
@@ -59,7 +97,7 @@ export async function collectChecks(
       add('Docker probe', 'fail', 'runtime could not be detected');
     } else {
       try {
-        const { exitCode, stdout } = await runDocker(
+        const { exitCode, stderr, stdout } = await runDocker(
           ['version', '--format', '{{.Server.Version}}'],
           undefined,
           { timeoutMs: 5000 },
@@ -69,10 +107,12 @@ export async function collectChecks(
           exitCode === 0 ? 'ok' : 'fail',
           exitCode === 0
             ? `daemon reachable (${stdout})`
-            : 'daemon unavailable',
+            : stderr.trim() === ''
+              ? 'daemon unavailable'
+              : `daemon unavailable: ${redactLocation(firstLine(stderr))}`,
         );
-      } catch {
-        add('Docker probe', 'fail', 'Docker probe failed');
+      } catch (err) {
+        add('Docker probe', 'fail', `Docker probe failed: ${errorDetail(err)}`);
       }
     }
   }
@@ -82,12 +122,12 @@ export async function collectChecks(
   if (projectPath) {
     try {
       projectProfile = loadProjectConfig(cwd)?.profile;
-      add('project config', 'ok', 'valid');
-    } catch {
+      add('project config', 'ok', `valid (${projectPath})`);
+    } catch (err) {
       add(
         'project config',
         'fail',
-        'configuration is invalid; run ccpod config validate',
+        `${projectPath} is invalid: ${errorDetail(err)}; run ccpod config validate`,
       );
     }
   } else {
@@ -96,34 +136,46 @@ export async function collectChecks(
 
   const profileName = profileArg ?? projectProfile ?? 'default';
   if (!profileExists(profileName)) {
-    add('profile', 'fail', `profile '${profileName}' not found`);
+    add(
+      'profile',
+      'fail',
+      `profile '${profileName}' not found (expected ${join(getCcpodHome(), 'profiles', profileName)})`,
+    );
     return checks;
   }
   let profile: ReturnType<typeof loadProfileConfig>;
   try {
-    profile = loadProfileConfig(getProfileDir(profileName));
-    add('profile', 'ok', `'${profileName}'`);
-  } catch {
+    const profileDir = getProfileDir(profileName);
+    profile = loadProfileConfig(profileDir);
+    add('profile', 'ok', `'${profileName}' (${profileDir})`);
+  } catch (err) {
     add(
       'profile',
       'fail',
-      'profile configuration is invalid; run ccpod config validate',
+      `${getProfileDir(profileName)} is invalid: ${errorDetail(err)}; run ccpod config validate`,
     );
     return checks;
   }
 
   if (profile.auth.type === 'api-key') {
     const envPresent = Boolean(process.env[profile.auth.keyEnv]);
-    const configuredFilePresent = profile.auth.keyFile
-      ? existsSync(profile.auth.keyFile.replace(/^~\/\.ccpod/, getCcpodHome()))
-      : false;
-    const present = envPresent || configuredFilePresent;
+    const keyFilePath = profile.auth.keyFile?.replace(
+      /^~\/\.ccpod/,
+      getCcpodHome(),
+    );
+    const configuredFilePresent = keyFilePath ? existsSync(keyFilePath) : false;
+    // Report which source was found (names and paths only, never values).
+    const source = envPresent
+      ? `env ${profile.auth.keyEnv}`
+      : configuredFilePresent
+        ? `file ${keyFilePath}`
+        : undefined;
     add(
       'auth',
-      present ? 'ok' : 'warn',
-      present
-        ? 'credential source present (contents not checked)'
-        : 'credential availability unknown; configure the key source',
+      source ? 'ok' : 'warn',
+      source
+        ? `credential source present: ${source} (contents not checked)`
+        : `credential availability unknown; set ${profile.auth.keyEnv} or configure auth.keyFile`,
     );
   } else if (profile.auth.type === 'oauth') {
     const credentialFile = `${getCcpodHome()}/credentials/${profileName}/.credentials.json`;

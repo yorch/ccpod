@@ -1,5 +1,9 @@
+import { spawnSync } from 'node:child_process';
 import { detectRuntime } from './detector.ts';
 import { prepareDockerArgs, withPrivateEnvFile } from './env-file.ts';
+
+// Bound on the synchronous forced-removal path used by a user-forced exit.
+const SYNC_REMOVE_TIMEOUT_MS = 5_000;
 
 export interface DockerExecOptions {
   timeoutMs?: number;
@@ -155,10 +159,13 @@ export async function dockerExec(
     throw new RangeError('timeoutMs must be a positive finite number');
   }
   const { binary, env } = runtimeContext();
-  const execute = async (dockerArgs: string[]) => {
+  const execute = async (
+    dockerArgs: string[],
+    childEnv: NodeJS.ProcessEnv = env,
+  ) => {
     const proc = Bun.spawn([binary, ...dockerArgs], {
       detached: true,
-      env,
+      env: childEnv,
       stderr: 'pipe',
       stdout: 'pipe',
     });
@@ -174,9 +181,35 @@ export async function dockerExec(
     return execute(args);
   }
 
-  return withPrivateEnvFile(extraEnv, async (filePath) =>
-    execute(prepareDockerArgs(args, new Set(Object.keys(extraEnv)), filePath)),
+  return withPrivateEnvFile(extraEnv, async (plan) =>
+    execute(
+      prepareDockerArgs(args, plan.fileKeys, plan.filePath),
+      // Line-break values cannot live in a line-based env-file; they ride in
+      // the Docker CLI's own environment and stay out of argv.
+      { ...env, ...plan.inlineValues },
+    ),
   );
+}
+
+/**
+ * Best-effort synchronous `docker rm -f`. Used from exit paths that cannot
+ * await (a user-forced exit), where leaving an owned container behind would
+ * orphan it. Never throws.
+ */
+export function removeContainerSync(id: string): void {
+  try {
+    const { binary, env } = runtimeContext();
+    // spawnSync (not Bun.spawnSync): it bounds the call, so an unresponsive
+    // daemon or stalled remote connection cannot wedge a forced exit.
+    spawnSync(binary, ['rm', '-f', id], {
+      env,
+      killSignal: 'SIGKILL',
+      stdio: 'ignore',
+      timeout: SYNC_REMOVE_TIMEOUT_MS,
+    });
+  } catch {
+    // Best effort only: the container may already be gone.
+  }
 }
 
 /**
@@ -190,9 +223,9 @@ export async function dockerSpawn(
   extraEnv?: Record<string, string>,
 ): Promise<number> {
   const { binary, env } = runtimeContext();
-  const execute = (dockerArgs: string[]) => {
+  const execute = (dockerArgs: string[], childEnv: NodeJS.ProcessEnv = env) => {
     const proc = Bun.spawn([binary, ...dockerArgs], {
-      env,
+      env: childEnv,
       stderr: 'inherit',
       stdin: 'inherit',
       stdout: 'inherit',
@@ -203,7 +236,12 @@ export async function dockerSpawn(
     return execute(args);
   }
 
-  return withPrivateEnvFile(extraEnv, async (filePath) =>
-    execute(prepareDockerArgs(args, new Set(Object.keys(extraEnv)), filePath)),
+  return withPrivateEnvFile(extraEnv, async (plan) =>
+    execute(
+      prepareDockerArgs(args, plan.fileKeys, plan.filePath),
+      // Line-break values cannot live in a line-based env-file; they ride in
+      // the Docker CLI's own environment and stay out of argv.
+      { ...env, ...plan.inlineValues },
+    ),
   );
 }

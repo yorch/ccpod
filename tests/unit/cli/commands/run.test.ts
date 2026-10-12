@@ -19,7 +19,10 @@ mock.module('../../../../src/container/builder.ts', () => ({
   buildContainerSpec: () =>
     ({ name: 'ccpod-run-test', proxyAuth: true }) as ContainerSpec,
 }));
+const realRunner = await import('../../../../src/container/runner.ts');
+
 mock.module('../../../../src/container/runner.ts', () => ({
+  ...realRunner,
   runContainer: async (
     _spec: ContainerSpec,
     _deps: unknown,
@@ -45,7 +48,10 @@ mock.module('../../../../src/cli/auth-proxy.ts', () => ({
         : null,
     ),
 }));
+const realDocker = await import('../../../../src/runtime/docker.ts');
+
 mock.module('../../../../src/runtime/docker.ts', () => ({
+  ...realDocker,
   dockerExec: async () => ({ exitCode: 0, stderr: '', stdout: '' }),
 }));
 

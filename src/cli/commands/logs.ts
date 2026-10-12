@@ -41,14 +41,8 @@ export async function streamContainerLogs(
   spawn: typeof dockerSpawn = dockerSpawn,
 ): Promise<void> {
   const stream = async (container: CcpodContainer) => {
-    const status = await spawn(dockerLogsArgs(container.id, tail, follow));
-    if (status !== 0) {
-      throw new Error(
-        `docker logs failed for ${container.name} (exit ${status})`,
-      );
-    }
-  };
-  for (const container of containers) {
+    // Print the header immediately before this container's logs so it stays
+    // attached to the output it labels instead of being batched up front.
     if (containers.length > 1 || labelAll) {
       console.log(
         chalk.bold(
@@ -56,7 +50,13 @@ export async function streamContainerLogs(
         ),
       );
     }
-  }
+    const status = await spawn(dockerLogsArgs(container.id, tail, follow));
+    if (status !== 0) {
+      throw new Error(
+        `docker logs failed for ${container.name} (exit ${status})`,
+      );
+    }
+  };
   if (follow) {
     await Promise.all(containers.map(stream));
   } else {

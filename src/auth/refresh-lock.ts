@@ -132,7 +132,12 @@ export async function withOAuthRefreshLock<T>(
       database.exec('COMMIT');
       return result;
     } catch (error) {
-      database.exec('ROLLBACK');
+      try {
+        database.exec('ROLLBACK');
+      } catch {
+        // Preserve the original failure: ROLLBACK itself fails when the
+        // transaction was already lost, and must not mask the real cause.
+      }
       throw error;
     }
   } finally {
