@@ -18,44 +18,32 @@ jobs:
           bun-version: latest
       - run: bun install --frozen-lockfile
       - name: Print toolchain
-        run: |
-          bun --version
-          node --version || true
+        run: bun --version
       - name: Instrument the proxy handler
         run: |
-          python3 - <<'PY'
+          python3 -c "
           import pathlib
-          p = pathlib.Path('src/auth/proxy.ts')
-          s = p.read_text()
-          anchor = "    const requestTarget = req.url ?? '/';"
-          assert anchor in s, 'anchor not found'
-          probe = anchor + """
-    console.error(
-      '[diag] url=' +
-        JSON.stringify(req.url) +
-        ' method=' +
-        String(req.method) +
-        ' rawHeaderCount=' +
-        String(req.rawHeaders.length) +
-        ' host=' +
-        JSON.stringify(req.headers.host),
-    );"""
-          p.write_text(s.replace(anchor, probe, 1))
+          path = pathlib.Path('src/auth/proxy.ts')
+          text = path.read_text()
+          anchor = \"    const requestTarget = req.url ?? '/'\"
+          probe = anchor + '\n' + '    console.error(\"[diag] \" + JSON.stringify({ url: req.url, method: req.method, host: req.headers.host }))'
+          assert anchor in text, 'anchor not found'
+          path.write_text(text.replace(anchor, probe, 1))
           print('instrumented')
-          PY
+          "
       - name: Run the full isolated suite (unit + integration)
-        run: bun test --isolate 2>&1 | tee /tmp/full.log || true
+        run: bun test --isolate > /tmp/full.log 2>&1 || true
       - name: Run the unit-only suite for comparison
-        run: bun test tests/unit --isolate 2>&1 | tee /tmp/unit.log || true
+        run: bun test tests/unit --isolate > /tmp/unit.log 2>&1 || true
       - name: Report
         run: |
-          echo "===== full-suite diag lines ====="
-          grep -c '\[diag\]' /tmp/full.log || true
-          grep '\[diag\]' /tmp/full.log | sort | uniq -c || true
-          echo "===== unit-only diag lines ====="
-          grep -c '\[diag\]' /tmp/unit.log || true
-          grep '\[diag\]' /tmp/unit.log | sort | uniq -c || true
-          echo "===== full-suite summary ====="
-          grep -E '^ *[0-9]+ (pass|fail)|tests failed|\(fail\)' /tmp/full.log | head -30 || true
-          echo "===== unit-only summary ====="
-          grep -E '^ *[0-9]+ (pass|fail)|tests failed|\(fail\)' /tmp/unit.log | head -30 || true
+          echo "===== FULL: diag lines ====="
+          grep -o '\[diag\].*' /tmp/full.log | sort | uniq -c || true
+          echo "===== FULL: summary ====="
+          grep -E 'tests failed|^ [0-9]+ (pass|fail)' /tmp/full.log | tail -5 || true
+          echo "===== FULL: failures ====="
+          grep -E '^\(fail\)' /tmp/full.log | head -10 || true
+          echo "===== UNIT: diag lines ====="
+          grep -o '\[diag\].*' /tmp/unit.log | sort | uniq -c || true
+          echo "===== UNIT: summary ====="
+          grep -E 'tests failed|^ [0-9]+ (pass|fail)' /tmp/unit.log | tail -5 || true
