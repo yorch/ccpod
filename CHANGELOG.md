@@ -1,5 +1,11 @@
 # ccpod
 
+## 0.7.2
+
+### Patch Changes
+
+- [#36](https://github.com/yorch/ccpod/pull/36) [`f022615`](https://github.com/yorch/ccpod/commit/f022615a4db3aef9a4023cd0ed812a331f55d5f0) Thanks [@yorch](https://github.com/yorch)! - Harden config, OAuth, Docker env transport, and updater lifecycles; add config explanations, container logs, health-aware sidecar readiness, and passive diagnostics.
+
 ## 0.7.1
 
 ### Patch Changes
