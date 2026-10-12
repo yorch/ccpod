@@ -1,8 +1,26 @@
-import { chmod, mkdtemp, rm, writeFile } from 'node:fs/promises';
+import {
+  chmod,
+  lstat,
+  mkdtemp,
+  readdir,
+  rm,
+  writeFile,
+} from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 
 const ENV_IDENTIFIER = /^[A-Za-z_][A-Za-z0-9_]*$/;
+const ENV_DIR_OWNER = String(process.getuid?.() ?? 'user');
+const ENV_DIR_PREFIX = `ccpod-env-${ENV_DIR_OWNER}-`;
+// Private scratch directories ccpod creates per process, all PID-tagged:
+//   ccpod-env-<uid>-<pid>-XXXX        resolved env values (secrets)
+//   ccpod-owned-cid-<uid>-<pid>-XXXX  docker --cidfile for an owned create
+const PRIVATE_DIR_PREFIXES = [
+  ENV_DIR_PREFIX,
+  `ccpod-owned-cid-${ENV_DIR_OWNER}-`,
+];
+// Bound the sweep so a pathological temp directory cannot stall startup.
+const SWEEP_MAX_DIRECTORIES = 256;
 const DOCKER_OPTIONS_WITH_VALUE = new Set([
   '-e',
   '--env',
@@ -111,12 +129,33 @@ export function validateExtraEnv(extraEnv: Record<string, string>): void {
     if (!ENV_IDENTIFIER.test(key)) {
       throw new Error(`Invalid environment variable name: ${key}`);
     }
-    if (/[\r\n\0]/.test(value)) {
-      throw new Error(
-        `Environment variable ${key} contains a forbidden line break or NUL`,
-      );
+    if (value.includes('\0')) {
+      throw new Error(`Environment variable ${key} contains a forbidden NUL`);
     }
   }
+}
+
+/**
+ * Split resolved environment values by transport. Docker's `--env-file` format
+ * is line-based, so values carrying CR/LF cannot be represented there without
+ * corruption — those few keys (PEM blobs, JSON credentials) travel in the
+ * Docker CLI's own environment with a bare `-e KEY`, which keeps them out of
+ * argv exactly like the env-file does. NUL is rejected outright.
+ */
+export function splitEnvForTransport(extraEnv: Record<string, string>): {
+  fileValues: Record<string, string>;
+  inlineValues: Record<string, string>;
+} {
+  const fileValues: Record<string, string> = {};
+  const inlineValues: Record<string, string> = {};
+  for (const [key, value] of Object.entries(extraEnv)) {
+    if (/[\r\n]/.test(value)) {
+      inlineValues[key] = value;
+    } else {
+      fileValues[key] = value;
+    }
+  }
+  return { fileValues, inlineValues };
 }
 
 const DOCKER_BOOLEAN_OPTIONS = new Set([
@@ -155,10 +194,6 @@ const SHORT_OPTIONS_WITH_VALUE = new Set([
 ]);
 const SHORT_BOOLEAN_OPTIONS = new Set(['d', 'i', 'P', 'q', 't']);
 
-function resolveEnvReference(value: string, keys: Set<string>): boolean {
-  return keys.has(value);
-}
-
 function parseShortOption(
   arg: string,
   next: string | undefined,
@@ -188,7 +223,7 @@ function parseShortOption(
       value = value.slice(1);
     }
     const isEnv = flag === 'e';
-    if (isEnv && attached && resolveEnvReference(value, keys)) {
+    if (isEnv && attached && keys.has(value)) {
       return {
         args: booleanFlags ? [`-${booleanFlags}`] : [],
         consumesNext: false,
@@ -198,7 +233,7 @@ function parseShortOption(
       if (next === undefined) {
         throw new Error(`Missing value for Docker option: ${arg}`);
       }
-      if (isEnv && resolveEnvReference(next, keys)) {
+      if (isEnv && next !== undefined && keys.has(next)) {
         return {
           args: booleanFlags ? [`-${booleanFlags}`] : [],
           consumesNext: true,
@@ -215,8 +250,10 @@ function parseShortOption(
 export function prepareDockerArgs(
   args: string[],
   keys: Set<string>,
-  privateEnvFile: string,
+  privateEnvFile?: string,
 ): string[] {
+  const envFileFlag =
+    privateEnvFile === undefined ? [] : ['--env-file', privateEnvFile];
   const command = args[0];
   if (command !== 'run' && command !== 'create') {
     throw new Error(
@@ -231,11 +268,11 @@ export function prepareDockerArgs(
       continue;
     }
     if (arg === '--') {
-      prepared.push('--env-file', privateEnvFile, '--', ...args.slice(i + 1));
+      prepared.push(...envFileFlag, '--', ...args.slice(i + 1));
       return prepared;
     }
     if (!arg.startsWith('-')) {
-      prepared.push('--env-file', privateEnvFile, ...args.slice(i));
+      prepared.push(...envFileFlag, ...args.slice(i));
       return prepared;
     }
 
@@ -246,7 +283,7 @@ export function prepareDockerArgs(
       const next = args[i + 1];
       if (option === '--env') {
         const value = hasInlineValue ? arg.slice(equalsIndex + 1) : next;
-        if (value !== undefined && resolveEnvReference(value, keys)) {
+        if (value !== undefined && keys.has(value)) {
           if (!hasInlineValue) {
             i++;
           }
@@ -283,27 +320,114 @@ export function prepareDockerArgs(
       i++;
     }
   }
-  prepared.push('--env-file', privateEnvFile);
+  prepared.push(...envFileFlag);
   return prepared;
+}
+
+export interface EnvTransportPlan {
+  /** Keys carried by the private env-file. */
+  fileKeys: Set<string>;
+  /** Private env-file path, or undefined when no value needs a file. */
+  filePath?: string;
+  /** Values with line breaks, carried by the Docker CLI environment. */
+  inlineValues: Record<string, string>;
+}
+
+let sweptPrivateDirectories = false;
+
+function isAlivePid(pid: number): boolean {
+  if (!Number.isInteger(pid) || pid <= 0) {
+    return false;
+  }
+  try {
+    process.kill(pid, 0);
+    return true;
+  } catch (error) {
+    // EPERM means the process exists but belongs to another user.
+    return (error as { code?: string } | null)?.code === 'EPERM';
+  }
+}
+
+/**
+ * Remove ccpod's private scratch directories whose owning process is gone. A
+ * live session keeps its own directory (so nothing in use is ever removed,
+ * however old it is); only SIGKILL/OOM leftovers — which skip the normal
+ * cleanup — are reclaimed. Best effort: this never throws.
+ */
+export async function sweepStalePrivateDirectories(): Promise<void> {
+  const root = tmpdir();
+  let entries: string[];
+  try {
+    entries = await readdir(root);
+  } catch {
+    return;
+  }
+  const candidates = entries
+    .flatMap((name) => {
+      const prefix = PRIVATE_DIR_PREFIXES.find((candidate) =>
+        name.startsWith(candidate),
+      );
+      if (prefix === undefined || name.startsWith(`${prefix}${process.pid}-`)) {
+        return [];
+      }
+      return [{ name, pid: Number(name.slice(prefix.length).split('-')[0]) }];
+    })
+    .filter(({ pid }) => Number.isInteger(pid) && pid > 0 && !isAlivePid(pid))
+    .slice(0, SWEEP_MAX_DIRECTORIES);
+
+  for (const { name } of candidates) {
+    const path = join(root, name);
+    try {
+      const info = await lstat(path);
+      if (info.isSymbolicLink() || !info.isDirectory()) {
+        continue;
+      }
+      if (
+        typeof process.getuid === 'function' &&
+        info.uid !== process.getuid()
+      ) {
+        continue;
+      }
+      if ((info.mode & 0o777) !== 0o700) {
+        continue;
+      }
+      await rm(path, { force: true, recursive: true });
+    } catch {
+      // Another process may have reclaimed it first.
+    }
+  }
 }
 
 export async function withPrivateEnvFile<T>(
   extraEnv: Record<string, string>,
-  run: (filePath: string) => Promise<T>,
+  run: (plan: EnvTransportPlan) => Promise<T>,
 ): Promise<T> {
   validateExtraEnv(extraEnv);
+  if (!sweptPrivateDirectories) {
+    sweptPrivateDirectories = true;
+    await sweepStalePrivateDirectories();
+  }
+
+  const { fileValues, inlineValues } = splitEnvForTransport(extraEnv);
+  const fileKeys = new Set(Object.keys(fileValues));
+  if (fileKeys.size === 0) {
+    return run({ fileKeys, inlineValues });
+  }
+
+  // The owning PID is part of the name so a later ccpod can tell leftovers
+  // (dead owner) from a live session's directory after an unclean exit.
   const directory = await mkdtemp(
-    join(tmpdir(), `ccpod-env-${process.getuid?.() ?? 'user'}-`),
+    join(tmpdir(), `${ENV_DIR_PREFIX}${process.pid}-`),
   );
   try {
     await chmod(directory, 0o700);
     const filePath = join(directory, 'environment');
-    const contents = Object.entries(extraEnv)
+    const contents = Object.entries(fileValues)
       .map(([key, value]) => `${key}=${value}`)
       .join('\n');
     await writeFile(filePath, contents, { flag: 'wx', mode: 0o600 });
     await chmod(filePath, 0o600);
-    return await run(filePath);
+    return await run({ fileKeys, filePath, inlineValues });
   } finally {
     await rm(directory, { force: true, recursive: true });
   }

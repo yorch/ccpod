@@ -17,7 +17,7 @@ Implementation details for contributors and advanced users.
 | `simple-git` | Git operations for profile sync |
 | `chalk` | Terminal output colouring |
 
-Docker operations use the `docker` CLI via `Bun.spawn` — no Docker SDK dependency. Captured commands support optional kill-and-reap timeouts. Resolved env for `run`/`create` is transported with a private temporary env-file, never in the Docker client's environment or argv, then cleaned up after the child completes.
+Docker operations use the `docker` CLI via `Bun.spawn` — no Docker SDK dependency. Captured commands support optional kill-and-reap timeouts. Resolved env for `run`/`create` is transported with a private temporary env-file, never in the Docker client's environment or argv, then cleaned up after the child completes; values containing line breaks (which the line-based file format cannot carry) fall back to a bare `-e KEY` read from the Docker client's environment. Directories are PID-tagged and dead-owner leftovers from SIGKILL are swept on the next start.
 
 ## Core types
 
@@ -202,11 +202,11 @@ write_merged_config(result) → ${TMPDIR}/ccpod-u<uid>/ccpod-<sha256(content)>/
 
 ### Git profile checkout ownership
 
-`syncGitConfig` verifies every existing cached config directory before reuse, even when the sync policy is `daily` or `pin`: the path cannot be a symlink, must resolve to the Git worktree root, must have the configured `origin`, and must be clean. It verifies again after fetch and immediately before `reset --hard FETCH_HEAD`. Unsafe checkouts fail closed without reset or use. A failed remote fetch may use the previously verified clean checkout; partial initial clones are made in a temporary directory and renamed into place.
+`syncGitConfig` verifies every existing cached config directory before reuse, even when the sync policy is `daily` or `pin`: the path cannot be a symlink, must resolve to the Git worktree root, must have the configured `origin` (a trailing `/` and scheme/host casing are treated as spelling; a `.git` suffix, scp-style, and `ssh://` forms are not, since they can name different repositories), and must have no tracked modifications. Untracked files are ignored when reusing a checkout, but a reset is refused when an untracked file, directory, or ignored path would collide with the incoming revision. It verifies again after fetch and immediately before `reset --hard FETCH_HEAD`. Unsafe checkouts fail closed without reset or use. A failed remote fetch may use the previously verified clean checkout; partial initial clones are made in a temporary directory and renamed into place.
 
 ### Env forwarding (`resolveEnvForwarding`)
 
-`src/auth/resolver.ts:resolveEnvForwarding` collapses `profile.env`, `projectConfig.env`, and CLI `--env` overrides into a single `Record<string, string>`. The runtime transports that map through a private temporary env-file and removes it after the Docker command exits. Each entry has one of three forms:
+`src/auth/resolver.ts:resolveEnvForwarding` collapses `profile.env`, `projectConfig.env`, and CLI `--env` overrides into a single `Record<string, string>`. The runtime transports that map through a private temporary env-file and removes it after the Docker command exits; values carrying line breaks use a bare `-e KEY` with the value in the Docker client's own environment instead, because the env-file format is line-based. Each entry has one of three forms:
 
 - `KEY` — forward `process.env.KEY` (entry skipped if unset on host)
 - `KEY=value` — literal value

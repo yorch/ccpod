@@ -73,6 +73,6 @@ Under deep merge, the two are combined by service name. A project entry with the
 
 ## Security
 
-- **Sidecar env values** are transported through a private temporary env-file (directory mode `0700`, file mode `0600`) supplied to Docker by path. Values are not put in Docker argv or the Docker client's process environment; unsafe line breaks and NULs are rejected, and the file is removed after the Docker command completes.
+- **Sidecar env values** are transported through a private temporary env-file (directory mode `0700`, file mode `0600`) supplied to Docker by path. Values are not put in Docker argv or the Docker client's process environment; NULs are rejected, a value containing a line break falls back to a bare `-e KEY` read from the Docker client's own environment (still not argv), and the file is removed after the Docker command completes.
 - **Project-declared services** are ignored unless the profile sets `allowProjectServices: true`. When enabled, project service volumes and ports are still sanitized (named volumes only, loopback-only ports) unless `allowProjectHostMounts` is also set.
 - **Sidecar startup failure** rolls back any sidecars started earlier in the same call, so a partial failure does not leave orphaned containers.

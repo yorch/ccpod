@@ -1,8 +1,66 @@
-import { dockerExec, dockerSpawn } from '../runtime/docker.ts';
+import { chmodSync, mkdtempSync, readFileSync, rmSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { dirname, join } from 'node:path';
+import {
+  dockerExec,
+  dockerSpawn,
+  removeContainerSync,
+} from '../runtime/docker.ts';
 import type { ContainerSpec } from './builder.ts';
 
 type DockerExecFn = typeof dockerExec;
 type DockerSpawnFn = typeof dockerSpawn;
+
+// Container IDs this process created and has not finished cleaning up. A user
+// who insists on exiting (second Ctrl+C) cannot await the normal path, so the
+// signal handler removes these synchronously instead of orphaning them.
+const ownedContainerIds = new Set<string>();
+// Cidfiles for `docker create` calls that have not returned yet: if the user
+// forces an exit while a create is still in flight, the ID docker already wrote
+// there is the only way to find that container again.
+const pendingCidfiles = new Set<string>();
+
+/**
+ * Synchronously remove every container this process still owns. Called from a
+ * signal handler immediately before a forced exit, where awaiting is not an
+ * option. Never throws.
+ */
+export function forceRemoveOwnedContainers(
+  remove: (id: string) => void = removeContainerSync,
+): void {
+  const ids = new Set(ownedContainerIds);
+  for (const cidfile of pendingCidfiles) {
+    const id = readContainerIdSync(cidfile);
+    if (id !== undefined) {
+      ids.add(id);
+    }
+    // The async finally cannot run after process.exit, so drop the private
+    // scratch directory here as well.
+    rmSync(dirname(cidfile), { force: true, recursive: true });
+  }
+  for (const id of ids) {
+    remove(id);
+  }
+  ownedContainerIds.clear();
+  pendingCidfiles.clear();
+}
+
+// PID-tagged so a later ccpod can recognize (and sweep) leftovers from a
+// process that was killed before its cleanup ran. Kept in sync with the sweep
+// in src/runtime/env-file.ts.
+export const OWNED_CID_DIR_PREFIX = 'ccpod-owned-cid-';
+
+const CONTAINER_ID_RE = /^[a-f\d]{12,64}$/i;
+
+/** Read a `--cidfile` docker wrote, if it is already there and well-formed. */
+function readContainerIdSync(cidfile: string): string | undefined {
+  try {
+    const id = readFileSync(cidfile, 'utf8').trim();
+    return CONTAINER_ID_RE.test(id) ? id : undefined;
+  } catch {
+    return undefined;
+  }
+}
 
 export interface RunnerDeps {
   dockerExec: DockerExecFn;
@@ -135,7 +193,25 @@ async function runOwnedContainer(
   throwIfAborted(signal);
   const createArgs = buildRunArgs(spec);
   createArgs[0] = 'create';
-  const created = await deps.dockerExec(createArgs, spec.secretEnv);
+  // `--cidfile` publishes the container ID before this call can return, so a
+  // forced exit during create still knows what to remove.
+  const cidDir = mkdtempSync(
+    join(
+      tmpdir(),
+      `${OWNED_CID_DIR_PREFIX}${process.getuid?.() ?? 'user'}-${process.pid}-`,
+    ),
+  );
+  chmodSync(cidDir, 0o700);
+  const cidFile = join(cidDir, 'container-id');
+  createArgs.splice(1, 0, '--cidfile', cidFile);
+  pendingCidfiles.add(cidFile);
+  let created: { exitCode: number; stderr: string; stdout: string };
+  try {
+    created = await deps.dockerExec(createArgs, spec.secretEnv);
+  } finally {
+    pendingCidfiles.delete(cidFile);
+    rmSync(cidDir, { force: true, recursive: true });
+  }
   if (created.exitCode !== 0) {
     // A name conflict may belong to a concurrent invocation. No cleanup by
     // name is safe here because this call did not obtain an owned container ID.
@@ -144,20 +220,24 @@ async function runOwnedContainer(
     );
   }
   const containerId = created.stdout.trim();
-  if (!/^[a-f\d]{12,64}$/i.test(containerId)) {
+  if (!CONTAINER_ID_RE.test(containerId)) {
     throw new Error(
       `Docker returned an invalid container ID for '${spec.name}'`,
     );
   }
+  // Owned from here on: a forced exit may remove it, and a stale registration
+  // is harmless (removing an already-gone container is a no-op).
+  ownedContainerIds.add(containerId);
 
   if (signal?.aborted) {
     await removeOwnedContainer(containerId, deps);
+    ownedContainerIds.delete(containerId);
     throwIfAborted(signal);
   }
 
   let startRequested = false;
   let startFinished = false;
-  let abortCleanup: Promise<void> | undefined;
+  let abortCleanup: Promise<boolean> | undefined;
   let resolveAbortedCleanup: (() => void) | undefined;
   let rejectAbortedCleanup: ((reason: unknown) => void) | undefined;
   const abortedCleanup = new Promise<void>((resolve, reject) => {
@@ -218,27 +298,45 @@ async function runOwnedContainer(
   // create. Proxy jobs always stop on return/detach. Non-proxy headless jobs
   // stop only for cancellation or an abnormal start/attach failure, preserving
   // their ordinary completion behavior.
-  if (abortCleanup) {
-    await abortCleanup;
-  } else if (spec.proxyAuth || callbackError !== undefined) {
-    await stopOwnedContainer(containerId, deps, () => startFinished);
-  } else if (!spec.proxyAuth) {
-    // A non-proxy headless run normally exits its container. If Docker returns
-    // while the owned job is still active (e.g. an abnormal attach detach),
-    // stop it; if start never left `created`, remove that owned object.
-    const state = await inspectOwnedContainerState(
-      containerId,
-      deps.dockerExec,
-    );
-    if (state === 'created') {
-      await removeOwnedContainer(containerId, deps);
-    } else if (
-      state === 'running' ||
-      state === 'paused' ||
-      state === 'restarting'
-    ) {
-      await stopOwnedContainer(containerId, deps, () => startFinished);
+  try {
+    if (abortCleanup) {
+      await abortCleanup;
+    } else if (spec.proxyAuth || callbackError !== undefined) {
+      const stopped = await stopOwnedContainer(
+        containerId,
+        deps,
+        () => startFinished,
+      );
+      if (spec.proxyAuth && stopped && callbackError === undefined) {
+        // `docker start --attach` also returns when the user detaches (Ctrl-P
+        // Ctrl-Q). The container survives a detach, but this run cannot leave
+        // it behind — its auth proxy dies with this process — so say it is
+        // being stopped instead of leaving the user guessing.
+        console.log(
+          `Detached from ${spec.name}; it was stopped because its auth proxy is per-run.`,
+        );
+      }
+    } else if (!spec.proxyAuth) {
+      // A non-proxy headless run normally exits its container. If Docker
+      // returns while the owned job is still active (e.g. an abnormal attach
+      // detach), stop it; if start never left `created`, remove that owned
+      // object.
+      const state = await inspectOwnedContainerState(
+        containerId,
+        deps.dockerExec,
+      );
+      if (state === 'created') {
+        await removeOwnedContainer(containerId, deps);
+      } else if (
+        state === 'running' ||
+        state === 'paused' ||
+        state === 'restarting'
+      ) {
+        await stopOwnedContainer(containerId, deps, () => startFinished);
+      }
     }
+  } finally {
+    ownedContainerIds.delete(containerId);
   }
   if (callbackError !== undefined) {
     throw callbackError;
@@ -253,21 +351,28 @@ async function stopOwnedContainer(
   deps: RunnerDeps,
   startFinished: () => boolean,
   deadline = Date.now() + START_CANCELLATION_WAIT_MS,
-): Promise<void> {
+): Promise<boolean> {
   const state = await inspectOwnedContainerState(containerId, deps.dockerExec);
-  if (state === 'not_found' || state === 'exited' || state === 'dead') {
-    return;
+  // `removing` is already on its way out: asking Docker to stop it fails, and
+  // that failure would replace the run's real exit code.
+  if (
+    state === 'not_found' ||
+    state === 'exited' ||
+    state === 'dead' ||
+    state === 'removing'
+  ) {
+    return false;
   }
   if (state === 'created') {
     if (startFinished()) {
       await removeOwnedContainer(containerId, deps);
-      return;
+      return false;
     }
     if (Date.now() >= deadline) {
       // A Docker start process may still be racing this cancellation. Removing
       // this invocation's ID makes a late start fail rather than launch a job.
       await removeOwnedContainer(containerId, deps);
-      return;
+      return false;
     }
     await new Promise((resolve) => setTimeout(resolve, 50));
     return stopOwnedContainer(containerId, deps, startFinished, deadline);
@@ -291,6 +396,7 @@ async function stopOwnedContainer(
       `Owned container '${containerId}' is still active after stop`,
     );
   }
+  return true;
 }
 
 async function removeOwnedContainer(

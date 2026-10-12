@@ -40,6 +40,12 @@ const REFRESH_RETRY_MS = 60_000; // 1 minute
 const MAX_REFRESH_RETRIES = 10; // stop retrying after this many consecutive failures
 const PERSIST_RETRY_BASE_MS = 100;
 const PERSIST_RETRY_MAX_MS = 30_000;
+// Reconciliation is best effort and must terminate: a credential store that
+// cannot be read or written may never hold the cross-process refresh lock (nor
+// the caller's shutdown) indefinitely.
+const PERSIST_DEADLINE_MS = 20_000;
+// Bound how long stop() waits for an in-flight reconciliation.
+const STOP_REFRESH_WAIT_MS = 10_000;
 
 // Headers that must not be forwarded as-is (either stripped or replaced).
 const STRIP_HEADERS = new Set([
@@ -59,6 +65,9 @@ interface AuthProxyOptions {
   lockRoot?: string;
   // Store identity override for injected credential stores in tests.
   lockScope?: string;
+  // Bound on read-back reconciliation after a credential write fails; the
+  // default is generous, tests inject a small value.
+  persistDeadlineMs?: number;
   port?: number;
   // Entry-aware adapters preserve the exact account/file selected by the reader.
   readCredentialEntry?: (
@@ -69,6 +78,8 @@ interface AuthProxyOptions {
   // The sentinel API key that the proxy expects in x-api-key. If set,
   // requests without a matching x-api-key are rejected with 401.
   sentinelKey?: string;
+  // Bound on how long stop() waits for an in-flight reconciliation.
+  stopRefreshWaitMs?: number;
   tokenEndpoint?: string;
   writeCredentialEntry?: (
     creds: OAuthCredentials,
@@ -109,6 +120,14 @@ export class AuthProxy {
   private server: Server | null = null;
   private cache: TokenCache | null = null;
   private pendingPersistence: OAuthCredentials | null = null;
+  // Generations this process consumed but could not verify in the store
+  // (persistence gave up). The store is then known to lag this process, so
+  // rediscovering any of them must never be treated as a newer external
+  // rotation — doing so would resurrect a single-use refresh token. Every
+  // unresolved generation is retained (one entry per failed rotation) until a
+  // write is confirmed or another generation legitimately wins, because
+  // replacing an earlier marker would let the store re-advertise it.
+  private unverifiedRotationSources: OAuthCredentials[] = [];
   private readonly port: number;
   private readonly hostname: string;
   private readonly sentinelKey: string | undefined;
@@ -124,6 +143,8 @@ export class AuthProxy {
   private readonly tokenEndpoint: string;
   private readonly lockRoot: string | undefined;
   private readonly lockScope: string | undefined;
+  private readonly persistDeadlineMs: number;
+  private readonly stopRefreshWaitMs: number;
   private refreshTimer: ReturnType<typeof setTimeout> | null = null;
   private refreshRetryCount = 0;
   private stopped = false;
@@ -177,6 +198,8 @@ export class AuthProxy {
     this.tokenEndpoint = opts.tokenEndpoint ?? DEFAULT_TOKEN_ENDPOINT;
     this.lockRoot = opts.lockRoot;
     this.lockScope = opts.lockScope;
+    this.persistDeadlineMs = opts.persistDeadlineMs ?? PERSIST_DEADLINE_MS;
+    this.stopRefreshWaitMs = opts.stopRefreshWaitMs ?? STOP_REFRESH_WAIT_MS;
   }
 
   get address(): string {
@@ -261,7 +284,18 @@ export class AuthProxy {
     // reconciliation completes, even when the container lifecycle is ending.
     const refresh = this.cache?.refreshing;
     if (refresh) {
-      await refresh.catch(() => {});
+      // Bounded wait: an unreachable credential store must not keep the
+      // process alive after the container lifecycle has ended.
+      let timer: ReturnType<typeof setTimeout> | undefined;
+      await Promise.race([
+        refresh.catch(() => {}),
+        new Promise<void>((resolve) => {
+          timer = setTimeout(resolve, this.stopRefreshWaitMs);
+        }),
+      ]);
+      if (timer) {
+        clearTimeout(timer);
+      }
     }
     const server = this.server;
     if (server) {
@@ -322,20 +356,26 @@ export class AuthProxy {
         }
 
         const latest = this.readCredentialsSafely();
-        if (
-          latest &&
-          !this.needsRefresh(latest.credentials) &&
-          latest.credentials.accessToken !== this.cache?.creds.accessToken
-        ) {
-          return latest;
-        }
-        if (latest) {
+        // Ignore a store generation this process already consumed and failed to
+        // replace: it is older than what we hold in memory, not a competing
+        // external rotation.
+        const usable =
+          latest && !this.isKnownConsumedGeneration(latest.credentials)
+            ? latest
+            : undefined;
+        if (usable) {
+          if (
+            !this.needsRefresh(usable.credentials) &&
+            usable.credentials.accessToken !== this.cache?.creds.accessToken
+          ) {
+            return usable;
+          }
           // The store may contain a rotated refresh token with the same still-
           // rejected access token. Use that refresh token rather than adopting
           // an access token that already received a 401.
           this.cache = {
-            creds: latest.credentials,
-            identity: latest.identity,
+            creds: usable.credentials,
+            identity: usable.identity,
             refreshing: this.cache?.refreshing ?? null,
           };
         }
@@ -420,9 +460,32 @@ export class AuthProxy {
         throw new Error('invalid credentials');
       }
       return entry as OAuthCredentialEntry;
-    } catch {
-      throw new Error('OAuth credential store read failed');
+    } catch (error) {
+      // Keep the message secret-free but retain a non-secret reason so callers
+      // and diagnostics can tell a locked store from malformed credentials.
+      const detail = credentialReadErrorDetail(error);
+      throw new Error(
+        detail === undefined
+          ? 'OAuth credential store read failed'
+          : `OAuth credential store read failed (${detail})`,
+      );
     }
+  }
+
+  private isKnownConsumedGeneration(creds: OAuthCredentials): boolean {
+    return this.unverifiedRotationSources.some((source) =>
+      sameCredentialGeneration(creds, source),
+    );
+  }
+
+  private rememberConsumedGeneration(creds: OAuthCredentials): void {
+    if (!this.isKnownConsumedGeneration(creds)) {
+      this.unverifiedRotationSources.push(creds);
+    }
+  }
+
+  private clearConsumedGenerations(): void {
+    this.unverifiedRotationSources = [];
   }
 
   private async persistRotation(
@@ -433,6 +496,7 @@ export class AuthProxy {
     let warned = false;
     let expectedSource = source;
     let rotation = pending;
+    const deadline = Date.now() + this.persistDeadlineMs;
     while (true) {
       let current: OAuthCredentialEntry | undefined;
       try {
@@ -443,27 +507,29 @@ export class AuthProxy {
       }
 
       if (current && sameCredentialGeneration(current.credentials, pending)) {
+        this.clearConsumedGenerations();
         return current;
       }
-      if (
-        current &&
-        !sameCredentialGeneration(
-          current.credentials,
-          expectedSource.credentials,
-        )
-      ) {
-        // A different valid generation appeared (for example, an external
-        // Claude refresh). Adopt it, never overwrite it with this rotation.
-        return current;
-      }
-      if (
-        current &&
+      const matchesExpected =
+        current !== undefined &&
         sameCredentialGeneration(
           current.credentials,
           expectedSource.credentials,
-        )
+        );
+      if (
+        current &&
+        !matchesExpected &&
+        !this.isKnownConsumedGeneration(current.credentials)
       ) {
+        // A different valid generation appeared (for example, an external
+        // Claude refresh). Adopt it, never overwrite it with this rotation.
+        // Consumed history is deliberately KEPT: adopting another generation
+        // does not prove an older consumed one cannot reappear in the store.
+        return current;
+      }
+      if (current) {
         if (
+          matchesExpected &&
           !sameCredentialSnapshot(
             current.credentials,
             expectedSource.credentials,
@@ -481,8 +547,13 @@ export class AuthProxy {
           };
           expectedSource = current;
         } else {
+          // Safe to write: the store either still holds the exact source
+          // snapshot, or holds a generation this process already consumed and
+          // therefore must be older than the pending rotation.
           try {
             this.writeCredentialEntry(rotation, expectedSource.identity);
+            // A confirmed write means the store now holds this rotation.
+            this.clearConsumedGenerations();
             return { credentials: rotation, identity: expectedSource.identity };
           } catch {
             if (!warned) {
@@ -502,6 +573,21 @@ export class AuthProxy {
         PERSIST_RETRY_MAX_MS,
       );
       attempt++;
+      if (Date.now() + delay >= deadline) {
+        // Give up rather than hold the lock forever. The refreshed token stays
+        // usable in memory because refresh() replaces the cached credentials;
+        // the stored generation may still be the consumed one, so warn and let
+        // the next process re-authenticate instead of hanging this one.
+        console.warn(
+          '[ccpod-auth-proxy] credential persistence unverified after ' +
+            `${this.persistDeadlineMs}ms; continuing with the refreshed token in memory only ` +
+            '(the stored credential may be stale — restart ccpod to re-authenticate)',
+        );
+        // Remember the generation we consumed so a later refresh never adopts
+        // it back out of the lagging store.
+        this.rememberConsumedGeneration(expectedSource.credentials);
+        return { credentials: rotation, identity: expectedSource.identity };
+      }
       await new Promise((resolve) => setTimeout(resolve, delay));
     }
   }
@@ -545,7 +631,8 @@ export class AuthProxy {
         if (
           freshEntry &&
           freshEntry.credentials.refreshToken !==
-            source.credentials.refreshToken
+            source.credentials.refreshToken &&
+          !this.isKnownConsumedGeneration(freshEntry.credentials)
         ) {
           source = freshEntry;
           const retryBody = JSON.stringify({
@@ -997,6 +1084,24 @@ function constantTimeEqual(a: string, b: string): boolean {
   const ab = Buffer.from(a);
   const bb = Buffer.from(b);
   return ab.length === bb.length && timingSafeEqual(ab, bb);
+}
+
+/**
+ * Reduce a credential-store read failure to a non-secret reason. Node fs/OS
+ * errors carry a short symbol code (EACCES, ENOENT); the only other expected
+ * failure is our own validation marker. Anything else stays unspecified.
+ */
+function credentialReadErrorDetail(error: unknown): string | undefined {
+  if (typeof error === 'object' && error !== null && 'code' in error) {
+    const code = (error as { code?: unknown }).code;
+    if (typeof code === 'string' && /^[A-Z][A-Z0-9_]{0,31}$/.test(code)) {
+      return code;
+    }
+  }
+  if (error instanceof Error && error.message === 'invalid credentials') {
+    return 'invalid credentials';
+  }
+  return undefined;
 }
 
 /**

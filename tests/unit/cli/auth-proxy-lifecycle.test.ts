@@ -2,6 +2,8 @@ import { describe, expect, it, mock } from 'bun:test';
 import type { ContainerSpec } from '../../../src/container/builder.ts';
 import type { RunnerDeps } from '../../../src/container/runner.ts';
 
+const realDocker = await import('../../../src/runtime/docker.ts');
+
 const lifecycle: string[] = [];
 let proxyStartGate: Promise<void> | null = null;
 let onProxyStart: (() => void) | null = null;
@@ -10,6 +12,7 @@ const runtimeExec = mock(async (args: string[]) => {
   return { exitCode: 1, stderr: 'not found', stdout: '' };
 });
 mock.module('../../../src/runtime/docker.ts', () => ({
+  ...realDocker,
   dockerExec: runtimeExec,
   dockerSpawn: mock(async () => 0),
 }));

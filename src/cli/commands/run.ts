@@ -3,7 +3,10 @@ import { isAbsolute, join, normalize } from 'node:path';
 import chalk from 'chalk';
 import { defineCommand } from 'citty';
 import { buildContainerSpec } from '../../container/builder.ts';
-import { runContainer } from '../../container/runner.ts';
+import {
+  forceRemoveOwnedContainers,
+  runContainer,
+} from '../../container/runner.ts';
 import { dockerExec } from '../../runtime/docker.ts';
 import { leadingPositional, repeatedFlag, splitPassthrough } from '../args.ts';
 import { withAuthProxy } from '../auth-proxy.ts';
@@ -18,6 +21,15 @@ function installSignalForwarding(keepListeningAfterSignal = false): {
   const controller = new AbortController();
   const handler = () => {
     if (triggered) {
+      // When the first signal only aborts (proxy mode needs a coordinated
+      // shutdown), a second one means the user wants out now: honour it instead
+      // of swallowing every later Ctrl+C. Remove anything this process still
+      // owns first, because exiting here would otherwise orphan a container
+      // that was created moments ago; leftovers are swept on the next start.
+      if (keepListeningAfterSignal) {
+        forceRemoveOwnedContainers();
+        process.exit(130);
+      }
       return;
     }
     triggered = true;

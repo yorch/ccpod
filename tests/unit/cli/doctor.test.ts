@@ -142,6 +142,78 @@ describe('collectChecks', () => {
     expect(docker.mock.calls[0]?.[2]).toEqual({ timeoutMs: 5000 });
   });
 
+  it('keeps non-secret location and daemon error detail in probe mode', async () => {
+    writeProfile(
+      'work',
+      `name: work\nconfig:\n  source: local\n  path: /tmp/cfg\n`,
+    );
+    const docker = mock(async () => ({
+      exitCode: 1,
+      stderr:
+        'Cannot connect to the Docker daemon at unix:///tmp/docker.sock\nmore detail',
+      stdout: '',
+    }));
+    const checks = await collectChecks(
+      'work',
+      join(root, 'proj'),
+      true,
+      docker as never,
+      () => ({ name: 'docker', socketPath: '/tmp/docker.sock' }),
+    );
+    // Which daemon ccpod would use, and why the probe failed.
+    expect(find(checks, 'container runtime')?.detail).toContain(
+      '/tmp/docker.sock',
+    );
+    const probe = find(checks, 'Docker probe')?.detail ?? '';
+    expect(probe).toContain('Cannot connect to the Docker daemon');
+    expect(probe).not.toContain('\n');
+    // The resolved profile location is reported, not just its name.
+    expect(find(checks, 'profile')?.detail).toContain(join(root, '.ccpod'));
+  });
+
+  it('redacts credentials embedded in a remote daemon URL', async () => {
+    writeProfile(
+      'work',
+      `name: work\nconfig:\n  source: local\n  path: /tmp/cfg\n`,
+    );
+    const docker = mock(async () => ({
+      exitCode: 1,
+      stderr: 'cannot reach ssh://alice:s3cret@example.invalid:22\n',
+      stdout: '',
+    }));
+    const checks = await collectChecks(
+      'work',
+      join(root, 'proj'),
+      true,
+      docker as never,
+      () => ({
+        dockerHost: 'ssh://alice:s3cret@example.invalid',
+        name: 'docker',
+      }),
+    );
+    const runtime = find(checks, 'container runtime')?.detail ?? '';
+    expect(runtime).toContain('ssh://***@example.invalid');
+    expect(runtime).not.toContain('s3cret');
+
+    // Redaction happens before truncation: a credential pushed past the detail
+    // limit must not survive as a partial prefix.
+    const long = `cannot reach ssh://alice:s3cret${'x'.repeat(300)}@example.invalid:22`;
+    const truncated = await collectChecks(
+      'work',
+      join(root, 'proj'),
+      true,
+      mock(async () => ({ exitCode: 1, stderr: long, stdout: '' })) as never,
+      () => ({ dockerHost: 'unix:///tmp/docker.sock', name: 'docker' }),
+    );
+    const longProbe = find(truncated, 'Docker probe')?.detail ?? '';
+    expect(longProbe).not.toContain('s3cret');
+    expect(longProbe.length).toBeLessThan(200);
+
+    const probe = find(checks, 'Docker probe')?.detail ?? '';
+    expect(probe).not.toContain('s3cret');
+    expect(probe).toContain('ssh://***@example.invalid:22');
+  });
+
   it('reports an invalid profile.yml instead of throwing', async () => {
     writeProfile('bad', 'name: bad\n'); // config is required
     const checks = await collectChecks('bad', join(root, 'proj'));

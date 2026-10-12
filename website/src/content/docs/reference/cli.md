@@ -75,7 +75,7 @@ Everything after `--` is the command. It uses the same container selection as `c
 
 ## `ccpod doctor`
 
-Passively checks local runtime configuration, project/profile config validity, credential-source presence (not credential contents), image configuration, and profile sync freshness. It does not contact Docker unless you pass `--probe`; that read-only daemon probe has a 5-second timeout. `--json` prints the check summary, and the command exits non-zero if any check fails.
+Passively checks local runtime configuration, project/profile config validity, credential-source presence (not credential contents), image configuration, and profile sync freshness. Checks name the paths and runtime locations they inspected (profile directory, project config path, daemon socket/host); nothing secret is read. It does not contact Docker unless you pass `--probe`; that read-only daemon probe has a 5-second timeout and reports the first line of any daemon error. `--json` prints the check summary, and the command exits non-zero if any check fails.
 
 ```sh
 ccpod doctor

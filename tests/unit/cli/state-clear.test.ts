@@ -65,6 +65,17 @@ describe('state clear safety recheck', () => {
     expect(remove).not.toHaveBeenCalled();
   });
 
+  it('ignores running sidecars, which never mount the profile state', async () => {
+    const remove = mock(() => {});
+    const sidecar = { ...container('running'), type: 'redis' };
+    await clearStateSafely('p', 'this profile', filter, true, {
+      confirmRemoval: async () => true,
+      list: async () => [sidecar],
+      remove,
+    });
+    expect(remove).toHaveBeenCalledTimes(1);
+  });
+
   it('does not delete if Docker listing fails, including on force', async () => {
     const remove = mock(() => {});
     await expect(
