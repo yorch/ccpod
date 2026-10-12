@@ -614,6 +614,9 @@ describe('runContainer', () => {
     await expect(
       runContainer(makeSpec({ proxyAuth: true }), deps),
     ).rejects.toThrow('Failed to stop owned container');
+    // Cleanup failed, so ownership is deliberately retained; drain it so this
+    // test does not leak a registration into the next one.
+    forceRemoveOwnedContainers(() => {});
   });
 
   it('surfaces a final state verification failure after stop', async () => {
@@ -628,6 +631,8 @@ describe('runContainer', () => {
     await expect(
       runContainer(makeSpec({ proxyAuth: true }), deps),
     ).rejects.toThrow('Failed to inspect owned container');
+    // Verification failed, so ownership is deliberately retained; drain it.
+    forceRemoveOwnedContainers(() => {});
   });
 
   it('refuses to reattach in proxy auth mode', async () => {
@@ -960,6 +965,25 @@ describe('forceRemoveOwnedContainers', () => {
     removed.length = 0;
     forceRemoveOwnedContainers((id) => removed.push(id));
     expect(removed).toEqual([]);
+  });
+
+  it('keeps ownership when cleanup fails so a forced exit can still remove it', async () => {
+    const ownedId = 'f'.repeat(64);
+    const { deps } = makeDeps([
+      { exitCode: 1, stderr: 'No such container', stdout: '' },
+      { exitCode: 0, stderr: '', stdout: ownedId }, // create
+      { exitCode: 0, stderr: '', stdout: 'running' }, // pre-stop inspect
+      { exitCode: 1, stderr: 'daemon unavailable', stdout: '' }, // stop fails
+    ]);
+
+    await expect(
+      runContainer(makeSpec({ proxyAuth: true }), deps),
+    ).rejects.toThrow('Failed to stop');
+
+    // The container may still be running: a later forced exit must still find it.
+    const removed: string[] = [];
+    forceRemoveOwnedContainers((id) => removed.push(id));
+    expect(removed).toEqual([ownedId]);
   });
 
   it('recovers an ID from the cidfile when a create is still in flight', async () => {

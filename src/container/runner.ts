@@ -298,6 +298,7 @@ async function runOwnedContainer(
   // create. Proxy jobs always stop on return/detach. Non-proxy headless jobs
   // stop only for cancellation or an abnormal start/attach failure, preserving
   // their ordinary completion behavior.
+  let cleanupError: unknown;
   try {
     if (abortCleanup) {
       await abortCleanup;
@@ -335,8 +336,15 @@ async function runOwnedContainer(
         await stopOwnedContainer(containerId, deps, () => startFinished);
       }
     }
-  } finally {
+  } catch (error) {
+    // Cleanup failed: keep the registration so a forced exit can still try to
+    // remove this container, and surface the failure below.
+    cleanupError = error;
+  }
+  if (cleanupError === undefined) {
     ownedContainerIds.delete(containerId);
+  } else {
+    throw cleanupError;
   }
   if (callbackError !== undefined) {
     throw callbackError;
