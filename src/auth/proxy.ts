@@ -767,15 +767,8 @@ export class AuthProxy {
       }
     }
 
-    // Accept only origin-form request targets. WHATWG URL resolution treats
-    // //host and backslash forms as authorities, so reject them before any
-    // request body or credential-store access occurs.
     const requestTarget = req.url ?? '/';
-    if (
-      !requestTarget.startsWith('/') ||
-      requestTarget.startsWith('//') ||
-      requestTarget.includes('\\')
-    ) {
+    if (!isOriginFormTarget(requestTarget)) {
       this.sendError(res, 400, 'invalid request target');
       return;
     }
@@ -1010,6 +1003,27 @@ function requestFor(url: URL): typeof httpsRequest {
     return httpRequest as unknown as typeof httpsRequest;
   }
   return httpsRequest;
+}
+
+/**
+ * Accept only origin-form request targets. WHATWG URL resolution treats `//host`
+ * and backslash forms as authorities, so reject them before any request body or
+ * credential-store access occurs.
+ *
+ * This is defence in depth: an HTTP parser may already have collapsed such a
+ * target into an ordinary path, and in that case the request is simply a
+ * relative path on the configured upstream. The load-bearing guarantee is the
+ * origin comparison in `handleRequest`, which refuses to forward whenever the
+ * resolved URL is not the configured API origin.
+ */
+const BACKSLASH_RE = /\\/;
+
+export function isOriginFormTarget(target: string): boolean {
+  return (
+    target.startsWith('/') &&
+    !target.startsWith('//') &&
+    !BACKSLASH_RE.test(target)
+  );
 }
 
 function sameCredentialGeneration(

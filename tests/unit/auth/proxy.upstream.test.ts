@@ -15,7 +15,7 @@ import type {
   OAuthCredentialStoreIdentity,
   OAuthCredentials,
 } from '../../../src/auth/keychain.ts';
-import { AuthProxy } from '../../../src/auth/proxy.ts';
+import { AuthProxy, isOriginFormTarget } from '../../../src/auth/proxy.ts';
 
 // End-to-end tests for AuthProxy against local fake "Anthropic API" and
 // "OAuth token" servers: header rewriting, 401 retry, single-flight refresh,
@@ -130,7 +130,24 @@ const call = (base: string, init: RequestInit = {}) =>
   });
 
 describe('AuthProxy → upstream request rewriting', () => {
-  it('rejects authority, absolute, and backslash targets before credential access', async () => {
+  it('never sends credentials to an origin named in the request target', async () => {
+    // The named host is a REAL reachable server, so any regression that
+    // resolves the target against its own authority (for example dropping both
+    // the origin-form check and the origin comparison) leaks the bearer token
+    // here instead of silently succeeding. The assertion is on that invariant
+    // rather than on a 400: an HTTP parser may legitimately collapse a leading
+    // `//` into an ordinary path, which is then just a path on the CONFIGURED
+    // upstream, and asserting the exact status made this test depend on the
+    // parser's normalisation (it failed on Linux while passing elsewhere).
+    let foreignCalls = 0;
+    let foreignAuth: string | undefined;
+    const foreign = await listen((req, res) => {
+      foreignCalls++;
+      foreignAuth = String(req.headers.authorization);
+      req.resume();
+      res.writeHead(200).end('leaked');
+    });
+    const foreignPort = Number(new URL(foreign).port);
     let apiCalls = 0;
     let credentialReads = 0;
     const api = await listen((req, res) => {
@@ -147,14 +164,18 @@ describe('AuthProxy → upstream request rewriting', () => {
     });
     const proxyPort = Number(new URL(base).port);
     for (const path of [
-      '//attacker.invalid/steal',
-      'http://attacker.invalid/steal',
-      '/\\\\attacker.invalid/steal',
+      `//127.0.0.1:${foreignPort}/steal`,
+      `http://127.0.0.1:${foreignPort}/steal`,
+      `/\\127.0.0.1:${foreignPort}/steal`,
     ]) {
-      const response = await new Promise<number>((resolve, reject) => {
+      const status = await new Promise<number>((resolve, reject) => {
         const req = rawHttpRequest(
           {
-            headers: { 'content-length': '4', 'x-api-key': SENTINEL },
+            headers: {
+              connection: 'close',
+              'content-length': '4',
+              'x-api-key': SENTINEL,
+            },
             hostname: '127.0.0.1',
             method: 'POST',
             path,
@@ -168,11 +189,17 @@ describe('AuthProxy → upstream request rewriting', () => {
         req.on('error', reject);
         req.end('body');
       });
-      expect(response).toBe(400);
+      // Rejected outright, or forwarded only to the configured upstream.
+      if (status !== 400) {
+        expect(status).toBe(200);
+        expect(apiCalls).toBeGreaterThan(0);
+      }
     }
+    expect(foreignCalls).toBe(0);
+    expect(foreignAuth).toBeUndefined();
     expect(credentialReads).toBe(1); // initial startup only
-    expect(apiCalls).toBe(0);
   });
+
   it('swaps the sentinel for a bearer token and forwards method, path, query and body', async () => {
     const seen: Seen[] = [];
     let body = '';
@@ -1162,5 +1189,15 @@ describe('AuthProxy lifecycle', () => {
     proxies = [];
 
     await expect(call(base)).rejects.toThrow();
+  });
+});
+
+describe('isOriginFormTarget', () => {
+  it('accepts origin-form paths and rejects authority/absolute/backslash forms', () => {
+    expect(isOriginFormTarget('/v1/messages?x=1')).toBe(true);
+    expect(isOriginFormTarget('/')).toBe(true);
+    expect(isOriginFormTarget('//attacker.invalid/steal')).toBe(false);
+    expect(isOriginFormTarget('http://attacker.invalid/steal')).toBe(false);
+    expect(isOriginFormTarget('/\\attacker.invalid/steal')).toBe(false);
   });
 });
