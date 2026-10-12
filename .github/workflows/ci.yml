@@ -67,6 +67,11 @@ jobs:
           bun-version: latest
       - run: bun install --frozen-lockfile
       - run: bun test tests/unit --isolate
+      # The Release workflow gates on `bun run verify`, i.e. `bun test --isolate`
+      # over unit AND integration tests. Run that same command here so a
+      # release-time-only failure surfaces on the pull request instead.
+      - name: Release-parity test run
+        run: bun test --isolate
 
   integration:
     name: Integration Tests
