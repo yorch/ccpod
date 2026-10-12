@@ -1,0 +1,61 @@
+name: Diagnose proxy request-target handling
+
+# Throwaway diagnostic: reproduces the Release-workflow unit failure on Linux
+# and prints what the HTTP server actually saw as the request target.
+
+on: pull_request
+
+permissions:
+  contents: read
+
+jobs:
+  diagnose:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: latest
+      - run: bun install --frozen-lockfile
+      - name: Print toolchain
+        run: |
+          bun --version
+          node --version || true
+      - name: Instrument the proxy handler
+        run: |
+          python3 - <<'PY'
+          import pathlib
+          p = pathlib.Path('src/auth/proxy.ts')
+          s = p.read_text()
+          anchor = "    const requestTarget = req.url ?? '/';"
+          assert anchor in s, 'anchor not found'
+          probe = anchor + """
+    console.error(
+      '[diag] url=' +
+        JSON.stringify(req.url) +
+        ' method=' +
+        String(req.method) +
+        ' rawHeaderCount=' +
+        String(req.rawHeaders.length) +
+        ' host=' +
+        JSON.stringify(req.headers.host),
+    );"""
+          p.write_text(s.replace(anchor, probe, 1))
+          print('instrumented')
+          PY
+      - name: Run the full isolated suite (unit + integration)
+        run: bun test --isolate 2>&1 | tee /tmp/full.log || true
+      - name: Run the unit-only suite for comparison
+        run: bun test tests/unit --isolate 2>&1 | tee /tmp/unit.log || true
+      - name: Report
+        run: |
+          echo "===== full-suite diag lines ====="
+          grep -c '\[diag\]' /tmp/full.log || true
+          grep '\[diag\]' /tmp/full.log | sort | uniq -c || true
+          echo "===== unit-only diag lines ====="
+          grep -c '\[diag\]' /tmp/unit.log || true
+          grep '\[diag\]' /tmp/unit.log | sort | uniq -c || true
+          echo "===== full-suite summary ====="
+          grep -E '^ *[0-9]+ (pass|fail)|tests failed|\(fail\)' /tmp/full.log | head -30 || true
+          echo "===== unit-only summary ====="
+          grep -E '^ *[0-9]+ (pass|fail)|tests failed|\(fail\)' /tmp/unit.log | head -30 || true
