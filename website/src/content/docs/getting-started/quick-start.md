@@ -34,7 +34,7 @@ ccpod run
 
 The current directory is mounted at `/workspace` inside the container. Claude starts there. Exit the session and the container shuts down (state is wiped unless your profile sets `state: persistent`).
 
-> **Tip:** If you skip `ccpod init`, running `ccpod run` from any directory automatically launches the wizard when no `default` profile exists.
+> **Tip:** If you skip `ccpod init`, running `ccpod run` from any directory launches the wizard when no `default` profile exists and you are at an interactive terminal (non-interactive and headless runs error out and point you at `ccpod init`).
 
 ## 3. Use a different profile
 
@@ -49,11 +49,11 @@ Or pin a profile to a project by adding `.ccpod.yml`:
 profile: team
 ```
 
-ccpod walks up from `$PWD` to find this file, so any subdirectory of the repo works.
+ccpod walks up from `$PWD` to find this file, so any subdirectory of the repo works. The first time a project selects a non-default profile, ccpod asks you to approve it once and remembers the approval.
 
 ## 4. Headless mode
 
-Pipe a prompt file and exit with the container's status code:
+Pass a prompt file. ccpod reads it from the project and exits with the container's status code:
 
 ```sh
 ccpod run --file prompt.txt

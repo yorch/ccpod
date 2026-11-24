@@ -352,4 +352,16 @@ describe('writeMergedConfig', () => {
     run(profileDir, 'another', {});
     expect(existsSync(dir)).toBe(true);
   });
+
+  it('never copies credential files from profile or project dirs', () => {
+    const profileDir = makeTempDir();
+    const projectDir = makeTempDir();
+    writeFileSync(join(profileDir, '.credentials.json'), '{"a":1}');
+    writeFileSync(join(profileDir, 'keep.txt'), 'x');
+    writeFileSync(join(projectDir, '.claude.json'), '{"b":1}');
+    const dir = run(profileDir, 'c', {}, projectDir);
+    expect(existsSync(join(dir, '.credentials.json'))).toBe(false);
+    expect(existsSync(join(dir, '.claude.json'))).toBe(false);
+    expect(existsSync(join(dir, 'keep.txt'))).toBe(true);
+  });
 });

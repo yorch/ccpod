@@ -4,10 +4,10 @@ import { loadGlobalConfig } from '../global/config.ts';
 import { checkForUpdate } from '../update/checker.ts';
 import { VERSION } from '../version.ts';
 import { isDoctorCommandIntent } from './command-intent.ts';
+import { formatCliError } from './errors.ts';
 
 function handleFatalError(err: unknown): never {
-  const msg = err instanceof Error ? err.message : String(err);
-  process.stderr.write(`${chalk.red('error:')} ${msg}\n`);
+  process.stderr.write(`${chalk.red('error:')} ${formatCliError(err)}\n`);
   process.exit(1);
 }
 
@@ -22,8 +22,10 @@ if (
   !isDoctorCommandIntent(process.argv.slice(2))
 ) {
   const newer = checkForUpdate(VERSION);
-  if (newer) {
-    console.log(
+  // stderr (and only on a TTY) so the notice never pollutes piped stdout such
+  // as `ccpod config show --json | jq` or `ccpod exec -- cmd`.
+  if (newer && process.stderr.isTTY) {
+    console.error(
       chalk.yellow(`\nUpdate available: ${newer} — run 'ccpod update'\n`),
     );
   }

@@ -12,6 +12,7 @@ import { join } from 'node:path';
 import { Writable } from 'node:stream';
 import {
   downloadAndReplace,
+  isCompiledBinary,
   type LatestRelease,
   parseChecksums,
 } from '../../../src/update/updater.ts';
@@ -168,5 +169,25 @@ describe('downloadAndReplace', () => {
       }),
     ).rejects.toThrow('rename failed');
     expect(readFileSync(target, 'utf8')).toBe('original-binary');
+  });
+});
+
+describe('isCompiledBinary', () => {
+  it('rejects the bun runtime running a script', () => {
+    expect(
+      isCompiledBinary('/usr/local/bin/bun', '/repo/src/cli/index.ts'),
+    ).toBe(false);
+  });
+
+  it('rejects bun even when main looks virtual', () => {
+    expect(isCompiledBinary('/home/u/.bun/bin/bun', '/$bunfs/root/x')).toBe(
+      false,
+    );
+  });
+
+  it('accepts a compiled ccpod binary', () => {
+    expect(isCompiledBinary('/usr/local/bin/ccpod', '/$bunfs/root/ccpod')).toBe(
+      true,
+    );
   });
 });

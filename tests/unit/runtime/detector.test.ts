@@ -103,6 +103,21 @@ describe('detectRuntime', () => {
     expect(result.socketPath).toBe(join(xdg, 'podman/podman.sock'));
   });
 
+  it('does not probe /podman/podman.sock when XDG_RUNTIME_DIR is unset', () => {
+    saveEnv('HOME', 'XDG_RUNTIME_DIR', 'DOCKER_SOCKET_PATH');
+    const home = makeFakeHome();
+    process.env.HOME = home;
+    delete process.env.XDG_RUNTIME_DIR;
+    process.env.DOCKER_SOCKET_PATH = join(home, 'nonexistent-docker.sock');
+    // Whatever the host has, a detected podman socket must never be the
+    // root-level path built from an empty XDG_RUNTIME_DIR.
+    try {
+      expect(detectRuntime().socketPath).not.toBe('/podman/podman.sock');
+    } catch (error) {
+      expect((error as Error).message).toContain('No container runtime');
+    }
+  });
+
   it('throws descriptive error when no sockets exist', () => {
     saveEnv('HOME', 'XDG_RUNTIME_DIR', 'DOCKER_SOCKET_PATH');
     const home = makeFakeHome();

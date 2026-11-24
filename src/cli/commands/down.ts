@@ -68,8 +68,13 @@ export default defineCommand({
         process.stdout.write(`Stopping ${chalk.cyan(displayName)}... `);
         const stopResult = await dockerExec(['stop', '-t', '5', row.id]);
         if (stopResult.exitCode !== 0) {
+          if (/no such container/i.test(stopResult.stderr)) {
+            console.log(chalk.dim('already gone'));
+            continue;
+          }
           console.log(chalk.red('failed'));
           console.error(`  ${stopResult.stderr}`);
+          process.exitCode = 1;
           continue;
         }
         console.log(chalk.green('done'));
@@ -83,6 +88,7 @@ export default defineCommand({
         } else {
           console.log(chalk.red('failed'));
           console.error(`  ${rmResult.stderr}`);
+          process.exitCode = 1;
         }
       } else {
         console.log(chalk.green('done'));

@@ -544,6 +544,9 @@ function buildRunArgs(spec: ContainerSpec): string[] {
   for (const cap of spec.capAdd ?? []) {
     args.push('--cap-add', cap);
   }
+  for (const opt of spec.securityOpt ?? []) {
+    args.push('--security-opt', opt);
+  }
 
   // Proxy auth mode: ensure host.docker.internal resolves inside the
   // container. Docker Desktop and OrbStack provide it automatically, but

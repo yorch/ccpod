@@ -1,5 +1,5 @@
 import { defineCommand } from 'citty';
-import { repeatedFlag, splitPassthrough } from '../args.ts';
+import { leadingPositional, repeatedFlag, splitPassthrough } from '../args.ts';
 import { exitWithError } from '../errors.ts';
 import { runSession } from '../session.ts';
 
@@ -32,7 +32,17 @@ export default defineCommand({
     name: 'exec',
   },
   async run({ args, rawArgs }) {
-    const { passthrough: cmd } = splitPassthrough(rawArgs);
+    const { before, passthrough: cmd } = splitPassthrough(rawArgs);
+    // Anything before `--` that isn't a flag (or a flag's value) is a typo like
+    // `ccpod exec ls`; fail instead of silently dropping it.
+    const stray = leadingPositional(before, ['--env', '--profile']);
+    if (stray !== undefined) {
+      exitWithError(
+        new Error(
+          `Unexpected argument '${stray}' — use: ccpod exec -- <command>`,
+        ),
+      );
+    }
     if (cmd.length === 0) {
       exitWithError(
         new Error('No command given. Usage: ccpod exec -- <command> [args...]'),

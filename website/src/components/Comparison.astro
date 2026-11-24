@@ -6,7 +6,11 @@ const rows = [
     'Built into profile',
   ],
   ['Versioned via git', 'Manual sync', 'config: source: git'],
-  ['Reproducible base image', 'Drift between teammates', 'Pinned image tag'],
+  [
+    'Reproducible base image',
+    'Drift between teammates',
+    'Version-tagged image (e.g. :1.2.3)',
+  ],
   ['Network policy', 'Trusts host network', 'full or restricted allow-list'],
   [
     'Untrusted repo config',
@@ -25,11 +29,12 @@ const rows = [
 ---
 <div class="comparison">
   <table>
+    <caption class="visually-hidden">Bare Claude Code compared with ccpod</caption>
     <thead>
       <tr>
-        <th class="col-feature">Feature</th>
-        <th class="col-bare">Bare Claude Code</th>
-        <th class="col-ccpod">ccpod</th>
+        <th scope="col" class="col-feature">Feature</th>
+        <th scope="col" class="col-bare">Bare Claude Code</th>
+        <th scope="col" class="col-ccpod">ccpod</th>
       </tr>
     </thead>
     <tbody>

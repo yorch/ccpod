@@ -5,13 +5,16 @@ import chalk from 'chalk';
 import { defineCommand } from 'citty';
 import { parse as parseYaml } from 'yaml';
 import { findProjectConfig } from '../../../config/loader.ts';
+import { mergeConfigs } from '../../../config/merger.ts';
 import {
   PROFILE_NAME_REGEX,
   profileConfigSchema,
   projectConfigSchema,
 } from '../../../config/schema.ts';
+import { validateServiceDependencies } from '../../../container/sidecars.ts';
 import { getProfileDir } from '../../../profile/manager.ts';
 import { rejectExtraPositionals } from '../../args.ts';
+import { formatCliError } from '../../errors.ts';
 import { validateProfileArg } from '../../validate.ts';
 
 export default defineCommand({
@@ -123,6 +126,20 @@ export default defineCommand({
           `  git repo    — ${profileConfig.config.repo} (not fetched; run 'ccpod profile update ${profileName}' to sync)`,
         ),
       );
+    }
+
+    // Schema checks alone miss errors that only surface when profile and project
+    // are merged (bad port mappings, unknown dependsOn, ...). Run the same
+    // merge `ccpod run` does so validate agrees with it.
+    if (profileConfig) {
+      try {
+        const merged = mergeConfigs(profileConfig, projectConfig ?? null);
+        validateServiceDependencies(merged.services);
+        report('merged config (ports, service dependencies)', true);
+      } catch (error) {
+        report('merged config', false, formatCliError(error));
+        allOk = false;
+      }
     }
 
     console.log();

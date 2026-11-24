@@ -103,6 +103,22 @@ describe('setupContainer error handling (M7)', () => {
     ).rejects.toThrow(/Profile 'nonexistent-profile' not found/);
   });
 
+  it('fails instead of launching the wizard when stdin is not a TTY', async () => {
+    const prev = process.stdin.isTTY;
+    Object.defineProperty(process.stdin, 'isTTY', {
+      configurable: true,
+      value: false,
+    });
+    try {
+      await expect(setupContainer({}, tmpDir)).rejects.toThrow(/ccpod init/);
+    } finally {
+      Object.defineProperty(process.stdin, 'isTTY', {
+        configurable: true,
+        value: prev,
+      });
+    }
+  });
+
   it('rejects invalid merged service dependencies before image or Docker effects', async () => {
     for (const [name, services, message] of [
       [

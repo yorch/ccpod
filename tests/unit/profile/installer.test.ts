@@ -265,3 +265,48 @@ describe('summarizeProfileRisks', () => {
     expect(lines).toContain('TOKEN=${GITHUB_TOKEN}');
   });
 });
+
+describe('detectSource option injection', () => {
+  it('rejects input starting with a dash', () => {
+    expect(() => detectSource('--upload-pack=touch /tmp/x')).toThrow(
+      "must not start with '-'",
+    );
+  });
+});
+
+describe('summarizeProfileRisks (extended)', () => {
+  it('flags image, claudeArgs, plugins, ports, keyFile, literal env', () => {
+    const lines = summarizeProfileRisks({
+      allowProjectEnvForward: [],
+      allowProjectHostMounts: false,
+      allowProjectInit: false,
+      allowProjectServices: false,
+      auth: { keyFile: '~/.ccpod/credentials/x/key' },
+      claudeArgs: ['--foo'],
+      config: { path: '/home/u/cfg' },
+      env: ['TOKEN=abc', 'PLAIN'],
+      image: { dockerfile: 'Dockerfile', use: 'evil/img:1' },
+      init: [],
+      network: { allow: ['example.com'], policy: 'restricted' },
+      permissions: 'permissive',
+      plugins: ['p@m'],
+      ports: { list: ['8080'] },
+      services: {},
+      ssh: { mountSshDir: false },
+    }).join('\n');
+    for (const needle of [
+      'evil/img:1',
+      'Dockerfile',
+      '--foo',
+      'permissive',
+      'p@m',
+      '8080',
+      '/home/u/cfg',
+      'example.com',
+      'credentials/x/key',
+      '1 literal env var(s): TOKEN',
+    ]) {
+      expect(lines).toContain(needle);
+    }
+  });
+});

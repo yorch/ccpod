@@ -1,5 +1,7 @@
 # ccpod — Requirements Specification
 
+> **Historical document.** This spec was written before ccpod was built and is not maintained. Where it disagrees with the code, the code and the reference docs on the website are right. Known disagreements are noted inline below.
+
 CLI tool (TypeScript + Bun, single binary) that runs Claude Code inside Docker containers with portable, composable configuration via a profile system.
 
 **Differentiator vs existing tools (claudebox, claude-code-container, etc.):** Profiles abstract the full `~/.claude` environment (settings, plugins, skills, CLAUDE.md, MCPs) and can be sourced from local dirs or git repos, enabling per-user, per-team, and per-project Claude environments.
@@ -44,7 +46,7 @@ A **profile** is the core abstraction — it defines the full Claude environment
 | F-11 | Config source: **local directory** or **git repository** |
 | F-12 | Git configs support sync strategies: `always` (every run), `daily` (once per calendar day, tracked via `.ccpod-sync-lock` timestamp file in the profile dir), `pin` (manual via `ccpod profile update` only) |
 | F-13 | Three-layer hierarchy: global profile → project (`.ccpod.yml`) → CLI flags |
-| F-14 | Each layer declares `merge: deep` (default) or `merge: override` |
+| F-14 | The project `.ccpod.yml` declares `merge: deep` (default) or `merge: override`. Profiles have no `merge` key. |
 | F-15 | `ccpod profile create <name>` — interactive profile creation |
 | F-16 | `ccpod profile list` — list profiles with config source |
 | F-17 | `ccpod profile update <name>` — force-pull git-based config |
@@ -103,7 +105,7 @@ The `~/.claude/` directory has three distinct categories requiring different per
 |---|---|
 | F-40 | Official base image: `ghcr.io/yorch/ccpod` with Claude Code pre-installed |
 | F-41 | Override with `image: my-registry/my-image:tag` in profile |
-| F-42 | `dockerfile:` path: if absolute, context dir = `dirname(dockerfile)`; if relative, context dir = `$PWD` |
+| F-42 | `dockerfile:` path: if absolute, context dir = `dirname(dockerfile)`; if relative, it resolves against the **profile directory** (never the project checkout). Context dir = `dirname` of the resolved path. |
 | F-42a | When `dockerfile:` is set, ccpod auto-builds on first run using tag `ccpod-local-<profile>-<sha256-of-dockerfile-contents>` (falls back to path hash if file not found); subsequent runs reuse that tag unless `--rebuild` is passed |
 | F-43 | `ccpod image build [--profile <name>]` — explicit local build |
 | F-44 | `ccpod image pull [--profile <name>]` — pull latest base or declared image |
@@ -115,7 +117,7 @@ The `~/.claude/` directory has three distinct categories requiring different per
 |---|---|
 | F-50 | Default policy: `full` (unrestricted outbound) |
 | F-51 | `restricted`: blocks all outbound except declared `allow` list (domains/IPs) |
-| F-52 | Policy configurable at profile level, overridable at project level |
+| F-52 | Policy configurable at profile level only. A project `network:` block is ignored with a warning, so a repo cannot weaken a restricted profile. |
 | F-53 | Restricted mode via `iptables` rules applied at container start |
 
 ### SSH & Git Credentials
@@ -162,12 +164,14 @@ The `~/.claude/` directory has three distinct categories requiring different per
 
 | ID | Requirement |
 |---|---|
-| F-90 | `ccpod init` — interactive wizard, triggered automatically on first run or explicitly |
-| F-91 | Wizard step 1: detect installed container runtime (Docker / Podman / OrbStack / Colima) |
-| F-92 | Wizard step 2: choose auth method (API key or OAuth login) and store credentials |
-| F-93 | Wizard step 3: choose config source for default profile (local dir, git repo, or start empty) |
-| F-94 | Wizard step 4: choose network policy default |
-| F-95 | Wizard step 5: confirm and write `~/.ccpod/profiles/default/profile.yml` |
+| F-90 | `ccpod init` — interactive wizard, triggered automatically on first interactive run (non-interactive runs error instead) or explicitly |
+| F-91 | Wizard step: detect installed container runtime (Docker / Podman / OrbStack / Colima) |
+| F-92 | Wizard step: choose auth method (API key or OAuth login) and store credentials |
+| F-93 | Wizard step: choose config source for default profile (local dir, git repo, or start empty) |
+| F-94 | Wizard step: choose network policy default |
+| F-95 | Wizard final step: confirm and write `~/.ccpod/profiles/default/profile.yml` |
+
+_The wizard has more steps than the list above describes; `src/init/wizard.ts` is the source of truth._
 
 ---
 
@@ -233,19 +237,17 @@ profile: personal
 merge: deep                         # "deep" | "override"
 
 claudeArgs:                         # deep: appended after profile; override: replaces profile
-  - "--dangerously-skip-permissions"
+  - "--verbose"
 
 config:
   claudeMd: append                  # "append" | "override"
 
-network:
-  policy: restricted
-  allow:
-    - api.github.com
-    - registry.npmjs.org
+# network: is NOT valid here. The network policy is profile-owned; a project
+# network: block is ignored with a warning.
 
 ports:
-  - "4000:4000"
+  list:                             # published on 127.0.0.1 only
+    - "4000:4000"
 
 env:
   - DATABASE_URL
@@ -287,7 +289,7 @@ ccpod ps --all                      Include stopped containers
 ccpod state clear [--profile <name>]         Delete state volume (reset history/memory)
 
 ccpod config show                   Resolved merged config (--json for machine output)
-ccpod config validate               Validate .ccpod.yml
+ccpod config validate               Validate .ccpod.yml, the profile and their merge
 ccpod config get <key>              Read a global ccpod setting (e.g. autoCheckUpdates)
 ccpod config set <key> <value>      Write a global ccpod setting
 

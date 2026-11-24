@@ -238,3 +238,31 @@ describe('profileConfigSchema auth.keyFile', () => {
     expect(result.success).toBe(false);
   });
 });
+
+describe('service validation', () => {
+  const base = { config: { source: 'local' }, name: 'test' };
+  it('rejects an image starting with a dash', () => {
+    expect(
+      profileConfigSchema.safeParse({
+        ...base,
+        services: { db: { image: '--privileged' } },
+      }).success,
+    ).toBe(false);
+  });
+  it('rejects bad service names', () => {
+    for (const k of ['-x', 'a b', '../x', '']) {
+      expect(
+        profileConfigSchema.safeParse({
+          ...base,
+          services: { [k]: { image: 'alpine' } },
+        }).success,
+      ).toBe(false);
+    }
+    expect(
+      profileConfigSchema.safeParse({
+        ...base,
+        services: { 'db.1_x-y': { image: 'alpine' } },
+      }).success,
+    ).toBe(true);
+  });
+});

@@ -1,8 +1,12 @@
 import {
   chmodSync,
-  copyFileSync,
+  closeSync,
+  constants,
   existsSync,
+  lstatSync,
+  openSync,
   readFileSync,
+  rmSync,
   writeFileSync,
 } from 'node:fs';
 import { homedir } from 'node:os';
@@ -455,7 +459,60 @@ function sanitizeClaudeJson(src: string): string {
   }
 }
 
-function copyCredentials(
+/** True when `path` exists and is a symlink (never follows it). */
+function isSymlink(path: string): boolean {
+  try {
+    return lstatSync(path).isSymbolicLink();
+  } catch {
+    return false;
+  }
+}
+
+/**
+ * Read a credential source file, refusing symlinks. The credentials dirs are
+ * mounted read-write into containers, so a container (or an untrusted repo
+ * running inside one) can plant a symlink there pointing at any host file.
+ */
+function readCredentialSource(path: string): string | undefined {
+  try {
+    const st = lstatSync(path);
+    if (st.isSymbolicLink() || !st.isFile()) {
+      console.warn(
+        chalk.yellow(`warning: not copying ${path}: not a regular file`),
+      );
+      return undefined;
+    }
+  } catch {
+    return undefined; // absent
+  }
+  return readFileSync(path, 'utf8');
+}
+
+/**
+ * Write a credential file without following a symlink at the destination: a
+ * planted link is removed first, and O_NOFOLLOW guards the final open.
+ */
+function writeCredentialDest(dest: string, data: string): void {
+  if (isSymlink(dest)) {
+    rmSync(dest, { force: true });
+  }
+  const fd = openSync(
+    dest,
+    constants.O_WRONLY |
+      constants.O_CREAT |
+      constants.O_TRUNC |
+      (constants.O_NOFOLLOW ?? 0),
+    0o600,
+  );
+  try {
+    writeFileSync(fd, data);
+  } finally {
+    closeSync(fd);
+  }
+  chmodSync(dest, 0o600);
+}
+
+export function copyCredentials(
   sourceProfile: string | undefined,
   destProfile: string,
 ): void {
@@ -464,26 +521,34 @@ function copyCredentials(
   }
   const srcDir = getCredentialsDir(sourceProfile);
   const destDir = getCredentialsDir(destProfile);
-  const credFile = join(srcDir, '.credentials.json');
   try {
-    const dest = join(destDir, '.credentials.json');
-    copyFileSync(credFile, dest);
-    chmodSync(dest, 0o600);
+    const data = readCredentialSource(join(srcDir, '.credentials.json'));
+    if (data !== undefined) {
+      writeCredentialDest(join(destDir, '.credentials.json'), data);
+    }
   } catch {
-    // file absent — container may not have run yet; skip silently
+    // skip if unreadable/unwritable
   }
   const claudeJsonSrc = join(srcDir, '.claude.json');
   if (existsSync(claudeJsonSrc)) {
     try {
-      const dest = join(destDir, '.claude.json');
-      writeFileSync(dest, sanitizeClaudeJson(claudeJsonSrc), { mode: 0o600 });
+      if (isSymlink(claudeJsonSrc)) {
+        console.warn(
+          chalk.yellow(`warning: not copying ${claudeJsonSrc}: is a symlink`),
+        );
+      } else {
+        writeCredentialDest(
+          join(destDir, '.claude.json'),
+          sanitizeClaudeJson(claudeJsonSrc),
+        );
+      }
     } catch {
       // skip if unreadable
     }
   }
 }
 
-function writeKeychainCredentials(
+export function writeKeychainCredentials(
   token: string | undefined,
   destProfile: string,
 ): void {
@@ -491,12 +556,14 @@ function writeKeychainCredentials(
     return;
   }
   const destDir = getCredentialsDir(destProfile);
-  writeFileSync(join(destDir, '.credentials.json'), token, { mode: 0o600 });
+  writeCredentialDest(join(destDir, '.credentials.json'), token);
   const hostClaudeJson = join(homedir(), '.claude.json');
   if (existsSync(hostClaudeJson)) {
     try {
-      const dest = join(destDir, '.claude.json');
-      writeFileSync(dest, sanitizeClaudeJson(hostClaudeJson), { mode: 0o600 });
+      writeCredentialDest(
+        join(destDir, '.claude.json'),
+        sanitizeClaudeJson(hostClaudeJson),
+      );
     } catch {
       // skip if unreadable
     }

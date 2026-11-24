@@ -1,5 +1,5 @@
 import { existsSync } from 'node:fs';
-import { join } from 'node:path';
+import { isAbsolute, join } from 'node:path';
 import { dockerExec, dockerSpawn } from '../runtime/docker.ts';
 
 type DockerExecFn = typeof dockerExec;
@@ -35,9 +35,11 @@ export async function buildImage(
   contextDir: string,
   deps: ImageDeps = defaultDeps,
 ): Promise<void> {
-  const dockerfilePath = existsSync(join(contextDir, dockerfile))
-    ? join(contextDir, dockerfile)
-    : dockerfile;
+  const dockerfilePath = isAbsolute(dockerfile)
+    ? dockerfile
+    : existsSync(join(contextDir, dockerfile))
+      ? join(contextDir, dockerfile)
+      : dockerfile;
 
   console.log(`Building image: ${tag}`);
   const exitCode = await deps.dockerSpawn([

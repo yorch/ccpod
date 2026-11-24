@@ -172,3 +172,12 @@ describe('ensureImage', () => {
     ).rejects.toThrow('docker pull failed');
   });
 });
+
+describe('buildImage absolute dockerfile', () => {
+  it('does not join contextDir onto an absolute dockerfile path', async () => {
+    const { deps, spawnMock } = makeDeps();
+    await buildImage('/abs/elsewhere/Dockerfile', 'tag:1', '/ctx', deps);
+    const args = spawnMock.mock.calls[0]?.[0] as string[];
+    expect(args[args.indexOf('-f') + 1]).toBe('/abs/elsewhere/Dockerfile');
+  });
+});

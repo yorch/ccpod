@@ -10,6 +10,7 @@ ccpod stores everything under `~/.ccpod/` plus a small set of Docker named volum
 ```
 ~/.ccpod/
 ├── config.yml                      # global ccpod config (autoCheckUpdates, etc.)
+├── trusted-projects.json           # projects approved to select a non-default profile (0600)
 ├── profiles/
 │   ├── default/
 │   │   ├── profile.yml             # the profile definition
@@ -22,6 +23,8 @@ ccpod stores everything under `~/.ccpod/` plus a small set of Docker named volum
 │   └── team/                       # auth tokens for "team" profile
 └── state/                          # only when state: persistent
     ├── default/                    # projects, todos, statsig for "default"
+    │   └── <projectHash>/          # per-project dirs when stateIsolation: per-project
+    │       └── .ccpod-project      # marker holding the project path (used by prune)
     └── team/
 ```
 
@@ -33,7 +36,7 @@ In tests this can be redirected with `CCPOD_TEST_DIR`.
 |---|---|---|
 | `ccpod-plugins-<profile>` | Installed Claude plugins | Persists across runs; removed by `ccpod plugins update --reset`, `ccpod profile delete` and (when unreferenced) `ccpod prune` |
 
-Plus per-project networks for sidecars: `ccpod-net-<sha256($PWD)>`.
+Plus per-project networks for sidecars: `ccpod-net-<projectHash>`, where `<projectHash>` is the first 16 hex characters of the SHA-256 of the resolved (realpath) project path.
 
 ## Host state directory
 
@@ -45,6 +48,8 @@ When `state: persistent`, Claude's projects, todos, and statsig data are stored 
 
 This is a plain host directory (not a Docker volume), so it survives host reboots and is easy to back up or inspect. Wiped by `ccpod state clear`.
 
+With `stateIsolation: per-project`, the directory is `~/.ccpod/state/<profile>/<projectHash>/` instead, one per project.
+
 ## Container mounts
 
 Inside a Claude container:
@@ -52,7 +57,7 @@ Inside a Claude container:
 | Mount | Source | Mode |
 |---|---|---|
 | `/workspace` | `$PWD` on host | rw bind |
-| `/ccpod/config` | `/tmp/ccpod-<hash>/` (merged config) | ro bind |
+| `/ccpod/config` | `${TMPDIR}/ccpod-u<uid>/ccpod-<hash>/` (merged config) | ro bind |
 | `/ccpod/credentials` | `~/.ccpod/credentials/<profile>/` | rw bind |
 | `/ccpod/plugins` | `ccpod-plugins-<profile>` | volume |
 | `/ccpod/state` | `~/.ccpod/state/<profile>/` *or* tmpfs | rw bind / tmpfs |

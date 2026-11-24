@@ -2,7 +2,7 @@
 
 ## Development setup
 
-Requires [Bun](https://bun.sh) 1.x and a container runtime (Docker, OrbStack, Colima, or Podman).
+Requires [Bun](https://bun.sh) 1.4 or newer (see `engines` in `package.json`) and a container runtime (Docker, OrbStack, Colima, or Podman). Use Bun for everything, including the website.
 
 ```sh
 git clone https://github.com/yorch/ccpod.git
@@ -19,11 +19,20 @@ Run before every commit:
 
 ```sh
 bun run typecheck    # tsc --noEmit
-bun test tests/unit/ --isolate # unit tests (--isolate keeps mock.module() from leaking between files)
+bun test --isolate   # all tests, unit and integration (--isolate keeps mock.module() from leaking between files)
 bun run check        # biome format + lint (writes fixes)
 ```
 
-All three must pass. See `CLAUDE.md` for the full commit checklist.
+All three must pass. `bun test --isolate` runs the same suite as CI and the release workflow; `bun test tests/unit/ --isolate` runs unit tests only. Always pass `--isolate`.
+
+## Workflow
+
+- **Work in a dedicated worktree** for each change, branched from `origin/main`: `git worktree add -b <branch> ../ccpod-<branch> origin/main`. Never commit directly to `main`.
+- **Open a pull request for every change**, however small. Push the branch and open the PR with `gh pr create`. Nothing is pushed directly to `main`.
+- **Use [Conventional Commits](https://www.conventionalcommits.org/)** for commit messages: `<type>(<scope>): <summary>`, with type one of `feat`, `fix`, `refactor`, `test`, `docs`, `chore`, `perf`, or `ci`.
+- Remove the worktree and local branch after the PR is merged.
+
+`AGENTS.md` (also available as `CLAUDE.md`) has the full architecture notes and security invariants that reviews check against.
 
 ## Changesets
 
@@ -34,7 +43,7 @@ bun run changeset   # select ccpod, choose patch/minor/major, describe the chang
 git add .changeset/*.md
 ```
 
-CI fails PRs without one. Use `bun run changeset --empty` for changes that are not user-visible.
+CI fails PRs without one. Use `bun run changeset --empty` for changes that are not user-visible. Docs, website and CI-only changes normally get a patch Changeset too.
 
 ## Cutting a release
 

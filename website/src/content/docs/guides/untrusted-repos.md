@@ -48,7 +48,7 @@ Each section below explains one of these choices.
 
 ## 2. Restrict the network
 
-With `policy: restricted`, the entrypoint installs firewall rules before Claude starts and drops all outbound traffic except loopback, DNS, and the hosts in `allow`. If the rules cannot be installed, the container exits instead of running open.
+With `policy: restricted`, the entrypoint installs firewall rules before Claude starts and drops all outbound traffic except loopback, DNS to the nameservers in the container's `/etc/resolv.conf`, and the hosts in `allow`. Sidecars are not reachable unless their service names are listed in `allow`. If the rules cannot be installed, the container exits instead of running open.
 
 Start with only `api.anthropic.com` and add hosts as Claude needs them, for example a package registry:
 
@@ -99,7 +99,7 @@ A repo's `.ccpod.yml` is treated as untrusted. These profile flags default to `f
 | `allowProjectHostMounts` | The repo's sidecars mount host paths. Only matters when `allowProjectServices` is also on. |
 | `allowProjectEnvForward` | A list of host variable names (for example `GITHUB_TOKEN`) the repo may forward into the container by name. Empty by default, so a repo cannot pull your secrets out of your shell. Keep it empty in the sandbox profile. |
 
-The repo can never change the network policy or allow-list. It cannot set environment variables that would redirect your credentials or hijack the container (`ANTHROPIC_API_KEY`, `HTTPS_PROXY`, `PATH`, `LD_PRELOAD`, `NODE_OPTIONS`, and similar), and it cannot use `${VAR}` interpolation to read host variables. Symlinked `.claude/`, `CLAUDE.md` and `.claude/settings.json` in the repo are ignored, so they cannot point at files like `~/.ssh` or `~/.aws/credentials`.
+The repo can never change the network policy or allow-list. It cannot set environment variables that would redirect your credentials or hijack the container (`ANTHROPIC_API_KEY`, `HTTPS_PROXY`, `PATH`, `LD_PRELOAD`, `NODE_OPTIONS`, and similar), and it cannot use `${VAR}` interpolation to read host variables. A symlinked `.claude/` directory in the repo is ignored. `CLAUDE.md` and `.claude/settings.json` are read only when they resolve to a regular file inside the repo, so a symlink cannot point at files like `~/.ssh` or `~/.aws/credentials`; escaping links are ignored with a warning.
 
 ## 7. Run it explicitly
 

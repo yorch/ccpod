@@ -30,8 +30,10 @@ const playerJs = `https://cdn.jsdelivr.net/npm/asciinema-player@${PLAYER_VERSION
 ---
 <link rel="stylesheet" href={playerCss} />
 
-<div class="asciinema-wrapper">
-  <div id={id} data-src={resolvedSrc}></div>
+<div class="asciinema-wrapper" role="region" aria-label="Terminal demo">
+  <div id={id} data-src={resolvedSrc}>
+    <p class="asciinema-fallback">Loading terminal demo…</p>
+  </div>
 </div>
 
 <script is:inline define:vars={{ playerJs }}>
@@ -63,6 +65,7 @@ const playerJs = `https://cdn.jsdelivr.net/npm/asciinema-player@${PLAYER_VERSION
     .then(() => {
       const target = document.getElementById(id);
       if (!target || !window.AsciinemaPlayer) return;
+      target.textContent = "";
       window.AsciinemaPlayer.create(src, target, {
         poster,
         cols,
@@ -74,5 +77,10 @@ const playerJs = `https://cdn.jsdelivr.net/npm/asciinema-player@${PLAYER_VERSION
         fit: "width",
       });
     })
-    .catch(() => {});
+    .catch(() => {
+      const target = document.getElementById(id);
+      if (target) {
+        target.innerHTML = '<p class="asciinema-fallback">The terminal demo could not be loaded. Check your connection and reload the page.</p>';
+      }
+    });
 </script>

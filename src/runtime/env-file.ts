@@ -158,6 +158,72 @@ export function splitEnvForTransport(extraEnv: Record<string, string>): {
   return { fileValues, inlineValues };
 }
 
+// Names that change how the Docker CLI process itself behaves (config dir,
+// credential helpers, plugin dirs, ssh:// transport, proxies, TLS, loader).
+// Inline (CR/LF) values ride in the CLI's own environment, so they must not
+// be able to set any of these.
+const CLI_SENSITIVE_EXACT = new Set([
+  'HOME',
+  'PATH',
+  'TMPDIR',
+  'TMP',
+  'TEMP',
+  'USER',
+  'LOGNAME',
+  'SHELL',
+  'PWD',
+  'GOPATH',
+  'GOROOT',
+  'GOFLAGS',
+  'GOBIN',
+  'GOCACHE',
+  'GOENV',
+]);
+const CLI_SENSITIVE_PREFIXES = [
+  'XDG_',
+  'SSH_',
+  'GIT_',
+  'SSL_',
+  'CURL_',
+  'LD_',
+  'DYLD_',
+  'DOCKER_',
+  'CCPOD_',
+];
+
+function isCliSensitiveEnvKey(key: string): boolean {
+  const upper = key.toUpperCase();
+  return (
+    CLI_SENSITIVE_EXACT.has(upper) ||
+    upper.endsWith('_PROXY') ||
+    CLI_SENSITIVE_PREFIXES.some((prefix) => upper.startsWith(prefix))
+  );
+}
+
+/**
+ * Inline values are merged over the Docker CLI's own environment. Refuse any
+ * that would alter the CLI itself: a CLI-sensitive key, or a key that would
+ * replace a different value already present. Re-forwarding the identical
+ * value (a multi-line host variable passed through unchanged) is harmless.
+ */
+export function assertSafeInlineEnv(
+  base: NodeJS.ProcessEnv,
+  inlineValues: Record<string, string>,
+): void {
+  for (const [key, value] of Object.entries(inlineValues)) {
+    if (base[key] === value) {
+      continue;
+    }
+    if (isCliSensitiveEnvKey(key) || (key in base && base[key] !== value)) {
+      throw new Error(
+        `Refusing environment variable ${key}: a value containing line breaks cannot ` +
+          'be passed for a name that would alter the Docker client itself. ' +
+          'Remove the line breaks or use a different variable name.',
+      );
+    }
+  }
+}
+
 const DOCKER_BOOLEAN_OPTIONS = new Set([
   '--disable-content-trust',
   '--detach',

@@ -15,7 +15,7 @@ review. Numbering is left stable (with gaps) so cross-references stay valid.
 Highest-leverage open items, in suggested order:
 
 1. **Container/runtime correctness** — R16 (image build-context).
-2. **Config/CLI & auth correctness** — R7 (updater `ETXTBSY`), R18 (config-show masking), R21, R23, R24, R27.
+2. **Config/CLI & auth correctness** — R21, R23, R27.
 3. **DRY / maintainability, performance, and test-coverage** backlogs (below).
 
 > **Addressed:** the trust-boundary trio (**R1–R3**) and dead-`claudeArgs`
@@ -51,12 +51,8 @@ profile-relative `image.dockerfile`) is closed — see "Security invariants" in
 
 ### Config / CLI wiring
 
-- **R18.** `config show` masks only env keys containing "key"/"token"
-  (`src/cli/commands/config/show.ts:49`); `PASSWORD`/`SECRET`/`CREDENTIALS`
-  names print in cleartext, including `--json`. Broaden the mask list.
-
 - **R21.** `loadGlobalConfig` swallows all YAML parse errors and reverts to
-  defaults (`src/global/config.ts:24-28`), silently re-enabling
+  defaults (`src/global/config.ts:24-37`), silently re-enabling
   `autoCheckUpdates` on a typo. Emit a stderr warning.
 
 - **R23.** `DOCKER_SOCKET_PATH` override is silently outranked by an installed
@@ -90,24 +86,10 @@ now surfaces its exit code). Remaining open items:
 - **R16. `image build` and `run` build the same tag from different contexts.**
   `src/cli/commands/image/build.ts:66-68` uses `cwd`; `_setup.ts:163-167` uses
   `dirname(dockerfileAbs)`. `computeLocalImageTag` hashes Dockerfile content
-  only, so whichever builds first wins the tag and the other reuses a
-  divergently-built image; editing `entrypoint.sh` also never triggers a
-  rebuild on `run`. Fix: unify the context; include context-file digests in
-  the tag.
-
-### Auth / update
-
-- **R7. `ccpod update` copy-fallback fails on the running binary** (verified:
-  `ETXTBSY`). `src/update/updater.ts:169`. The EXDEV fallback
-  `copyFileSync(tmp, targetPath)` opens the live executable for write →
-  `ETXTBSY` on Linux (tmpfs-`/tmp` hosts: Fedora/Arch), so the update can never
-  complete and `update.ts` surfaces a raw stack. Fix: copy to
-  `${targetPath}.new` in the target dir, then `renameSync` over it (atomic,
-  same filesystem).
-
-- **R24.** `ccpod update` run via `bun run dev` replaces the user's `bun`
-  binary (`src/cli/commands/update.ts:45` uses `process.execPath`). Guard:
-  refuse when not a compiled `ccpod` build.
+  plus `entrypoint.sh` and the ccpod version (entrypoint edits and upgrades now
+  rebuild), so whichever command builds first still wins the tag and the other
+  reuses a divergently-built image. Fix: unify the context; include remaining
+  context-file digests in the tag.
 
 ### Git-sync / installer
 
@@ -197,7 +179,7 @@ now surfaces its exit code). Remaining open items:
 
 - `src/container/sidecars.ts` — no tests for network race or partial-failure
   rollback.
-- `src/update/updater.ts` — no tests for EXDEV / ETXTBSY paths (R7).
+- `src/update/updater.ts` — no tests for the rename failure paths.
 - SIGINT handling in headless `ccpod run` — no tests for
   `installSignalForwarding` in `src/cli/commands/run.ts`. The handler is
   fire-and-forget and hard to assert on without spawning a real subprocess;

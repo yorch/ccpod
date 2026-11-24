@@ -44,7 +44,7 @@ ccpod is a CLI built with [citty](https://github.com/unjs/citty) that orchestrat
 
 Both pass through Zod schemas in `src/config/schema.ts`. Invalid configs fail fast.
 
-If no profile is specified and the `default` profile doesn't exist, `ccpod run` automatically launches the setup wizard (`ccpod init`) before continuing.
+If no profile is specified and the `default` profile doesn't exist, an interactive `ccpod run` launches the setup wizard (`ccpod init`) before continuing. Non-interactive runs (no TTY, or a headless prompt/`--file`) fail with an error pointing at `ccpod init` instead.
 
 ### 2. Sync
 
@@ -60,11 +60,11 @@ If no profile is specified and the `default` profile doesn't exist, `ccpod run` 
 
 ### 5. Write merged config
 
-`src/config/writer.ts` writes the merged Claude config tree to a deterministic, content-addressed dir under a private per-user parent: `${TMPDIR}/ccpod-u<uid>/ccpod-<sha256(content)>/`. Same content → same path → skip rewrite (and the dir's mtime is refreshed; dirs unused for 14 days are swept). The tree is assembled in a `mkdtemp` dir and atomically renamed into place. Mode `0o700` for dirs, `0o600` for files. Project symlinks are skipped and `post-init.sh` is generated only from trust-gated `init` commands.
+`src/config/writer.ts` writes the merged Claude config tree to a deterministic, content-addressed dir under a private per-user parent: `${TMPDIR}/ccpod-u<uid>/ccpod-<sha256(content)>/`. Same content → same path → skip rewrite (and the dir's mtime is refreshed; dirs unused for 14 days are swept). The tree is assembled in a `mkdtemp` dir and atomically renamed into place. Mode `0o700` for dirs, `0o600` for files. Symlinks inside the project `.claude/` are skipped, `CLAUDE.md` and `.claude/settings.json` are read only when they resolve to a regular file inside the project, and `post-init.sh` is generated only from trust-gated `init` commands.
 
 ### 6. Build container spec
 
-`src/container/builder.ts` turns the `ResolvedConfig` into a `ContainerSpec`: image, env, mounts, network, ports, tmpfs, labels. Exports `computeProjectHash($PWD)` for labels.
+`src/container/builder.ts` turns the `ResolvedConfig` into a `ContainerSpec`: image, env, mounts, network, ports, tmpfs, labels. Exports `computeProjectHash(projectDir)` for labels and network names.
 
 ### 7. Sidecars
 
@@ -91,7 +91,7 @@ The base image (`ghcr.io/yorch/ccpod`) ships an entrypoint that assembles `~/.cl
 
 Then it delta-installs any plugins listed in `CCPOD_PLUGINS_TO_INSTALL` (the full declared `plugins:` list from the profile — entrypoint skips dirs that already exist) and `exec`s the Claude binary.
 
-If `CCPOD_NETWORK_POLICY=restricted`, the entrypoint applies iptables OUTPUT rules (ACCEPT loopback/established/DNS + resolved allowed hosts, DROP all else) before launching Claude. The container must have `--cap-add NET_ADMIN` for this — ccpod adds it automatically when `network.policy: restricted`.
+If `CCPOD_NETWORK_POLICY=restricted`, the entrypoint applies iptables OUTPUT rules (ACCEPT loopback/established, DNS to the `/etc/resolv.conf` nameservers only, the auth proxy port, and resolved allowed hosts, DROP all else) before launching Claude. The container must have `--cap-add NET_ADMIN` for this — ccpod adds it automatically when `network.policy: restricted`, together with `--security-opt no-new-privileges`.
 
 ## Module map
 
@@ -121,7 +121,7 @@ All ccpod-managed containers get these labels for discovery (used by `ccpod ps` 
 | Label | Value |
 |---|---|
 | `ccpod.profile` | profile name |
-| `ccpod.project` | `sha256($PWD)`, first 16 hex chars |
+| `ccpod.project` | First 16 hex chars of SHA-256 over the resolved (realpath) project path |
 | `ccpod.type` | `main` or sidecar service name |
 | `ccpod.version` | ccpod binary version |
 

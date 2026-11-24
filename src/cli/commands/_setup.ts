@@ -1,4 +1,4 @@
-import { existsSync, lstatSync, readFileSync } from 'node:fs';
+import { existsSync, readFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import chalk from 'chalk';
 import { readHostOAuthCredentials } from '../../auth/keychain.ts';
@@ -10,6 +10,7 @@ import {
   mergeSettings,
 } from '../../config/merger.ts';
 import { expandPermissionsPreset } from '../../config/permissions.ts';
+import { readProjectFileIfExists } from '../../config/project-files.ts';
 import { isRegularDir, writeMergedConfig } from '../../config/writer.ts';
 import { computeProjectHash } from '../../container/builder.ts';
 import {
@@ -57,6 +58,11 @@ export async function setupContainer(
 
   if (!profileExists(profileName)) {
     if (!explicitProfile) {
+      if (!process.stdin.isTTY || args.requireAuth) {
+        throw new Error(
+          "No default profile found. Run 'ccpod init' interactively first.",
+        );
+      }
       console.log(
         chalk.dim('No default profile found. Starting setup wizard...\n'),
       );
@@ -128,7 +134,7 @@ export async function setupContainer(
   const profileClaudeMd = readIfExists(join(configSourceDir, 'CLAUDE.md'));
   const projectClaudeMd = profile.isolation
     ? null
-    : readProjectFileIfExists(join(cwd, 'CLAUDE.md'));
+    : readProjectFileIfExists(cwd, join(cwd, 'CLAUDE.md'));
   const claudeMdMode = profile.isolation
     ? 'append'
     : (projectConfig?.config?.claudeMd ?? 'append');
@@ -143,7 +149,7 @@ export async function setupContainer(
   const projectSettings =
     profile.isolation || !isRegularDir(projectClaudeDir)
       ? {}
-      : (readJsonIfExists(join(projectClaudeDir, 'settings.json'), true) ?? {});
+      : (readJsonIfExists(join(projectClaudeDir, 'settings.json'), cwd) ?? {});
   const mergedSettings = mergeSettings(
     expandPermissionsPreset(profile.permissions),
     readJsonIfExists(join(configSourceDir, 'settings.json')) ?? {},
@@ -236,28 +242,10 @@ function readIfExists(path: string): string | null {
   return existsSync(path) ? readFileSync(path, 'utf8') : null;
 }
 
-// Project files come from an untrusted checkout. Refuse symlinks (and anything
-// that isn't a regular file) so a repo can't point CLAUDE.md or
-// .claude/settings.json at e.g. ~/.aws/credentials and have it spliced into the
-// container's config — same rule as .mcp.json and .ccpod.yml.
-function readProjectFileIfExists(path: string): string | null {
-  let stat: ReturnType<typeof lstatSync>;
-  try {
-    stat = lstatSync(path);
-  } catch {
-    return null;
-  }
-  if (!stat.isFile()) {
-    console.warn(
-      `Warning: ${path} is not a regular file (symlink?) — ignoring it.`,
-    );
-    return null;
-  }
-  return readFileSync(path, 'utf8');
-}
-
-function readJsonIfExists(path: string, untrusted = false): object | null {
-  const raw = untrusted ? readProjectFileIfExists(path) : readIfExists(path);
+function readJsonIfExists(path: string, projectRoot?: string): object | null {
+  const raw = projectRoot
+    ? readProjectFileIfExists(projectRoot, path)
+    : readIfExists(path);
   if (raw === null) {
     return null;
   }

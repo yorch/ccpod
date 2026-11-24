@@ -1,5 +1,5 @@
 import { defineCommand } from 'citty';
-import { repeatedFlag } from '../args.ts';
+import { rejectExtraPositionals, repeatedFlag } from '../args.ts';
 import { exitWithError } from '../errors.ts';
 import { runSession } from '../session.ts';
 
@@ -31,6 +31,7 @@ export default defineCommand({
     name: 'shell',
   },
   async run({ args, rawArgs }) {
+    rejectExtraPositionals(args);
     try {
       process.exit(
         await runSession({ ...args, env: repeatedFlag(rawArgs, 'env') }),

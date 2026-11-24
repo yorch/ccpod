@@ -23,7 +23,7 @@ They are separate flags because the assets have different merge semantics: CLAUD
 | `config.claudeMd` | `.ccpod.yml` | `append` \| `override` | `append` |
 | `isolation` | `profile.yml` | `true` \| `false` | `false` |
 
-`merge: override` makes the project config replace the profile entirely for the listed sections. `merge: deep` (default) layers the project on top of the profile per asset, with the rules below.
+`merge: override` makes the project config replace the profile for the listed sections. `ports.list` is the exception: it is always concatenated, whatever the strategy. `merge: deep` (default) layers the project on top of the profile per asset, with the rules below.
 
 When the profile sets `isolation: true`, **all project config is ignored** — merge strategy, CLAUDE.md, settings.json, env keys, MCP ports, and `.claude/` assets. The profile config is used as-is. See [Profile Configuration](../../profiles/configuration/#isolation).
 
@@ -62,4 +62,4 @@ Run-level flags take final precedence:
 ccpod config show
 ```
 
-The output shows the fully resolved `ResolvedConfig`: image, env (keys only), ports, services, and the the `allowProject*` flags and which project entries were ignored. (The merged config directory itself lives under a private per-user dir, `${TMPDIR}/ccpod-u<uid>/`.)
+The output shows the fully resolved `ResolvedConfig`: image, env (keys only), ports, services, and the `allowProject*` flags and which project entries were ignored. (The merged config directory itself lives under a private per-user dir, `${TMPDIR}/ccpod-u<uid>/`.)

@@ -175,3 +175,18 @@ describe('loadProjectConfig', () => {
     rmSync(target, { force: true, recursive: true });
   });
 });
+
+describe('empty yaml files', () => {
+  it('throws a clear error for an empty profile.yml', () => {
+    const dir = join(tmpDir, 'empty');
+    mkdirSync(dir);
+    writeFileSync(join(dir, 'profile.yml'), '');
+    expect(() => loadProfileConfig(dir)).toThrow(/profile.yml is empty/);
+  });
+  it('treats an empty .ccpod.yml as an empty config', () => {
+    const dir = join(tmpDir, 'proj');
+    mkdirSync(dir);
+    writeFileSync(join(dir, '.ccpod.yml'), '# nothing\n');
+    expect(() => loadProjectConfig(dir)).not.toThrow();
+  });
+});

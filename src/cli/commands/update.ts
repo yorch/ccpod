@@ -6,6 +6,7 @@ import {
   downloadAndReplace,
   fetchLatestRelease,
   getAssetName,
+  isCompiledBinary,
 } from '../../update/updater.ts';
 import { VERSION } from '../../version.ts';
 
@@ -15,6 +16,12 @@ export default defineCommand({
     name: 'update',
   },
   async run() {
+    if (!isCompiledBinary()) {
+      console.error(
+        `${chalk.red('error:')} ccpod is not running as a compiled binary (process.execPath is ${process.execPath}); refusing to overwrite it. Update your checkout instead, or install a release binary.`,
+      );
+      process.exit(1);
+    }
     const assetName = getAssetName();
     if (!assetName) {
       console.error(

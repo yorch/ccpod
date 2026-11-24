@@ -1,6 +1,6 @@
-import { readFileSync, realpathSync } from 'node:fs';
+import { lstatSync, readFileSync, realpathSync } from 'node:fs';
 import { homedir } from 'node:os';
-import { resolve as resolvePath } from 'node:path';
+import { isAbsolute, join, relative, resolve as resolvePath } from 'node:path';
 import { getCcpodHome } from '../profile/manager.ts';
 import type { ProfileConfig } from '../types/index.ts';
 
@@ -48,16 +48,37 @@ export function resolveAuth(
     // realpathSync(keyPath) diverge from a merely-normalized home and every
     // valid keyFile is rejected as "outside ~/.ccpod". Fall back to the
     // normalized path if the home dir cannot be realpath'd.
+    const lexicalHome = resolvePath(getCcpodHome());
     let home: string;
     try {
-      home = realpathSync(getCcpodHome());
+      home = realpathSync(lexicalHome);
     } catch {
-      home = resolvePath(getCcpodHome());
+      home = lexicalHome;
     }
     if (realKeyPath !== home && !realKeyPath.startsWith(`${home}/`)) {
       throw new Error(
         `auth.keyFile "${auth.keyFile}" resolves to ${realKeyPath}, outside ~/.ccpod. ` +
           'Refusing to read it — symlinks under ~/.ccpod cannot redirect to host paths.',
+      );
+    }
+    // The container can write into its mounted credentials dir (on Linux the
+    // `node` user is remapped to the host uid), so it could plant a symlink to
+    // another profile's secrets that stays "inside ~/.ccpod". Reject any
+    // symlink at all: the real path must equal the lexical path re-rooted at
+    // the real home (a symlinked home itself is still fine).
+    const rel = relative(lexicalHome, keyPath);
+    if (
+      rel.startsWith('..') ||
+      isAbsolute(rel) ||
+      realKeyPath !== join(home, rel)
+    ) {
+      throw new Error(
+        `auth.keyFile "${auth.keyFile}" must not be a symlink (resolves to ${realKeyPath}).`,
+      );
+    }
+    if (!lstatSync(realKeyPath).isFile()) {
+      throw new Error(
+        `auth.keyFile "${auth.keyFile}" must not be a symlink or non-regular file.`,
       );
     }
     return { ANTHROPIC_API_KEY: readFileSync(realKeyPath, 'utf8').trim() };
@@ -216,6 +237,14 @@ export function resolveEnvForwarding(
       // bypass the prefix denylist. Docker would reject such keys anyway,
       // but we want to fail consistently rather than silently forward them.
       const name = rawName.trim();
+      // A malformed project name is ignored rather than aborting the run;
+      // profile and CLI entries are the user's own and still fail loudly.
+      if (!allowInterpolation && !/^[A-Za-z_][A-Za-z0-9_]*$/.test(name)) {
+        console.warn(
+          `Warning: project .ccpod.yml env entry '${name}' is not a valid variable name — ignoring it.`,
+        );
+        continue;
+      }
       // Only project entries are untrusted; profile/CLI use interpolation.
       const projectEligibility = allowInterpolation
         ? null

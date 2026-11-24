@@ -2,6 +2,7 @@ import { existsSync, mkdtempSync, readFileSync, rmSync } from 'node:fs';
 import { homedir, tmpdir } from 'node:os';
 import { join } from 'node:path';
 import simpleGit from 'simple-git';
+import { OFFICIAL_IMAGE } from '../constants.ts';
 
 const GIT_HOSTS = ['github.com', 'gitlab.com', 'bitbucket.org'];
 // Hosts that serve raw file content rather than clonable repositories — must
@@ -14,10 +15,16 @@ interface RiskyProfileFields {
   allowProjectHostMounts: boolean;
   allowProjectInit: boolean;
   allowProjectServices: boolean;
-  config: { repo?: string };
+  auth?: { keyFile?: string };
+  claudeArgs?: string[];
+  config: { path?: string; repo?: string };
   env: string[];
+  image?: { dockerfile?: string; use: string };
   init: string[];
-  network: { policy: string };
+  network: { allow?: string[]; policy: string };
+  permissions?: string;
+  plugins?: string[];
+  ports?: { list?: string[] };
   services: Record<string, { image: string }>;
   ssh: { mountSshDir: boolean };
 }
@@ -61,6 +68,47 @@ export function summarizeProfileRisks(profile: RiskyProfileFields): string[] {
   if (profile.allowProjectEnvForward.length > 0) {
     out.push(
       `lets projects forward host env vars: ${profile.allowProjectEnvForward.join(', ')}`,
+    );
+  }
+  if (profile.image && profile.image.use !== OFFICIAL_IMAGE) {
+    out.push(`runs a non-default image: ${profile.image.use}`);
+  }
+  if (profile.image?.dockerfile) {
+    out.push(`builds a local Dockerfile: ${profile.image.dockerfile}`);
+  }
+  if (profile.claudeArgs && profile.claudeArgs.length > 0) {
+    out.push(`passes extra claude args: ${profile.claudeArgs.join(' ')}`);
+  }
+  if (profile.permissions === 'permissive') {
+    out.push('uses the permissive permissions preset');
+  }
+  if (profile.plugins && profile.plugins.length > 0) {
+    out.push(`installs plugins: ${profile.plugins.join(', ')}`);
+  }
+  if (profile.ports?.list && profile.ports.list.length > 0) {
+    out.push(`publishes ports: ${profile.ports.list.join(', ')}`);
+  }
+  if (profile.config.path) {
+    out.push(`reads its Claude config from host path ${profile.config.path}`);
+  }
+  if (
+    profile.network.policy === 'restricted' &&
+    profile.network.allow &&
+    profile.network.allow.length > 0
+  ) {
+    out.push(
+      `allows network egress to: ${profile.network.allow.join(', ')} (network.allow)`,
+    );
+  }
+  if (profile.auth?.keyFile) {
+    out.push(`reads its API key from ${profile.auth.keyFile}`);
+  }
+  const literalEnv = profile.env.filter(
+    (e) => e.includes('=') && !/\$\{/.test(e),
+  );
+  if (literalEnv.length > 0) {
+    out.push(
+      `sets ${literalEnv.length} literal env var(s): ${literalEnv.map((e) => e.slice(0, e.indexOf('='))).join(', ')}`,
     );
   }
   const interpolated = profile.env.filter((e) => /\$\{/.test(e));
@@ -115,6 +163,12 @@ export function describeSource(source: InstallSource): string {
 }
 
 export function detectSource(input: string): InstallSource {
+  // A leading '-' would be parsed as an option by `git clone` (option injection).
+  if (input.startsWith('-')) {
+    throw new Error(
+      `Invalid profile source '${input}': must not start with '-'`,
+    );
+  }
   if (isGitUrl(input)) {
     return { type: 'git', url: input };
   }

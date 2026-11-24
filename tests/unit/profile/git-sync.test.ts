@@ -187,6 +187,17 @@ describe('syncGitConfig', () => {
     );
   });
 
+  it('throws on an unreachable remote when strict', async () => {
+    const { repoDir, ref } = makeLocalRepo();
+    const profileDir = makeTempDir();
+    await syncGitConfig(profileDir, repoDir, ref, 'always');
+
+    rmSync(repoDir, { force: true, recursive: true });
+    await expect(
+      syncGitConfig(profileDir, repoDir, ref, 'always', { strict: true }),
+    ).rejects.toThrow('Could not sync profile config');
+  });
+
   it('clones a commit SHA ref', async () => {
     const { repoDir } = makeLocalRepo();
     const sha = Bun.spawnSync(['git', 'rev-parse', 'HEAD'], {

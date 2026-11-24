@@ -71,7 +71,7 @@ services:
 |---|---|---|
 | `source` | `local` \| `git` | Where to read the Claude config tree. |
 | `path` | string | Required when `source: local`. Tilde-expanded. |
-| `repo` | string | Required when `source: git`. HTTPS or SSH URL. Cached checkouts are verified as clean, owned Git repositories with the configured origin before reuse or reset. Unsafe destinations fail closed; a failed remote fetch may use a previously verified cached copy. |
+| `repo` | string | Required when `source: git`. Accepts `https://`, `http://`, `ssh://`, `git://`, or scp-style `user@host:path` URLs; values starting with `-` are rejected. Cached checkouts are verified as clean, owned Git repositories with the configured origin before reuse or reset. Unsafe destinations fail closed; a failed remote fetch may use a previously verified cached copy. |
 | `sync` | `always` \| `daily` \| `pin` | When to refresh the clone. `pin` never re-pulls. |
 | `ref` | string | Branch, tag, or commit to check out. Defaults to remote HEAD. |
 
@@ -80,9 +80,9 @@ services:
 | Field | Type | Notes |
 |---|---|---|
 | `use` | string | Image reference (e.g. `ghcr.io/yorch/ccpod:latest`) or the literal `build`. |
-| `dockerfile` | string | Required when `use: build`. Absolute path, path relative to the **profile directory** (never the project — a cloned repo's own Dockerfile is not built), or `{{profile_dir}}/Dockerfile`. |
+| `dockerfile` | string | Optional. Setting it selects a build, whatever `use` says. With `use: build` and no `dockerfile`, defaults to `Dockerfile` in the profile directory. Absolute path, path relative to the **profile directory** (never the project — a cloned repo's own Dockerfile is not built), or `{{profile_dir}}/Dockerfile`. |
 
-When `use: build`, both `ccpod run` and `ccpod image build` use the same tag `ccpod-local-<profile>-<hash>:latest` (hash derived from Dockerfile contents). Running `ccpod image build` pre-builds the image so `ccpod run` reuses it without rebuilding. Override the tag with `--tag`. Force a rebuild with `ccpod run --rebuild`.
+When `use: build`, both `ccpod run` and `ccpod image build` use the same tag `ccpod-local-<profile>-<hash>:latest` (hash derived from the Dockerfile contents, any `entrypoint.sh` beside it or in the build context, and the ccpod version, so upgrading ccpod rebuilds once). Running `ccpod image build` pre-builds the image so `ccpod run` reuses it without rebuilding. Override the tag with `--tag`. Force a rebuild with `ccpod run --rebuild`.
 
 ### `auth` *(required)*
 
@@ -90,11 +90,11 @@ When `use: build`, both `ccpod run` and `ccpod image build` use the same tag `cc
 |---|---|---|
 | `type` | `api-key` \| `oauth` \| `proxy` | |
 | `keyEnv` | string | Env var name to read on the host (`api-key` only). |
-| `keyFile` | string | File on the host to read (`api-key` only). Must be a path under `~/.ccpod/` (no `..`, no escape via symlink); use `keyEnv` for keys stored elsewhere. |
+| `keyFile` | string | File on the host to read (`api-key` only). Must be a path under `~/.ccpod/` (no `..`; any symlink below `~/.ccpod/` and any non-regular file is rejected, because the credentials dir is writable from the container); use `keyEnv` for keys stored elsewhere. |
 
 For `oauth`, ccpod manages tokens in `~/.ccpod/credentials/<name>/`.
 
-For `proxy`, ccpod starts a local HTTP proxy that shares the host's OAuth session without copying credentials into the container. The container runs claude in API-key mode with a sentinel key, and the proxy injects the real OAuth bearer token into each request. This eliminates the refresh-token rotation race that occurs when multiple containers share the same OAuth login. The proxy holds the only refresh token, serializes refreshes with a single-flight lock, and writes refreshed tokens back to the host Keychain. Requires host OAuth credentials — run `claude /login` on the host first. If native `claude` runs concurrently on the host and refreshes the same OAuth session, the proxy re-reads the host credential store to recover, but a brief window of 401s is possible.
+For `proxy`, ccpod starts a local HTTP proxy that shares the host's OAuth session without copying credentials into the container. The container runs claude in API-key mode with a sentinel key, and the proxy injects the real OAuth bearer token into each request. This eliminates the refresh-token rotation race that occurs when multiple containers share the same OAuth login. The proxy holds the only refresh token, serializes refreshes with a single-flight lock, and writes refreshed tokens back to the host credential store (the Keychain on macOS, the credentials file elsewhere). Requires host OAuth credentials — run `claude /login` on the host first. If native `claude` runs concurrently on the host and refreshes the same OAuth session, the proxy re-reads the host credential store to recover, but a brief window of 401s is possible.
 
 ### `state`
 
@@ -169,6 +169,22 @@ allowProjectEnvForward:
 
 Project `KEY=literal` entries are unaffected. Profile `env:` and `--env` are trusted and can forward anything.
 
+### `allowProjectServices`
+
+Default `false`. When `true`, the `services:` declared in a project's `.ccpod.yml` are started as sidecars. Otherwise they are ignored with a warning. Even when enabled, project service volumes and ports are sanitized (named volumes only, loopback ports only) unless `allowProjectHostMounts` is also set. Named volumes whose names start with `ccpod-` are rejected, so a project cannot mount ccpod's plugin volumes. See [Untrusted repos](../../guides/untrusted-repos/).
+
+### `allowProjectInit`
+
+Default `false`. When `true`, the `init:` commands in a project's `.ccpod.yml` run inside the container. Otherwise they are ignored with a warning. Profile `init:` commands always run.
+
+### `allowProjectHostMounts`
+
+Default `false`. When `true`, project sidecar services may bind-mount host paths. Otherwise only named volumes are allowed. Only matters when `allowProjectServices` is also `true`.
+
+### `description`
+
+Optional free-text label shown in `ccpod profile list`. It has no effect on the container.
+
 ### `claudeArgs`
 
 A list of extra CLI flags passed verbatim to the `claude` command on every run. These are appended before any `claudeArgs` in the project config.
@@ -231,7 +247,7 @@ Without a preset, Claude Code uses its own defaults — which means permission p
 
 ### `services`
 
-Sidecar containers (Postgres, Redis, queues, anything with a Docker image). Reachable from the Claude container by service name on a shared network. Optional `dependsOn` lists other declared services to start first; dependencies are validated for missing names and cycles before Docker changes. Optional `ready.timeoutSeconds` (1–3600, default 60) bounds create/start and waits for a configured image healthcheck to report `healthy`. The image must define a healthcheck when `ready` is set; without `ready`, ccpod does not wait for health. See [Sidecar Services](../../features/sidecars/).
+Sidecar containers (Postgres, Redis, queues, anything with a Docker image). Reachable from the Claude container by service name on a shared network. Optional `dependsOn` lists other declared services to start first; dependencies are validated for missing names and cycles before Docker changes. Optional `ready.timeoutSeconds` (1–3600, default 60) bounds create/start and waits for a configured image healthcheck to report `healthy`. The image must define a healthcheck when `ready` is set; without `ready`, ccpod does not wait for health. Service names must match `^[a-zA-Z0-9][a-zA-Z0-9_.-]{0,63}$`. Project-declared services (when allowed by `allowProjectServices`) cannot mount named volumes whose names start with `ccpod-`, because that prefix is reserved for ccpod's own volumes. See [Sidecar Services](../../features/sidecars/).
 
 ## Validate it
 

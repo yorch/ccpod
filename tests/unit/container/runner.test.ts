@@ -1036,3 +1036,30 @@ describe('runContainer (continued)', () => {
     expect(spawnArgs).toContain('/workspace/prompt.md');
   });
 });
+
+describe('security options', () => {
+  async function runArgs(spec: ContainerSpec): Promise<string[]> {
+    const { deps, spawnMock } = makeDeps([
+      { exitCode: 1, stderr: 'No such container', stdout: '' },
+    ]);
+    await runContainer(spec, deps);
+    const run = spawnMock.mock.calls
+      .map(([args]) => args as string[])
+      .find((a) => a[0] === 'run');
+    expect(run).toBeDefined();
+    return run as string[];
+  }
+
+  it('emits --security-opt for the main container run args', async () => {
+    const args = await runArgs(
+      makeSpec({ capAdd: ['NET_ADMIN'], securityOpt: ['no-new-privileges'] }),
+    );
+    const i = args.indexOf('--security-opt');
+    expect(i).toBeGreaterThan(-1);
+    expect(args[i + 1]).toBe('no-new-privileges');
+  });
+
+  it('omits --security-opt when the spec has none', async () => {
+    expect(await runArgs(makeSpec())).not.toContain('--security-opt');
+  });
+});

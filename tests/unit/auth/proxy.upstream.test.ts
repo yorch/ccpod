@@ -671,8 +671,8 @@ describe('AuthProxy → 401 refresh and retry', () => {
           };
           tokenCalls.push(refresh_token);
           const next: Record<string, [string, number, string]> = {
-            r1: ['access-r1', 0, 'r2'],
-            r2: ['access-r2', 0, 'r3'],
+            r1: ['access-r1', 1, 'r2'],
+            r2: ['access-r2', 1, 'r3'],
             r3: ['access-r3', 86_400, 'r4'],
           };
           const entry = next[refresh_token];
@@ -1172,6 +1172,59 @@ describe('AuthProxy → 401 refresh and retry', () => {
     // start() refreshed proactively; the API only ever saw the new token.
     expect(state.apiCalls).toEqual(['Bearer new-access']);
     expect(state.tokenCalls).toEqual(['r1']);
+  });
+});
+
+describe('AuthProxy → refresh response validation', () => {
+  it.each([
+    ['missing', {}],
+    ['NaN-producing string', { expires_in: 'soon' }],
+    ['zero', { expires_in: 0 }],
+    ['negative', { expires_in: -5 }],
+  ])('rejects %s expires_in and persists nothing', async (_name, extra) => {
+    const tokenServer = await listen((req, res) => {
+      req.resume();
+      res.writeHead(200);
+      res.end(
+        JSON.stringify({
+          access_token: 'new-access',
+          refresh_token: 'r2',
+          ...extra,
+        }),
+      );
+    });
+    const written: OAuthCredentials[] = [];
+    const proxy = new AuthProxy({
+      hostname: '127.0.0.1',
+      lockRoot: (() => {
+        const root = mkdtempSync(join(tmpdir(), 'ccpod-proxy-lock-'));
+        lockDirs.push(root);
+        return root;
+      })(),
+      readCredentials: () => creds({ expiresAt: 0 }),
+      sentinelKey: SENTINEL,
+      tokenEndpoint: `${tokenServer}/token`,
+      writeCredentials: (c) => {
+        written.push(c);
+      },
+    });
+    proxies.push(proxy);
+    await expect(proxy.start()).rejects.toThrow();
+    expect(written).toHaveLength(0);
+  });
+
+  it('a failed start() leaves no listening server or timers', async () => {
+    const proxy = new AuthProxy({
+      hostname: '127.0.0.1',
+      readCredentials: () => undefined,
+      sentinelKey: SENTINEL,
+      writeCredentials: () => {},
+    });
+    proxies.push(proxy);
+    await expect(proxy.start()).rejects.toThrow('No OAuth credentials');
+    expect(() => proxy.address).toThrow('Proxy not started');
+    // stop() after a failed start must be safe.
+    await proxy.stop();
   });
 });
 

@@ -26,7 +26,7 @@ Pre-built binaries are published for Linux and macOS on x86_64 and arm64.
 
 ## From source
 
-You need [Bun](https://bun.sh) 1.x.
+You need [Bun](https://bun.sh) 1.4 or newer.
 
 ```sh
 git clone https://github.com/yorch/ccpod.git
@@ -44,13 +44,13 @@ bun run dev -- --version
 
 ## Verifying the runtime
 
-ccpod looks for a Docker-compatible socket in the following order:
+If `DOCKER_HOST` is set, ccpod uses it: a remote `tcp://` or `ssh://` host, or a `unix://` socket that exists. Otherwise ccpod looks for a Docker-compatible socket in the following order:
 
 1. OrbStack (`~/.orbstack/run/docker.sock`)
-2. Docker (`/var/run/docker.sock`, `~/.docker/run/docker.sock`)
+2. Docker (`/var/run/docker.sock`, `~/.docker/run/docker.sock`, and rootless `$XDG_RUNTIME_DIR/docker.sock`)
 3. Colima (`~/.colima/default/docker.sock`, `~/.colima/docker.sock`)
 4. Podman (`$XDG_RUNTIME_DIR/podman/podman.sock`, `~/.local/share/containers/podman/machine/podman.sock`)
 
-You can override the path with `DOCKER_SOCKET_PATH` if you run a non-standard setup.
+You can override the default Docker socket path with `DOCKER_SOCKET_PATH` if you run a non-standard setup.
 
 ## Next: [Quick Start](../quick-start/)
