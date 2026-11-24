@@ -1,7 +1,8 @@
-import { readFileSync } from 'node:fs';
-import { isAbsolute, join, normalize } from 'node:path';
+import { readFileSync, realpathSync, statSync } from 'node:fs';
+import { isAbsolute, join, normalize, sep } from 'node:path';
 import chalk from 'chalk';
 import { defineCommand } from 'citty';
+import { isInsideDir } from '../../config/project-files.ts';
 import { buildContainerSpec } from '../../container/builder.ts';
 import {
   forceRemoveOwnedContainers,
@@ -49,10 +50,36 @@ function installSignalForwarding(keepListeningAfterSignal = false): {
 
 const MAX_PROMPT_BYTES = 100_000;
 
-function readPromptFile(absPath: string, shown: string): string {
+/**
+ * Resolve a `--file` value to a path inside the project. Compares whole path
+ * segments (so `..notes.md` is fine, `../x` is not) and, in readPromptFile,
+ * re-checks containment after resolving symlinks.
+ */
+export function resolvePromptFileArg(value: string): string {
+  const normalized = normalize(value);
+  if (isAbsolute(normalized) || normalized.split(sep)[0] === '..') {
+    throw new Error(
+      '--file must be a relative path within the project directory',
+    );
+  }
+  return normalized;
+}
+
+export function readPromptFile(
+  cwd: string,
+  relPath: string,
+  shown: string,
+): string {
   let text: string;
   try {
-    text = readFileSync(absPath, 'utf8');
+    const real = realpathSync(join(cwd, relPath));
+    if (!isInsideDir(realpathSync(cwd), real)) {
+      throw new Error('resolves outside the project directory');
+    }
+    if (!statSync(real).isFile()) {
+      throw new Error('not a regular file');
+    }
+    text = readFileSync(real, 'utf8');
   } catch (err) {
     throw new Error(
       `Cannot read --file '${shown}': ${err instanceof Error ? err.message : String(err)}`,
@@ -136,14 +163,7 @@ export default defineCommand({
 
       let fileArg: string | undefined;
       if (args.file) {
-        const normalized = normalize(args.file);
-        if (isAbsolute(normalized) || normalized.startsWith('..')) {
-          console.error(
-            `${chalk.red('error:')} --file must be a relative path within the project directory`,
-          );
-          process.exit(1);
-        }
-        fileArg = normalized;
+        fileArg = resolvePromptFileArg(args.file);
       }
 
       if (promptArg && passthroughArgs.some((a) => !a.startsWith('-'))) {
@@ -155,7 +175,7 @@ export default defineCommand({
 
       const envArgs = repeatedFlag(rawArgs, 'env');
       const promptText = fileArg
-        ? readPromptFile(join(cwd, fileArg), fileArg)
+        ? readPromptFile(cwd, fileArg, fileArg)
         : promptArg;
       const headless = promptText !== undefined;
       const claudeArgs = [

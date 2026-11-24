@@ -108,7 +108,7 @@
   font-size: 1.075rem !important;
   font-weight: 400 !important;
   line-height: 1.65 !important;
-  color: var(--sl-color-gray-3) !important;
+  color: var(--sl-color-gray-2) !important;
 }
 
 /* CTA — primary */
@@ -120,7 +120,8 @@
   font-weight: 600 !important;
   color: #fff !important;
   letter-spacing: 0.03em !important;
-  background: #ff5e1a !important;
+  /* #c84800 gives white text 4.79:1; the brighter #ff5e1a gave only 3.06:1. */
+  background: #c84800 !important;
   border: none !important;
   border-radius: 2px !important;
   box-shadow: 0 0 18px rgba(255, 94, 26, 0.25);
@@ -132,7 +133,7 @@
 
 .hero .sl-link-button[data-variant="primary"]:hover,
 .hero a.sl-link-button.primary:hover {
-  background: #ff7a40 !important;
+  background: #a83c00 !important;
   box-shadow: 0 0 28px rgba(255, 94, 26, 0.4) !important;
   transform: translateY(-1px);
 }
@@ -143,7 +144,7 @@
   padding: 0.55rem 0.25rem !important;
   font-family: "Azeret Mono", monospace !important;
   font-size: 0.8125rem !important;
-  color: var(--sl-color-gray-3) !important;
+  color: var(--sl-color-gray-2) !important;
   text-decoration: none !important;
   background: none !important;
   border: none !important;
@@ -242,9 +243,12 @@ header.header {
   font-family: "Azeret Mono", monospace;
   font-size: 0.65rem;
   font-weight: 500;
-  color: #ff5e1a;
+  color: #ffaa80;
   letter-spacing: 0.14em;
-  opacity: 0.75;
+}
+
+:root[data-theme="light"] .feature-num {
+  color: #c84800;
 }
 
 .hero-feature h3 {
@@ -260,10 +264,19 @@ header.header {
   margin: 0 !important;
   font-size: 0.8125rem !important;
   line-height: 1.65 !important;
-  color: var(--sl-color-gray-3) !important;
+  color: var(--sl-color-gray-2) !important;
 }
 
 /* ── COMPARISON TABLE ── */
+.visually-hidden {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  white-space: nowrap;
+  clip: rect(0 0 0 0);
+}
+
 .comparison {
   margin: 2rem 0;
   overflow: hidden;
@@ -282,7 +295,7 @@ header.header {
   font-family: "Azeret Mono", monospace;
   font-size: 0.7rem;
   font-weight: 600;
-  color: var(--sl-color-gray-3);
+  color: var(--sl-color-gray-2);
   text-align: left;
   text-transform: uppercase;
   letter-spacing: 0.08em;
@@ -318,7 +331,7 @@ header.header {
 }
 
 .comparison td.col-bare {
-  color: var(--sl-color-gray-3);
+  color: var(--sl-color-gray-2);
 }
 
 .comparison td.col-ccpod {
@@ -354,7 +367,8 @@ header.header {
 .footer-link {
   font-family: "Azeret Mono", monospace;
   font-size: 0.72rem;
-  color: var(--sl-color-gray-4);
+  /* gray-4 is a border colour (1.76:1 on the footer); gray-2 is ~10.9:1. */
+  color: var(--sl-color-gray-2);
   letter-spacing: 0.05em;
 }
 
@@ -371,4 +385,33 @@ header.header {
 
 .footer-link:hover {
   color: #ff5e1a;
+}
+
+/* ── REDUCED MOTION ── */
+@media (prefers-reduced-motion: reduce) {
+  .hero h1::after {
+    animation: none;
+  }
+
+  .hero .sl-link-button[data-variant="primary"],
+  .hero a.sl-link-button.primary,
+  .hero-feature,
+  .hero-feature::before,
+  .footer-link,
+  .comparison td {
+    transition: none !important;
+  }
+
+  .hero .sl-link-button[data-variant="primary"]:hover,
+  .hero a.sl-link-button.primary:hover {
+    transform: none !important;
+  }
+}
+
+.asciinema-fallback {
+  padding: 1.5rem;
+  margin: 0;
+  font-family: "Azeret Mono", monospace;
+  font-size: 0.8125rem;
+  color: var(--sl-color-gray-2);
 }

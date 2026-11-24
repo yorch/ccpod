@@ -85,6 +85,13 @@ export default defineCommand({
       console.log(
         chalk.green(`✓ Profile '${profileName}' image.use updated to '${tag}'`),
       );
+      if (profile.image.dockerfile) {
+        console.warn(
+          chalk.yellow(
+            `warning: profile '${profileName}' sets image.dockerfile, so image.use ('${tag}') is ignored at run time and the tag is recomputed from the Dockerfile. Remove image.dockerfile to use image.use.`,
+          ),
+        );
+      }
     } else {
       console.log(
         chalk.dim(

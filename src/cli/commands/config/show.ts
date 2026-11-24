@@ -14,6 +14,7 @@ import {
   loadProjectConfig,
 } from '../../../config/loader.ts';
 import { mergeClaudes, mergeConfigs } from '../../../config/merger.ts';
+import { readProjectFileIfExists } from '../../../config/project-files.ts';
 import {
   getProfileDir,
   resolveProfileDockerfile,
@@ -155,7 +156,7 @@ export default defineCommand({
     const profileMd = readIfExists(join(configSourceDir, 'CLAUDE.md'));
     const projectMd = profile.isolation
       ? null
-      : readIfExists(join(cwd, 'CLAUDE.md'));
+      : readProjectFileIfExists(cwd, join(cwd, 'CLAUDE.md'));
 
     if (profileMd || projectMd) {
       const mode = projectConfig?.config?.claudeMd ?? 'append';

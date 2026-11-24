@@ -23,7 +23,7 @@ A `.ccpod.yml` ships with the code you are about to run in a sandbox, so it is *
 - **`init:`** is ignored unless the profile sets `allowProjectInit: true`.
 - **`env:`** may not use `${VAR}` interpolation, may not set sensitive keys (credentials/endpoints, proxies, TLS trust, `PATH`/`LD_*`-style hijack vars, `CCPOD_*`, `DOCKER_*`), and bare names that forward a host variable are ignored unless the profile lists them in `allowProjectEnvForward`.
 - **`profile:`** needs your one-time approval the first time a project picks a profile (remembered in `~/.ccpod/trusted-projects.json`); `--profile` skips the prompt.
-- Symlinked `.claude/`, `CLAUDE.md` and `.claude/settings.json` are ignored, and a project's `post-init.sh` is never copied.
+- `CLAUDE.md` and `.claude/settings.json` are read only if they are regular files, or symlinks that resolve to a regular file inside the project; other symlinks are ignored with a warning. A symlinked `.claude/` directory is ignored, and a project's `post-init.sh` is never copied.
 
 ## Example
 
@@ -58,7 +58,7 @@ services:
 | Field | Type | Notes |
 |---|---|---|
 | `profile` | string | Which profile to use. Falls back to `default`. |
-| `merge` | `deep` \| `override` | How to combine ccpod settings with the profile. `deep` (default): project adds to/appends profile values. `override`: project sections fully replace the profile's (omitted fields revert to schema defaults). See [Merge Strategies](../merge/). |
+| `merge` | `deep` \| `override` | How to combine ccpod settings with the profile. `deep` (default): project adds to/appends profile values. `override`: project sections fully replace the profile's (omitted fields revert to schema defaults; `ports.list` is always concatenated). See [Merge Strategies](../merge/). |
 | `claudeArgs` | string[] | Extra CLI flags passed to `claude`. Deep: appended after profile args. Override: replaces. |
 | `init` | string[] | Shell commands run in `/workspace` as `node` before Claude starts. Deep: appended after profile commands. Override: replaces. Ignored when profile has `isolation: true`. |
 | `config.claudeMd` | `append` \| `override` | How to combine `CLAUDE.md` files. |

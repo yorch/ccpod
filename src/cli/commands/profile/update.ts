@@ -40,12 +40,20 @@ export default defineCommand({
       }
       console.log(chalk.dim(`Syncing ${repo}...`));
       // Force sync by using "always" strategy regardless of lock
-      await syncGitConfig(
-        profileDir,
-        repo,
-        profile.config.ref ?? 'main',
-        'always',
-      );
+      try {
+        await syncGitConfig(
+          profileDir,
+          repo,
+          profile.config.ref ?? 'main',
+          'always',
+          { strict: true },
+        );
+      } catch (err) {
+        console.error(
+          `${chalk.red('error:')} ${err instanceof Error ? err.message : String(err)}`,
+        );
+        process.exit(1);
+      }
       console.log(chalk.green(`✓ '${args.name}' config synced.`));
     } else {
       // Local source — just verify the path exists

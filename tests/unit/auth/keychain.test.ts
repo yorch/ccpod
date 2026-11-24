@@ -1,16 +1,19 @@
 import { afterEach, describe, expect, it } from 'bun:test';
 import {
+  mkdirSync,
   mkdtempSync,
   readdirSync,
   readFileSync,
   renameSync,
   rmSync,
   statSync,
+  symlinkSync,
   writeFileSync,
 } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import {
+  assertCredentialFileRegular,
   parseKeychainAccountOutput,
   writeCredentialFileAtomically,
 } from '../../../src/auth/keychain.ts';
@@ -94,5 +97,61 @@ describe('parseKeychainAccountOutput', () => {
       ),
     ).toBeUndefined();
     expect(parseKeychainAccountOutput('    "acct"<blob>=""')).toBeUndefined();
+  });
+});
+
+describe('assertCredentialFileRegular', () => {
+  it('accepts a regular file and a missing file', () => {
+    const dir = makeTempDir();
+    const file = join(dir, '.credentials.json');
+    writeFileSync(file, '{}');
+    expect(() => assertCredentialFileRegular(file)).not.toThrow();
+    expect(() => assertCredentialFileRegular(join(dir, 'nope'))).not.toThrow();
+  });
+
+  it('refuses a symlinked credential file without reading it', () => {
+    const dir = makeTempDir();
+    const target = join(dir, 'target.json');
+    writeFileSync(target, 'SECRET-TOKEN');
+    const link = join(dir, '.credentials.json');
+    symlinkSync(target, link);
+    expect(() => assertCredentialFileRegular(link)).toThrow(/symlink/);
+    try {
+      assertCredentialFileRegular(link);
+    } catch (e) {
+      expect((e as Error).message).not.toContain('SECRET-TOKEN');
+    }
+  });
+});
+
+describe('host credential reads with a symlinked credential file', () => {
+  it('readHostOAuthCredentials tolerates it; the proxy entry reader refuses it', () => {
+    if (process.platform === 'darwin') {
+      return;
+    }
+    const home = makeTempDir();
+    mkdirSync(join(home, '.claude'));
+    const target = join(home, 'real.json');
+    writeFileSync(
+      target,
+      JSON.stringify({
+        claudeAiOauth: {
+          accessToken: 'a',
+          expiresAt: Date.now() + 3_600_000,
+          refreshToken: 'r',
+        },
+      }),
+    );
+    symlinkSync(target, join(home, '.claude', '.credentials.json'));
+    const script = `
+      import { readHostOAuthCredentials, readHostOAuthCredentialEntry } from ${JSON.stringify(join(import.meta.dir, '../../../src/auth/keychain.ts'))};
+      const a = (() => { try { readHostOAuthCredentials(); return 'ok'; } catch { return 'throw'; } })();
+      const b = (() => { try { readHostOAuthCredentialEntry(); return 'ok'; } catch { return 'throw'; } })();
+      console.log(a + ',' + b);
+    `;
+    const res = Bun.spawnSync([process.execPath, '-e', script], {
+      env: { ...process.env, HOME: home },
+    });
+    expect(res.stdout.toString().trim()).toBe('ok,throw');
   });
 });

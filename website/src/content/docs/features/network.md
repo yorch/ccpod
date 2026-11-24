@@ -1,6 +1,6 @@
 ---
 title: Restrict Claude Code's Network Access
-description: Limit the Claude Code container's outbound traffic with a restricted network policy and a host allow-list. It fails closed if firewall rules cannot be installed.
+description: Limit the container's outbound traffic with a restricted policy and a host allow-list. It fails closed if firewall rules fail.
 ---
 
 By default the Claude container has full outbound network access. For sensitive work, switch to **restricted mode** and explicitly allow-list the destinations Claude is permitted to reach.
@@ -30,7 +30,7 @@ What happens:
 1. ccpod adds `--cap-add NET_ADMIN` to the container so the entrypoint can write iptables rules.
 2. At container start, the entrypoint applies these OUTPUT rules **before** launching Claude:
    - `ACCEPT` loopback and established/related connections
-   - `ACCEPT` DNS (UDP + TCP port 53) so hostname resolution works
+   - `ACCEPT` DNS (UDP + TCP port 53) to the nameservers listed in `/etc/resolv.conf` only, not to any host
    - For each entry in `allow`: resolve hostname → IPs via `getent hosts`, then `ACCEPT` each IP. IPs and CIDRs are used directly.
    - `DROP` all other outbound
 3. The resolution happens once at startup — if a domain's IPs rotate during your session, reconnection to new IPs will be blocked until you restart the container.
@@ -45,5 +45,6 @@ The network policy and allow-list are owned by the profile. If a project's `.ccp
 
 - Resolution is done **once at container start**. IPs resolved at startup remain allowed even if DNS changes; new IPs for the same hostname are blocked until container restart.
 - `getent hosts` returns both IPv4 and IPv6 addresses — both are allowed when present.
-- Loopback (`lo`) is always allowed, so MCP servers and sidecar containers on the same network remain reachable.
+- Loopback (`lo`) is always allowed, so MCP servers running inside the container remain reachable.
+- Sidecar containers are reached over their Docker bridge IP, not loopback. Under `restricted`, they are blocked unless you list their service names in `allow`. The name is resolved once at startup, like any other host.
 - Restricted mode is a defense-in-depth tool, not a sandbox. Combine with ephemeral state and no SSH agent forwarding for sensitive work.

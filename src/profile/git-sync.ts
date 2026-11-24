@@ -15,6 +15,7 @@ export async function syncGitConfig(
   repo: string,
   ref: string,
   strategy: SyncStrategy,
+  options: { strict?: boolean } = {},
 ): Promise<void> {
   const configDir = `${profileDir}/config`;
 
@@ -82,6 +83,12 @@ export async function syncGitConfig(
   try {
     await git.fetch('origin', ref, { '--depth': '1' });
   } catch (err) {
+    // Explicit syncs (`profile update`) must report failure.
+    if (options.strict) {
+      throw new Error(
+        `Could not sync profile config: ${err instanceof Error ? err.message : String(err)}`,
+      );
+    }
     // A failed fetch does not mutate the checkout, so a previously verified
     // cached config remains safe to use for this run.
     console.warn(

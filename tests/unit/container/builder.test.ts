@@ -1,6 +1,12 @@
 import { afterAll, beforeAll, describe, expect, it } from 'bun:test';
 import { createHash } from 'node:crypto';
-import { mkdirSync, mkdtempSync, rmSync, symlinkSync } from 'node:fs';
+import {
+  mkdirSync,
+  mkdtempSync,
+  rmSync,
+  symlinkSync,
+  writeFileSync,
+} from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import {
@@ -371,6 +377,53 @@ describe('buildContainerSpec — proxy auth mode', () => {
     );
     expect(allowedHostsEntry).toBe('CCPOD_ALLOWED_HOSTS=example.com');
     expect(spec.env).toContain('CCPOD_PROXY_AUTH=1');
+  });
+
+  it('adds no-new-privileges only under restricted network', () => {
+    const restricted = buildContainerSpec(
+      makeConfig({ network: { allow: [], policy: 'restricted' } }),
+      PROJECT_DIR,
+      true,
+    );
+    expect(restricted.securityOpt).toEqual(['no-new-privileges']);
+    const full = buildContainerSpec(makeConfig(), PROJECT_DIR, true);
+    expect(full.securityOpt).toBeUndefined();
+  });
+
+  it('skips SSH agent forwarding (with a warning) when SSH_AUTH_SOCK contains ":"', () => {
+    const prev = process.env.SSH_AUTH_SOCK;
+    const prevHost = process.env.DOCKER_HOST;
+    // detectRuntime honours an existing unix:// DOCKER_HOST.
+    process.env.DOCKER_HOST = `unix://${join(testDir, 'fake-docker.sock')}`;
+    writeFileSync(join(testDir, 'fake-docker.sock'), '');
+    const warn = console.warn;
+    const warnings: string[] = [];
+    console.warn = (...a: unknown[]) => {
+      warnings.push(a.join(' '));
+    };
+    try {
+      process.env.SSH_AUTH_SOCK = '/tmp/bad:sock';
+      const spec = buildContainerSpec(
+        makeConfig({ ssh: { agentForward: true, mountSshDir: false } }),
+        PROJECT_DIR,
+        true,
+      );
+      expect(spec.binds.some((b) => b.includes('bad:sock'))).toBe(false);
+      expect(spec.env.some((e) => e.startsWith('SSH_AUTH_SOCK='))).toBe(false);
+      expect(warnings.join('\n')).toContain('SSH_AUTH_SOCK');
+    } finally {
+      console.warn = warn;
+      if (prevHost === undefined) {
+        delete process.env.DOCKER_HOST;
+      } else {
+        process.env.DOCKER_HOST = prevHost;
+      }
+      if (prev === undefined) {
+        delete process.env.SSH_AUTH_SOCK;
+      } else {
+        process.env.SSH_AUTH_SOCK = prev;
+      }
+    }
   });
 
   it('injects proxy URL and sentinel key into secretEnv', () => {

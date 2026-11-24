@@ -50,4 +50,36 @@ describe('ccpod config validate', () => {
       rmSync(root, { force: true, recursive: true });
     }
   });
+
+  it('fails on merged-config errors the schema alone misses (bad port)', async () => {
+    const root = join(tmpdir(), `ccpod-validate-merge-${Date.now()}`);
+    const project = join(root, 'project');
+    const ccpod = join(root, '.ccpod');
+    mkdirSync(join(ccpod, 'profiles', 'default'), { recursive: true });
+    mkdirSync(project, { recursive: true });
+    process.env.CCPOD_TEST_DIR = ccpod;
+    process.chdir(project);
+    writeFileSync(
+      join(ccpod, 'profiles', 'default', 'profile.yml'),
+      'name: default\nconfig:\n  source: local\n  path: /tmp\nports:\n  list: ["99999"]\n',
+    );
+    const command = (
+      await import('../../../../src/cli/commands/config/validate.ts')
+    ).default;
+    const output: string[] = [];
+    const log = spyOn(console, 'log').mockImplementation((line) =>
+      output.push(String(line)),
+    );
+    const exit = spyOn(process, 'exit').mockImplementation((() => {
+      throw new Error('exit');
+    }) as never);
+    try {
+      expect(() => command.run({ args: {} } as never)).toThrow('exit');
+      expect(output.join('\n')).toContain('Invalid port mapping');
+    } finally {
+      log.mockRestore();
+      exit.mockRestore();
+      rmSync(root, { force: true, recursive: true });
+    }
+  });
 });

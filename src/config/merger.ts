@@ -8,8 +8,8 @@ import type {
 
 const HEX_GROUP_RE = /^[0-9a-fA-F]{1,4}$/;
 const ZERO_GROUP_RE = /^0+$/;
-const ALLOWED_IPV4_HOSTS = new Set(['127.0.0.1', 'localhost']);
-const ALLOWED_HOSTS_MSG = '127.0.0.1 / localhost / ::1';
+const ALLOWED_IPV4_HOSTS = new Set(['127.0.0.1']);
+const ALLOWED_HOSTS_MSG = '127.0.0.1 / ::1';
 
 // Parse an IPv6 string into its 8 hexadecimal groups, expanding any `::`
 // shorthand. Returns null if the input is not a syntactically valid IPv6
@@ -73,6 +73,13 @@ function sanitizeProjectServices(
             'allowProjectHostMounts: true.',
         );
       }
+      if (/^ccpod-/i.test(v)) {
+        throw new Error(
+          `Project service '${name}' volume '${v}' uses the reserved 'ccpod-' ` +
+            'name prefix (it could mount ccpod-managed volumes such as plugin installs). ' +
+            'Rename the volume.',
+        );
+      }
       return v;
     });
     const ports = (svc.ports ?? []).map((p) => sanitizePort(name, p));
@@ -84,7 +91,7 @@ function sanitizeProjectServices(
 function portError(serviceName: string, spec: string, detail: string): Error {
   return new Error(
     `Project service '${serviceName}' port '${spec}' ${detail}; ` +
-      `only ${ALLOWED_HOSTS_MSG} is allowed without profile-level allowProjectHostMounts: true.`,
+      `project service ports may only bind ${ALLOWED_HOSTS_MSG}.`,
   );
 }
 
@@ -107,7 +114,38 @@ function sanitizePort(serviceName: string, spec: string): string {
   if (parts.length === 1) {
     throw portError(serviceName, spec, 'would publish on all interfaces');
   }
-  if (parts.length >= 3) {
+  if (parts.length > 3) {
+    throw portError(serviceName, spec, 'is not a valid port mapping');
+  }
+  // Each side is `N` or `N-M`; the container side may carry /tcp|/udp|/sctp.
+  const inRange = (n: string) => Number(n) >= 1 && Number(n) <= 65535;
+  const isPortRange = (n: string | undefined, allowProto: boolean) => {
+    const m = (n ?? '').match(
+      allowProto
+        ? /^(\d+)(?:-(\d+))?(?:\/(?:tcp|udp|sctp))?$/
+        : /^(\d+)(?:-(\d+))?$/,
+    );
+    if (!m) {
+      return false;
+    }
+    const lo = m[1] as string;
+    const hi = m[2];
+    return inRange(lo) && (hi === undefined || (inRange(hi) && +hi >= +lo));
+  };
+  const hostIdx = parts.length - 2;
+  if (
+    !(
+      isPortRange(parts[hostIdx], false) &&
+      isPortRange(parts[hostIdx + 1], true)
+    )
+  ) {
+    throw portError(
+      serviceName,
+      spec,
+      'has a non-numeric or out-of-range port',
+    );
+  }
+  if (parts.length === 3) {
     const ip = parts[0] ?? '';
     if (!ALLOWED_IPV4_HOSTS.has(ip)) {
       throw portError(serviceName, spec, `binds to ${ip || '0.0.0.0'}`);

@@ -85,7 +85,7 @@ plugins:
   - mcp-server-brave-search  # delta-installed on first run; skipped if already present
 
 claudeArgs:                  # extra flags passed to claude on every run
-  - "--dangerously-skip-permissions"
+  - "--verbose"
 
 env:
   - DATABASE_URL             # host env vars to forward into container
@@ -96,7 +96,7 @@ services:                    # optional sidecar containers
     env:
       POSTGRES_PASSWORD: dev
     volumes:
-      - ccpod-pg-data:/var/lib/postgresql/data
+      - pg-data:/var/lib/postgresql/data
 ```
 
 ### Project config (`.ccpod.yml` in project root)
@@ -120,7 +120,7 @@ env:
   # the profile lists them in allowProjectEnvForward.
 ```
 
-> **Trust boundary:** a repo's `.ccpod.yml` is untrusted. `network:` is owned by the profile (a project's `network:` is ignored with a warning), project `services:` and `init:` are ignored unless the profile sets `allowProjectServices` / `allowProjectInit`, and `profile:` needs your one-time approval. See [Project config](https://ccpod.dev/project-config/overview/).
+> **Trust boundary:** a repo's `.ccpod.yml` is untrusted. `network:` is owned by the profile (a project's `network:` is ignored with a warning), project `services:` and `init:` are ignored unless the profile sets `allowProjectServices` / `allowProjectInit`, and `profile:` needs your one-time approval. See [Project config](https://ccpod.brnby.com/project-config/overview/).
 
 **Merge strategies:**
 
@@ -128,7 +128,7 @@ env:
 |-------|-----------------|
 | `settings.json` | Deep merge; project wins on conflicts |
 | `CLAUDE.md` | Profile content first, project appended (or `override` to replace) |
-| plugins | Profile-only (`plugins:` in `profile.yml`); projects cannot add or remove them |
+| plugins | Profile-only (`plugins:` in `profile.yml`); projects cannot change the `plugins:` install list |
 | `services` | Merged by key — but project sidecars are ignored unless the profile sets `allowProjectServices: true` |
 | `env` | Union of both lists (project bare-name forwards need `allowProjectEnvForward`) |
 
@@ -211,12 +211,15 @@ Reset: `ccpod state clear [--profile <name>]` — deletes `~/.ccpod/state/<profi
 ```
 ~/.ccpod/
   config.yml                # global ccpod config (autoCheckUpdates, etc.)
+  trusted-projects.json     # projects approved to select a non-default profile (0600)
   profiles/<name>/
     profile.yml
     .ccpod-sync-lock        # timestamp of last git sync
     config/                 # cloned Claude config (only if source: git)
   credentials/<name>/       # auth tokens — persist across container restarts
   state/<name>/             # projects, todos, statsig (persistent mode only)
+    <projectHash>/          # per-project dirs when stateIsolation: per-project
+      .ccpod-project        # marker holding the project path (used by prune)
 
 Docker named volumes (managed by ccpod):
   ccpod-plugins-<profile>   # installed Claude plugins
@@ -267,6 +270,6 @@ Everyone gets the same CLAUDE.md, settings, and plugins. Updates flow in daily (
 
 ## Base image
 
-The official base image is `ghcr.io/yorch/ccpod` — built from `docker/Dockerfile` and published automatically on every push to `main` (`:main`, `:latest`) and on version tags (`:1.2.3`, `:1.2`).
+The official base image is `ghcr.io/yorch/ccpod` — built from `docker/Dockerfile` and published automatically on every push to `main` (`:main`, `:latest`) and on each release (`:1.2.3`, `:1.2`, `:latest`). The default `:latest` tag floats; set `image.use` to a version tag such as `ghcr.io/yorch/ccpod:1.2.3` for a reproducible image.
 
 To use a custom image, set `image.use` in your profile. To build locally from a Dockerfile, set `image.use: build` and `image.dockerfile: Dockerfile` (a relative path is resolved inside the profile directory, `~/.ccpod/profiles/<name>/`).

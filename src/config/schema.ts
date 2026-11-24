@@ -10,10 +10,21 @@ const portsConfigSchema = z
   })
   .default({ autoDetectMcp: true, list: [] });
 
+export const SERVICE_NAME_REGEX = /^[a-zA-Z0-9][a-zA-Z0-9_.-]{0,63}$/;
+
+const serviceNameSchema = z
+  .string()
+  .regex(
+    SERVICE_NAME_REGEX,
+    'Service name must start with a letter or digit and contain only letters, digits, ., _ or - (max 64 chars)',
+  );
+
 export const serviceConfigSchema = z.object({
   dependsOn: z.array(z.string()).optional(),
   env: z.record(z.string(), z.string()).optional(),
-  image: z.string(),
+  image: z.string().refine((s) => !s.startsWith('-'), {
+    message: 'Service image must not start with "-"',
+  }),
   ports: z.array(z.string()).optional(),
   ready: z
     .object({
@@ -107,7 +118,7 @@ export const profileConfigSchema = z
     name: z
       .string()
       .regex(
-        /^[a-zA-Z0-9_-]{1,64}$/,
+        PROFILE_NAME_REGEX,
         'Profile name may only contain letters, digits, hyphens, and underscores (max 64 chars)',
       ),
     network: z
@@ -119,7 +130,7 @@ export const profileConfigSchema = z
     permissions: z.enum(['conservative', 'moderate', 'permissive']).optional(),
     plugins: z.array(z.string()).default([]),
     ports: portsConfigSchema,
-    services: z.record(z.string(), serviceConfigSchema).default({}),
+    services: z.record(serviceNameSchema, serviceConfigSchema).default({}),
     ssh: z
       .object({
         agentForward: z.boolean().default(true),
@@ -176,7 +187,7 @@ export const projectConfigSchema = z.object({
       'Profile name may only contain letters, digits, hyphens, and underscores (max 64 chars)',
     )
     .optional(),
-  services: z.record(z.string(), serviceConfigSchema).optional(),
+  services: z.record(serviceNameSchema, serviceConfigSchema).optional(),
 });
 
 export type ProfileConfigInput = z.input<typeof profileConfigSchema>;

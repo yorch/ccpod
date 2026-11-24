@@ -6,13 +6,31 @@ import {
   renameSync,
   rmSync,
 } from 'node:fs';
-import { dirname, join } from 'node:path';
+import { basename, dirname, join } from 'node:path';
 import { Readable } from 'node:stream';
 import { pipeline } from 'node:stream/promises';
 import type { ReadableStream as NodeReadableStream } from 'node:stream/web';
 import { GITHUB_REPO } from '../constants.ts';
 
 const CHECKSUMS_ASSET = 'SHASUMS256.txt';
+const METADATA_TIMEOUT_MS = 30_000;
+const DOWNLOAD_TIMEOUT_MS = 10 * 60_000;
+
+/**
+ * True when running as the compiled ccpod binary rather than via `bun run dev`
+ * / `bun src/...`, where `process.execPath` is the bun runtime itself and must
+ * never be overwritten.
+ */
+export function isCompiledBinary(
+  execPath: string = process.execPath,
+  main: string = typeof Bun !== 'undefined' ? Bun.main : '',
+): boolean {
+  if (/^bunx?(\.exe)?$/i.test(basename(execPath))) {
+    return false;
+  }
+  // Compiled bun executables load their entry from the virtual $bunfs root.
+  return main.includes('$bunfs') || main.includes('/~BUN/');
+}
 
 export function getAssetName(): string | null {
   const { platform, arch } = process;
@@ -41,7 +59,10 @@ export interface LatestRelease {
 export async function fetchLatestRelease(): Promise<LatestRelease | null> {
   const res = await fetch(
     `https://api.github.com/repos/${GITHUB_REPO}/releases/latest`,
-    { headers: { 'User-Agent': 'ccpod-updater' } },
+    {
+      headers: { 'User-Agent': 'ccpod-updater' },
+      signal: AbortSignal.timeout(METADATA_TIMEOUT_MS),
+    },
   );
   if (!res.ok) {
     throw new Error(`GitHub API error: ${res.status}`);
@@ -95,6 +116,7 @@ async function fetchExpectedDigest(
 ): Promise<string> {
   const res = await fetchImpl(checksumsUrl, {
     headers: { 'User-Agent': 'ccpod-updater' },
+    signal: AbortSignal.timeout(METADATA_TIMEOUT_MS),
   });
   if (!res.ok) {
     throw new Error(`Failed to fetch ${CHECKSUMS_ASSET}: HTTP ${res.status}`);
@@ -126,7 +148,10 @@ export async function downloadAndReplace(
   const fetchImpl = dependencies.fetch ?? fetch;
   const [expectedDigest, binaryRes] = await Promise.all([
     fetchExpectedDigest(release.checksumsUrl, release.assetName, fetchImpl),
-    fetchImpl(release.url, { headers: { 'User-Agent': 'ccpod-updater' } }),
+    fetchImpl(release.url, {
+      headers: { 'User-Agent': 'ccpod-updater' },
+      signal: AbortSignal.timeout(DOWNLOAD_TIMEOUT_MS),
+    }),
   ]);
   if (!binaryRes.ok) {
     throw new Error(`Download failed: ${binaryRes.status}`);

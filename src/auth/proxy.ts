@@ -8,6 +8,7 @@ import {
 } from 'node:http';
 import { request as httpsRequest, type RequestOptions } from 'node:https';
 import {
+  CREDENTIAL_FILE_NOT_REGULAR,
   hostOAuthCredentialLockScope,
   type OAuthCredentialEntry,
   type OAuthCredentialStoreIdentity,
@@ -44,8 +45,11 @@ const PERSIST_RETRY_MAX_MS = 30_000;
 // cannot be read or written may never hold the cross-process refresh lock (nor
 // the caller's shutdown) indefinitely.
 const PERSIST_DEADLINE_MS = 20_000;
-// Bound how long stop() waits for an in-flight reconciliation.
-const STOP_REFRESH_WAIT_MS = 10_000;
+// Bound how long stop() waits for an in-flight reconciliation. It must cover a
+// slow-but-successful token call plus the persist deadline, otherwise a refresh
+// that consumed the single-use token can be abandoned at exit before it is
+// stored. Only an in-flight refresh waits, so a normal exit is unaffected.
+const STOP_REFRESH_WAIT_MS = REFRESH_TIMEOUT_MS + PERSIST_DEADLINE_MS;
 
 // Headers that must not be forwarded as-is (either stripped or replaced).
 const STRIP_HEADERS = new Set([
@@ -225,6 +229,29 @@ export class AuthProxy {
   }
 
   async start(): Promise<void> {
+    try {
+      await this.startInner();
+    } catch (error) {
+      // A failed start must not leave the proactive-refresh timer running.
+      this.stopped = true;
+      if (this.refreshTimer) {
+        clearTimeout(this.refreshTimer);
+        this.refreshTimer = null;
+      }
+      if (this.server) {
+        const server = this.server;
+        this.server = null;
+        try {
+          server.close();
+        } catch {
+          // not listening
+        }
+      }
+      throw error;
+    }
+  }
+
+  private async startInner(): Promise<void> {
     this.stopped = false;
     // Load initial credentials from the host store
     const creds = this.readCredentialsSafely();
@@ -464,6 +491,10 @@ export class AuthProxy {
       // Keep the message secret-free but retain a non-secret reason so callers
       // and diagnostics can tell a locked store from malformed credentials.
       const detail = credentialReadErrorDetail(error);
+      if (detail === CREDENTIAL_FILE_NOT_REGULAR && error instanceof Error) {
+        // Message carries only a path and fix-it guidance, no secrets.
+        throw error;
+      }
       throw new Error(
         detail === undefined
           ? 'OAuth credential store read failed'
@@ -695,8 +726,23 @@ export class AuthProxy {
               refresh_token: string;
               expires_in: number;
             };
-            if (!tr.access_token || !tr.refresh_token) {
+            if (
+              typeof tr.access_token !== 'string' ||
+              typeof tr.refresh_token !== 'string' ||
+              !tr.access_token ||
+              !tr.refresh_token
+            ) {
               reject(new Error('OAuth refresh response missing tokens'));
+              return;
+            }
+            if (
+              typeof tr.expires_in !== 'number' ||
+              !Number.isFinite(tr.expires_in) ||
+              tr.expires_in <= 0
+            ) {
+              reject(
+                new Error('OAuth refresh response has invalid expires_in'),
+              );
               return;
             }
             const now = Date.now();

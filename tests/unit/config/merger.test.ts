@@ -286,6 +286,69 @@ describe('mergeConfigs', () => {
     expect(result.services.svc?.volumes).toEqual(['/tmp/x:/x']);
   });
 
+  it('rejects project service volume using the reserved ccpod- prefix', () => {
+    const profile = makeProfile({ allowProjectServices: true });
+    expect(() =>
+      mergeConfigs(profile, {
+        services: {
+          s: { image: 'alpine', volumes: ['ccpod-plugins-x:/x'] },
+        },
+      }),
+    ).toThrow(/reserved/);
+    expect(() =>
+      mergeConfigs(profile, {
+        services: { s: { image: 'alpine', volumes: ['CCPOD-foo:/x'] } },
+      }),
+    ).toThrow(/reserved/);
+  });
+
+  it('rejects project service port bound to a localhost hostname', () => {
+    const profile = makeProfile({ allowProjectServices: true });
+    expect(() =>
+      mergeConfigs(profile, {
+        services: { s: { image: 'x', ports: ['localhost:80:80'] } },
+      }),
+    ).toThrow(/binds to/);
+  });
+
+  it('rejects malformed project service ports', () => {
+    const profile = makeProfile({ allowProjectServices: true });
+    for (const p of [
+      '127.0.0.1:a:80',
+      'abc:def',
+      '80:99999',
+      '127.0.0.1:80:80/ftp',
+      '127.0.0.1:8002-8000:8002-8000',
+      '127.0.0.1:1:2:3',
+      '127.0.0.1:80:99999',
+    ]) {
+      expect(() =>
+        mergeConfigs(profile, { services: { s: { image: 'x', ports: [p] } } }),
+      ).toThrow();
+    }
+  });
+
+  it('accepts protocol suffixes and port ranges on project service ports', () => {
+    const profile = makeProfile({ allowProjectServices: true });
+    const result = mergeConfigs(profile, {
+      services: {
+        s: {
+          image: 'x',
+          ports: [
+            '127.0.0.1:53:53/udp',
+            '127.0.0.1:8000-8002:8000-8002',
+            '53:53/udp',
+          ],
+        },
+      },
+    });
+    expect(result.services.s?.ports).toEqual([
+      '127.0.0.1:53:53/udp',
+      '127.0.0.1:8000-8002:8000-8002',
+      '127.0.0.1:53:53/udp',
+    ]);
+  });
+
   it('rejects project service port bound to non-localhost IP', () => {
     const profile = makeProfile({ allowProjectServices: true });
     expect(() =>

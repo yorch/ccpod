@@ -64,9 +64,16 @@ export async function withAuthProxy<T>(
     sentinelKey,
     ...(hostname ? { hostname } : {}),
   });
-  await authProxy.start();
-  console.log(chalk.dim(`  Auth proxy listening on ${authProxy.address}`));
   try {
+    await authProxy.start();
+  } catch (error) {
+    // start() cleans up after itself; stop() is idempotent and covers any
+    // partially acquired state.
+    await authProxy.stop().catch(() => {});
+    throw error;
+  }
+  try {
+    console.log(chalk.dim(`  Auth proxy listening on ${authProxy.address}`));
     // host.docker.internal (not the proxy's bind address) so the container
     // reaches the host whether the proxy is bound to 127.0.0.1 (macOS) or
     // 0.0.0.0 (Linux).

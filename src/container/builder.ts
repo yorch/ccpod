@@ -47,6 +47,8 @@ export interface ContainerSpec {
   // the container as bare `-e KEY` flags and supplied to docker via its own
   // environment, so the values never land in the run command line.
   secretEnv: Record<string, string>;
+  // Extra `--security-opt` values (e.g. `no-new-privileges` under restricted).
+  securityOpt?: string[];
   tmpfs?: Record<string, string>;
   tty: boolean;
   workingDir: string;
@@ -179,8 +181,12 @@ export function buildContainerSpec(
   }
 
   const capAdd: string[] = [];
+  const securityOpt: string[] = [];
   if (config.network.policy === 'restricted') {
     capAdd.push('NET_ADMIN');
+    // The firewall is set up by root before dropping to `node`; forbid any
+    // later privilege gain (setuid binaries) from undoing that boundary.
+    securityOpt.push('no-new-privileges');
     env.push('CCPOD_NETWORK_POLICY=restricted');
     // Proxy mode also needs the host-side auth proxy, but only on its one
     // port — the entrypoint derives that from ANTHROPIC_BASE_URL (see
@@ -197,7 +203,11 @@ export function buildContainerSpec(
       console.warn(
         'Warning: ssh.agentForward is not supported with Podman (host Unix sockets cannot be bind-mounted into the Podman VM). Skipping.',
       );
-    } else if (!sshSock.includes(':')) {
+    } else if (sshSock.includes(':')) {
+      console.warn(
+        'Warning: SSH_AUTH_SOCK contains ":" and cannot be bind-mounted safely. Skipping ssh.agentForward.',
+      );
+    } else {
       env.push('SSH_AUTH_SOCK=/run/host-services/ssh-auth.sock');
       binds.push(`${sshSock}:/run/host-services/ssh-auth.sock:ro`);
     }
@@ -215,6 +225,7 @@ export function buildContainerSpec(
       [LABEL_WORKDIR]: projectDir,
     },
     ...(capAdd.length > 0 ? { capAdd } : {}),
+    ...(securityOpt.length > 0 ? { securityOpt } : {}),
     name: `ccpod-${config.profileName}-${hash}${mode === 'shell' ? '-shell' : ''}`,
     networkMode: networkName ?? 'bridge',
     openStdin: tty,

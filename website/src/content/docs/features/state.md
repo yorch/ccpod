@@ -1,6 +1,6 @@
 ---
 title: Persistent or Ephemeral Claude State
-description: Choose whether Claude Code's history, todos, and project state are wiped when the container exits or kept on the host, shared per profile or isolated per project.
+description: Keep or wipe Claude Code's history, todos, and project state on exit, shared per profile or isolated per project.
 ---
 
 Claude Code keeps projects, todos, and feature-flag state under `~/.claude/`. ccpod treats that data as **state** and lets you choose how it lives across runs.

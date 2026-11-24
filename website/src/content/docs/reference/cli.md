@@ -1,6 +1,6 @@
 ---
 title: "CLI Reference: Every Command and Flag"
-description: Complete reference for every ccpod command and flag — run, shell, exec, doctor, init, update, profile, plugins, image, config, ps, logs, down, prune, and state.
+description: Every ccpod command and flag: run, shell, exec, doctor, init, update, profile, plugins, image, config, ps, logs, down, prune, state.
 ---
 
 `ccpod` is a single binary. All commands accept `--help`.
@@ -224,7 +224,7 @@ ccpod logs --all --follow --profile team
 
 ### `ccpod down`
 
-Stops and removes the containers for the current project (matched by the `ccpod.project=sha256($PWD)` label; run it from the project directory). `--all` targets every project on this machine; `--profile <name>` narrows either form to one profile.
+Stops and removes the containers for the current project (matched by the `ccpod.project` label, which holds the project hash of the resolved project path; run it from the project directory). `--all` targets every project on this machine; `--profile <name>` narrows either form to one profile.
 
 ### `ccpod prune`
 

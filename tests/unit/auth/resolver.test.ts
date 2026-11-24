@@ -105,6 +105,77 @@ describe('resolveAuth', () => {
     }
   });
 
+  it('rejects a keyFile symlink pointing at another file inside ~/.ccpod', () => {
+    saveEnv('ANTHROPIC_API_KEY', 'CCPOD_TEST_DIR');
+    delete process.env.ANTHROPIC_API_KEY;
+    const fakeCcpod = mkdtempSync(`${tmpdir()}/ccpod-home-`);
+    process.env.CCPOD_TEST_DIR = fakeCcpod;
+    mkdirSync(join(fakeCcpod, 'credentials', 'default'), { recursive: true });
+    mkdirSync(join(fakeCcpod, 'credentials', 'other'), { recursive: true });
+    const other = join(fakeCcpod, 'credentials', 'other', '.credentials.json');
+    writeFileSync(other, '{"oauth":"secret"}');
+    const link = join(fakeCcpod, 'credentials', 'default', 'api_key');
+    symlinkSync(other, link);
+    try {
+      expect(() =>
+        resolveAuth({
+          keyEnv: 'ANTHROPIC_API_KEY',
+          keyFile: link,
+          type: 'api-key',
+        }),
+      ).toThrow(/must not be a symlink/);
+    } finally {
+      rmSync(fakeCcpod, { force: true, recursive: true });
+    }
+  });
+
+  it('rejects a keyFile reached through a symlinked intermediate directory', () => {
+    saveEnv('ANTHROPIC_API_KEY', 'CCPOD_TEST_DIR');
+    delete process.env.ANTHROPIC_API_KEY;
+    const fakeCcpod = mkdtempSync(`${tmpdir()}/ccpod-home-`);
+    process.env.CCPOD_TEST_DIR = fakeCcpod;
+    mkdirSync(join(fakeCcpod, 'credentials', 'other'), { recursive: true });
+    writeFileSync(join(fakeCcpod, 'credentials', 'other', 'key'), 'sk-other');
+    symlinkSync(
+      join(fakeCcpod, 'credentials', 'other'),
+      join(fakeCcpod, 'credentials', 'default'),
+    );
+    try {
+      expect(() =>
+        resolveAuth({
+          keyEnv: 'ANTHROPIC_API_KEY',
+          keyFile: join(fakeCcpod, 'credentials', 'default', 'key'),
+          type: 'api-key',
+        }),
+      ).toThrow(/must not be a symlink/);
+    } finally {
+      rmSync(fakeCcpod, { force: true, recursive: true });
+    }
+  });
+
+  it('still reads a regular keyFile when ~/.ccpod itself is a symlink', () => {
+    saveEnv('ANTHROPIC_API_KEY', 'CCPOD_TEST_DIR');
+    delete process.env.ANTHROPIC_API_KEY;
+    const realHome = mkdtempSync(`${tmpdir()}/ccpod-realhome-`);
+    const linkHome = `${realHome}-link`;
+    symlinkSync(realHome, linkHome);
+    process.env.CCPOD_TEST_DIR = linkHome;
+    mkdirSync(join(realHome, 'credentials', 'default'), { recursive: true });
+    writeFileSync(join(realHome, 'credentials', 'default', 'key'), 'sk-ok\n');
+    try {
+      expect(
+        resolveAuth({
+          keyEnv: 'ANTHROPIC_API_KEY',
+          keyFile: join(linkHome, 'credentials', 'default', 'key'),
+          type: 'api-key',
+        }),
+      ).toEqual({ ANTHROPIC_API_KEY: 'sk-ok' });
+    } finally {
+      rmSync(linkHome, { force: true });
+      rmSync(realHome, { force: true, recursive: true });
+    }
+  });
+
   it('returns empty when env absent and keyFile missing', () => {
     saveEnv('ANTHROPIC_API_KEY');
     delete process.env.ANTHROPIC_API_KEY;
@@ -115,6 +186,18 @@ describe('resolveAuth', () => {
 });
 
 describe('resolveEnvForwarding', () => {
+  it('ignores a project env entry with an invalid name instead of throwing', () => {
+    const warn = spyOn(console, 'warn').mockImplementation(() => {});
+    try {
+      expect(resolveEnvForwarding([], ['BAD NAME=1', 'GOOD=2'], [])).toEqual({
+        GOOD: '2',
+      });
+      expect(warn).toHaveBeenCalled();
+    } finally {
+      warn.mockRestore();
+    }
+  });
+
   it('forwards KEY from host env', () => {
     saveEnv('MY_VAR');
     process.env.MY_VAR = 'hello';

@@ -61,7 +61,15 @@ INSTALL_PATH="${INSTALL_DIR}/${BINARY}"
 
 echo "Downloading ccpod ${TAG} (${OS}/${ARCH})..."
 
-TMP_PATH="${INSTALL_PATH}.tmp.$$"
+# Private staging dir (0700 via mktemp -d) beside the destination so the final
+# mv is same-filesystem; removed on any exit, including failures and signals.
+STAGE=$(mktemp -d "${INSTALL_DIR}/.ccpod-install.XXXXXX") || {
+  echo "error: cannot create a staging directory in ${INSTALL_DIR}" >&2
+  exit 1
+}
+trap 'rm -rf "$STAGE"' EXIT
+trap 'exit 1' HUP INT TERM
+TMP_PATH="${STAGE}/${BINARY}"
 
 if command -v curl >/dev/null 2>&1; then
   curl -fsSL "$DOWNLOAD_URL" -o "$TMP_PATH"

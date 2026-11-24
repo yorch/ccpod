@@ -102,9 +102,13 @@ const RESERVED_ASSETS = new Set(['CLAUDE.md', 'settings.json', 'post-init.sh']);
 
 // Bump this when the safety contract for generated cache contents changes. A
 // new namespace prevents adopting a pre-existing cache built under old rules.
-const CACHE_FORMAT_VERSION = 2;
+const CACHE_FORMAT_VERSION = 3;
 
-function copyAssets(srcDir: string, destDir: string): void {
+// Credential files must never be copied into the (container-visible) config
+// dir; auth is handled by `auth.type`. Skipped from both profile and project.
+const CREDENTIAL_ASSETS = new Set(['.credentials.json', '.claude.json']);
+
+function copyAssets(srcDir: string, destDir: string, warnCreds = false): void {
   if (!existsSync(srcDir)) {
     return;
   }
@@ -114,6 +118,14 @@ function copyAssets(srcDir: string, destDir: string): void {
     // post-init.sh would let an untrusted project run commands regardless of
     // allowProjectInit.
     if (RESERVED_ASSETS.has(entry)) {
+      continue;
+    }
+    if (CREDENTIAL_ASSETS.has(entry)) {
+      if (warnCreds) {
+        console.warn(
+          `Warning: ${join(srcDir, entry)} holds credentials and was not copied into the container config; use auth.type instead.`,
+        );
+      }
       continue;
     }
     const src = join(srcDir, entry);
@@ -158,7 +170,7 @@ export function writeMergedConfig<T extends object>(
   const tmpOut = mkdtempSync(join(parentDir, 'tmp-'));
   try {
     // Profile assets first; project assets second so project wins on conflict
-    copyAssets(profileConfigDir, tmpOut);
+    copyAssets(profileConfigDir, tmpOut, true);
     if (projectClaudeDir && isRegularDir(projectClaudeDir, false)) {
       copyAssets(projectClaudeDir, tmpOut);
     }

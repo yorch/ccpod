@@ -159,7 +159,7 @@ $PWD                 ──rw──►   /workspace/
 2. **Seed config.** `/ccpod/config` (read-only) is copied into `~/.claude`.
 3. **Restore auth files** (`.credentials.json`, `.claude.json`) from `/ccpod/credentials` — skipped in proxy mode.
 4. **Plugins and state.** `~/.claude/plugins` and `projects/todos/statsig` become symlinks into `/ccpod/plugins` and `/ccpod/state`.
-5. **Ownership.** `chown -R node:node` on the Claude dir, `$HOME`, `/ccpod/plugins` and `/ccpod/state` — never `/ccpod/credentials`, which only root touches.
+5. **Ownership.** `chown -R node:node` on the Claude dir, `$HOME`, `/ccpod/plugins` and `/ccpod/state`. `/ccpod/credentials` is not chowned, but it is not root-only either: on Linux, step 1 makes `node` the host user's uid, and the host's `~/.ccpod/credentials/<profile>/` directory is bind-mounted read-write, so the container's `node` user can read and write it. Only the host-side checks in ccpod (for example the `auth.keyFile` containment check) keep one profile's credentials from being pointed at another's.
 6. **Init commands.** If `/ccpod/config/post-init.sh` exists (generated only from trust-gated `init:` commands) it runs as `node` in `/workspace`.
 7. **Delta plugin install** from `CCPOD_PLUGINS_TO_INSTALL`.
 8. **Network restriction** (`CCPOD_NETWORK_POLICY=restricted`, needs `NET_ADMIN`, applied after steps 6–7). Fails closed: loopback/established/default-deny rules for IPv4 and (when the kernel has IPv6) `ip6tables`; DNS only to the `/etc/resolv.conf` nameservers; declared hosts resolved to IPs; in proxy mode, only the auth proxy's single port on the host gateway (parsed from `ANTHROPIC_BASE_URL`).
@@ -227,13 +227,14 @@ Source precedence: profile → project → CLI override (later wins).
 A repo's `.ccpod.yml` ships with the codebase being run inside the sandbox, so it is treated as untrusted by default. The config walk (`findProjectConfig` in `src/config/loader.ts`) searches upward from the current directory but stops at the user's home directory — a `.ccpod.yml` found above `$HOME` (e.g. at `/` on macOS) is not loaded, preventing a stray parent config from overriding profile settings for every child project. `mergeConfigs` enforces:
 
 - `services` from project are ignored entirely unless the profile sets `allowProjectServices: true`. A cloned repo could otherwise start arbitrary container images on the same bridge network as the credential-bearing main container. When opted in, the volume and port sanitization below still applies (unless `allowProjectHostMounts` is also set).
-- `services[].volumes` from project must be named volumes (`<name>:<path>[:opts]`). Host-path mounts (`/foo`, `./foo`, `~/foo`) are rejected.
-- `services[].ports` from project may bind only to `127.0.0.1` / `localhost` / `::1`. Two-part `host:container` entries are auto-rewritten to `127.0.0.1:host:container`. Bracketed IPv6 is parsed explicitly so `[::1]:host:container` loopback is accepted and every `::`-expanding wildcard (`[::]`, `[0::]`, `[::0:0]`, `[0:0:0:0:0:0:0:0]`, …) is rejected with an "all IPv6 interfaces" error.
+- `services[].volumes` from project must be named volumes (`<name>:<path>[:opts]`). Host-path mounts (`/foo`, `./foo`, `~/foo`) are rejected. Volume names starting with `ccpod-` (case-insensitive) are rejected too, since that prefix is reserved for ccpod's own volumes such as plugin installs.
+- `services[].ports` from project may bind only to the explicit loopback hosts `127.0.0.1` or `[::1]`; `localhost` is rejected. A two-part `host:container` entry is auto-rewritten to `127.0.0.1:host:container`. Ports (in both forms) must be numeric 1–65535 or an ascending `N-M` range, with an optional `/tcp`, `/udp` or `/sctp` suffix on the container side. A bare port (no host) and entries with more than three colon-separated parts are rejected. Bracketed IPv6 is parsed explicitly so `[::1]:host:container` loopback is accepted and every `::`-expanding wildcard (`[::]`, `[0::]`, `[::0:0]`, `[0:0:0:0:0:0:0:0]`, …) is rejected with an "all IPv6 interfaces" error.
+- Service names (profile and project) must match `^[a-zA-Z0-9][a-zA-Z0-9_.-]{0,63}$`, enforced by the config schema.
 - top-level `ports.list` (main container) and auto-detected `.mcp.json` ports from project are published on `127.0.0.1` only. `parsePorts` tags project-sourced mappings with `hostIp: '127.0.0.1'`, which the runner renders as `-p 127.0.0.1:<host>:<container>`; profile-sourced ports carry no `hostIp` and keep Docker's default `0.0.0.0` bind.
 - `env` from project may not use `${VAR}` interpolation (see above) or set a `PROJECT_ENV_DENYLIST` key (see above). `CCPOD_*` and `DOCKER_*` prefix keys are also blocked (see above).
 - `network:` (`policy` / `allow`) is profile-owned. Project `network` keys are ignored with a warning regardless of `merge` strategy, so a repo cannot downgrade a `restricted` profile to `full` or extend its allow-list.
 - `init:` from project is dropped (with a one-line `console.warn`).
-- Project `.claude/`, `CLAUDE.md` and `.claude/settings.json` are ignored (with a warning) when they are symlinks, and `post-init.sh` is never copied from any config directory — it is generated only from trust-gated `init` commands.
+- Project `CLAUDE.md` and `.claude/settings.json` are read only when they are regular files, or symlinks whose realpath is a regular file inside the project directory. Escaping symlinks, broken symlinks and non-regular files are ignored with a warning. Project `.claude/` must be a real directory; a symlinked `.claude/` is ignored entirely, and symlinks inside it (other than `settings.json`) are skipped when assets are copied. `.mcp.json` and `.ccpod.yml` symlinks are still rejected. `post-init.sh` is never copied from any config directory — it is generated only from trust-gated `init` commands.
 - `profile:` in `.ccpod.yml` needs one-time interactive approval per (project, profile), remembered in `~/.ccpod/trusted-projects.json` (0600). Non-interactive runs fail unless already approved; `--profile` skips the prompt.
 - A profile's relative `image.dockerfile` resolves against the profile directory, never the project.
 
@@ -321,7 +322,7 @@ ccpod run [-- claude-args]
 │
 ├─ 8. Start sidecars (if services: declared)
 │     validate dependency graph before Docker changes; stable topological order
-│     create network: ccpod-net-<sha256($PWD)>
+│     create network: ccpod-net-<projectHash>
 │     docker run -d --network <network> per service
 │     optional healthcheck readiness with bounded inspections and timeout
 │     rollback only IDs created by this invocation on failure
@@ -368,42 +369,34 @@ tests/
 
 ## Runtime socket paths
 
-`src/runtime/detector.ts` tries these sockets in order until one is reachable. OrbStack is preferred over Docker because OrbStack also installs the standard `/var/run/docker.sock` symlink, so this order ensures the native OrbStack socket is chosen when both exist:
+`src/runtime/detector.ts` first honors `DOCKER_HOST`. A remote `tcp://` or `ssh://` value is used as-is. A `unix://` value is used only if that socket exists; otherwise detection continues. Without a usable `DOCKER_HOST`, it tries these sockets in order until one exists. OrbStack is preferred over Docker because OrbStack also installs the standard `/var/run/docker.sock` symlink, so this order ensures the native OrbStack socket is chosen when both exist:
 
 ```typescript
-const RUNTIME_CANDIDATES = [
-  {
-    name: 'orbstack',
-    sockets: [
-      `${HOME}/.orbstack/run/docker.sock`,
-    ],
-  },
+const candidates = [
+  { name: 'orbstack', sockets: [`${home}/.orbstack/run/docker.sock`] },
   {
     name: 'docker',
     sockets: [
-      // Honors $DOCKER_SOCKET_PATH first, falling back to the default path
-      DOCKER_SOCKET_PATH ?? '/var/run/docker.sock',
-      `${HOME}/.docker/run/docker.sock`,
+      dockerSock, // $DOCKER_SOCKET_PATH, default /var/run/docker.sock
+      `${home}/.docker/run/docker.sock`,
+      `${XDG_RUNTIME_DIR}/docker.sock`, // rootless Docker, when XDG_RUNTIME_DIR is set
     ],
   },
   {
     name: 'colima',
-    sockets: [
-      `${HOME}/.colima/default/docker.sock`,
-      `${HOME}/.colima/docker.sock`,
-    ],
+    sockets: [`${home}/.colima/default/docker.sock`, `${home}/.colima/docker.sock`],
   },
   {
     name: 'podman',
     sockets: [
-      `${XDG_RUNTIME_DIR}/podman/podman.sock`,
-      `${HOME}/.local/share/containers/podman/machine/podman.sock`,
+      `${XDG_RUNTIME_DIR}/podman/podman.sock`, // when XDG_RUNTIME_DIR is set
+      `${home}/.local/share/containers/podman/machine/podman.sock`,
     ],
   },
 ];
 ```
 
-Override the Docker socket path entirely by setting `DOCKER_SOCKET_PATH` in your environment (useful for non-standard Docker installs and tests).
+Set `DOCKER_HOST` to choose a daemon explicitly. Override only the default Docker socket path with `DOCKER_SOCKET_PATH` (useful for non-standard Docker installs and tests).
 
 Once a runtime is detected, `src/runtime/docker.ts` selects the CLI binary: `podman` when the runtime name is `podman`, `docker` for everything else. No `podman-docker` shim required.
 
@@ -414,7 +407,7 @@ The `ghcr.io/yorch/ccpod` image is published by `.github/workflows/docker.yml`:
 | Git event | Tags pushed |
 |---|---|
 | Push to `main` | `:main`, `:latest` |
-| Push tag `v1.2.3` | `:1.2.3`, `:1.2` |
+| Release `v1.2.3` (via `release.yml` → `docker.yml`) | `:1.2.3`, `:1.2`, `:latest` |
 
 Pin to a specific release in your profile with `image.use: ghcr.io/yorch/ccpod:1.2.3`.
 

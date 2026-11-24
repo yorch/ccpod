@@ -53,11 +53,13 @@ fi
 # Proxy mode (CCPOD_PROXY_AUTH=1) skips this — the container uses a sentinel
 # API key + ANTHROPIC_BASE_URL, no credential file is needed.
 if [ -z "${CCPOD_PROXY_AUTH}" ]; then
-  if [ -f /ccpod/credentials/.credentials.json ]; then
-    cp -f /ccpod/credentials/.credentials.json "${CLAUDE_DIR}/.credentials.json"
+  # /ccpod/credentials is writable by node (on Linux node is remapped to the
+  # host uid), so never follow a symlink planted there.
+  if [ -f /ccpod/credentials/.credentials.json ] && [ ! -L /ccpod/credentials/.credentials.json ]; then
+    cp -P -f --remove-destination /ccpod/credentials/.credentials.json "${CLAUDE_DIR}/.credentials.json"
   fi
-  if [ -f /ccpod/credentials/.claude.json ]; then
-    cp -f /ccpod/credentials/.claude.json "${NODE_HOME}/.claude.json"
+  if [ -f /ccpod/credentials/.claude.json ] && [ ! -L /ccpod/credentials/.claude.json ]; then
+    cp -P -f --remove-destination /ccpod/credentials/.claude.json "${NODE_HOME}/.claude.json"
   fi
 fi
 
@@ -181,15 +183,19 @@ if [ "${CCPOD_NETWORK_POLICY}" = "restricted" ]; then
   for host in $(printf '%s' "${CCPOD_ALLOWED_HOSTS:-}" | tr ',' '\n'); do
     [ -z "$host" ] && continue
     case "$host" in
-      *.*.*.*|*:*|*/*)
-        # IP address or CIDR — use directly
+      *:*|*/*)
+        # IPv6 address or CIDR — use directly
         allow_dst "$host"
         ;;
-      *)
+      *[!0-9.]*)
         # Hostname — resolve to IPs (may return both A and AAAA)
         for ip in $(getent hosts "$host" 2>/dev/null | awk '{print $1}'); do
           allow_dst "$ip"
         done
+        ;;
+      *)
+        # IPv4 literal (digits and dots only) — use directly
+        allow_dst "$host"
         ;;
     esac
   done
@@ -210,18 +216,34 @@ if [ "${CCPOD_SHELL_MODE}" = "1" ]; then
   exec env HOME="${NODE_HOME}" PATH="${USER_PATH}" "${GOSU}" node "$@"
 fi
 
-HOME="${NODE_HOME}" PATH="${USER_PATH}" "${GOSU}" node "$@" &
+# A backgrounded child gets stdin=/dev/null in a non-interactive sh; keep the
+# real stdin via fd 3 (`<&0` alone does not work).
+exec 3<&0
+HOME="${NODE_HOME}" PATH="${USER_PATH}" "${GOSU}" node "$@" <&3 3<&- &
 CHILD_PID=$!
 trap "kill -TERM $CHILD_PID 2>/dev/null" TERM INT HUP
-wait $CHILD_PID || STATUS=$?
-STATUS=${STATUS:-0}
+# `wait` returns early (>128) when a trapped signal arrives while the child is
+# still alive; keep waiting so we copy back credentials only after it exits.
+# STATUS is overwritten on every pass so the final value is the child's own.
+while :; do
+  STATUS=0
+  wait $CHILD_PID || STATUS=$?
+  kill -0 "$CHILD_PID" 2>/dev/null || break
+done
 
 # Write both auth files back so they persist across container restarts
 # (root can read node-owned files, so no permission issue here).
 # Proxy mode skips this — no credential file exists in the container.
 if [ -z "${CCPOD_PROXY_AUTH}" ]; then
-  cp -f "${CLAUDE_DIR}/.credentials.json" /ccpod/credentials/.credentials.json 2>/dev/null || true
-  cp -f "${NODE_HOME}/.claude.json" /ccpod/credentials/.claude.json 2>/dev/null || true
+  # Only copy regular files (node controls the sources), and replace rather than
+  # follow any symlink planted at the destination.
+  for _f in "${CLAUDE_DIR}/.credentials.json:/ccpod/credentials/.credentials.json" \
+            "${NODE_HOME}/.claude.json:/ccpod/credentials/.claude.json"; do
+    _src="${_f%%:*}"; _dst="${_f#*:}"
+    if [ -f "$_src" ] && [ ! -L "$_src" ]; then
+      cp -P -f --remove-destination "$_src" "$_dst" 2>/dev/null || true
+    fi
+  done
 fi
 
 exit $STATUS

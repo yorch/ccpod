@@ -44,7 +44,15 @@ export default defineCommand({
       process.exit(1);
     }
 
-    const source = detectSource(args.source);
+    let source: ReturnType<typeof detectSource>;
+    try {
+      source = detectSource(args.source);
+    } catch (err) {
+      console.error(
+        `${chalk.red('error:')} ${err instanceof Error ? err.message : String(err)}`,
+      );
+      process.exit(1);
+    }
 
     if (!args.yes && (source.type === 'git' || source.type === 'url')) {
       console.log(

@@ -44,7 +44,7 @@ export function detectRuntime(): DetectedRuntime {
     {
       name: 'podman',
       sockets: [
-        `${xdgRuntimeDir}/podman/podman.sock`,
+        ...(xdgRuntimeDir ? [`${xdgRuntimeDir}/podman/podman.sock`] : []),
         `${home}/.local/share/containers/podman/machine/podman.sock`,
       ],
     },

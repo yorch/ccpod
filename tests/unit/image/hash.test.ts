@@ -4,6 +4,15 @@ import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { computeDockerfileHash } from '../../../src/image/hash.ts';
+import { VERSION } from '../../../src/version.ts';
+
+function expectedHash(data: string): string {
+  return createHash('sha256')
+    .update(data)
+    .update(`\0VERSION\0${VERSION}`)
+    .digest('hex')
+    .slice(0, 16);
+}
 
 let testDir: string;
 
@@ -22,10 +31,7 @@ describe('computeDockerfileHash', () => {
 
     const hash = computeDockerfileHash('Dockerfile', testDir);
 
-    const expected = createHash('sha256')
-      .update(content)
-      .digest('hex')
-      .slice(0, 16);
+    const expected = expectedHash(content);
     expect(hash).toBe(expected);
   });
 
@@ -36,20 +42,14 @@ describe('computeDockerfileHash', () => {
 
     const hash = computeDockerfileHash(absPath, '/irrelevant');
 
-    const expected = createHash('sha256')
-      .update(content)
-      .digest('hex')
-      .slice(0, 16);
+    const expected = expectedHash(content);
     expect(hash).toBe(expected);
   });
 
   it('falls back to resolved absolute path hash when file does not exist', () => {
     const hash = computeDockerfileHash('Dockerfile', testDir);
 
-    const expected = createHash('sha256')
-      .update(join(testDir, 'Dockerfile'))
-      .digest('hex')
-      .slice(0, 16);
+    const expected = expectedHash(join(testDir, 'Dockerfile'));
     expect(hash).toBe(expected);
   });
 
@@ -83,10 +83,17 @@ describe('computeDockerfileHash', () => {
 
     const hash = computeDockerfileHash(absPath, '/some/other/dir');
 
-    const expected = createHash('sha256')
-      .update('FROM alpine')
-      .digest('hex')
-      .slice(0, 16);
+    const expected = expectedHash('FROM alpine');
     expect(hash).toBe(expected);
+  });
+
+  it('changes the hash when entrypoint.sh next to the Dockerfile changes', () => {
+    writeFileSync(join(testDir, 'Dockerfile'), 'FROM node:24');
+    const none = computeDockerfileHash('Dockerfile', testDir);
+    writeFileSync(join(testDir, 'entrypoint.sh'), '#!/bin/sh\necho a');
+    const a = computeDockerfileHash('Dockerfile', testDir);
+    writeFileSync(join(testDir, 'entrypoint.sh'), '#!/bin/sh\necho b');
+    const b = computeDockerfileHash('Dockerfile', testDir);
+    expect(new Set([none, a, b]).size).toBe(3);
   });
 });

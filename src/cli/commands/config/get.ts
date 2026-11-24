@@ -19,7 +19,7 @@ export default defineCommand({
   run({ args }) {
     const key = args.key as string;
 
-    if (!(key in KNOWN_KEYS)) {
+    if (!Object.hasOwn(KNOWN_KEYS, key)) {
       console.error(
         `${chalk.red('error:')} unknown config key '${key}'. Known keys: ${Object.keys(KNOWN_KEYS).join(', ')}`,
       );

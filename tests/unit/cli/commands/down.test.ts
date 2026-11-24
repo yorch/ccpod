@@ -174,4 +174,77 @@ describe('ccpod down scoping and failure handling', () => {
       errorSpy.mockRestore();
     }
   });
+
+  it('sets a non-zero exit code when stop/rm fails', async () => {
+    const row = [
+      'abc123',
+      '/c1',
+      'running',
+      'img',
+      'Up',
+      'p',
+      'h',
+      '/w',
+      'main',
+    ].join('\t');
+    execResults = [
+      { exitCode: 0, stderr: '', stdout: `${row}\n` },
+      { exitCode: 1, stderr: 'boom', stdout: '' },
+    ];
+    const errorSpy = spyOn(console, 'error').mockImplementation(() => {});
+    const logSpy = spyOn(console, 'log').mockImplementation(() => {});
+    const writeSpy = spyOn(process.stdout, 'write').mockImplementation(
+      (() => true) as never,
+    );
+    const prev = process.exitCode;
+    try {
+      await downCommand.run?.({
+        args: { all: true, profile: undefined },
+        rawArgs: [],
+      } as never);
+      expect(process.exitCode).toBe(1);
+    } finally {
+      process.exitCode = prev ?? 0;
+      errorSpy.mockRestore();
+      logSpy.mockRestore();
+      writeSpy.mockRestore();
+    }
+  });
+
+  it('treats a stop that reports no such container as already gone', async () => {
+    const row = [
+      'abc123',
+      '/c1',
+      'running',
+      'img',
+      'Up',
+      'p',
+      'h',
+      '/w',
+      'main',
+    ].join('\t');
+    execResults = [
+      { exitCode: 0, stderr: '', stdout: `${row}\n` },
+      { exitCode: 1, stderr: 'Error: No such container: abc', stdout: '' },
+    ];
+    const errorSpy = spyOn(console, 'error').mockImplementation(() => {});
+    const logSpy = spyOn(console, 'log').mockImplementation(() => {});
+    const writeSpy = spyOn(process.stdout, 'write').mockImplementation(
+      (() => true) as never,
+    );
+    const prev = process.exitCode;
+    process.exitCode = 0;
+    try {
+      await downCommand.run?.({
+        args: { all: true, profile: undefined },
+        rawArgs: [],
+      } as never);
+      expect(process.exitCode).toBe(0);
+    } finally {
+      process.exitCode = prev ?? 0;
+      errorSpy.mockRestore();
+      logSpy.mockRestore();
+      writeSpy.mockRestore();
+    }
+  });
 });

@@ -51,6 +51,8 @@ Your Claude environment — settings, plugins, skills, `CLAUDE.md`, MCP servers 
 - **Open-source maintainers** who want to ship a known-good Claude environment to contributors.
 - **Anyone working with untrusted code or sensitive data** who wants Claude confined to a container, optionally with an outbound network allow-list.
 
+## Features
+
 <HeroFeatures />
 
 ## Secure by default
@@ -62,7 +64,9 @@ Running an AI agent against a repo you did not write is a trust problem, so ccpo
 - **Secrets stay out of process lists.** Credentials reach the container through the environment rather than command-line arguments, so they do not show up in `ps`.
 - **No shared refresh-token race.** With `auth.type: proxy`, a local proxy holds the only OAuth session, so several containers can run at once without invalidating each other's login. See the [auth proxy design](./reference/auth-proxy-design/).
 
-## See it in action
+## A sample session
+
+*Illustration: this playback is a scripted placeholder, not a recording of a real run. See [the demo page](./demo/) for how to record your own.*
 
 <Asciinema src="/casts/ccpod-demo.cast" poster="npt:0:02" />
 

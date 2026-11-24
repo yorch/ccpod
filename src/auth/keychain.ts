@@ -20,6 +20,9 @@ const KEYCHAIN_ACCOUNT =
 // The credential file path used on Linux/Windows (no Keychain).
 const CREDENTIAL_FILE = join(homedir(), '.claude', '.credentials.json');
 
+/** Error code for a symlinked / non-regular host credential file. */
+export const CREDENTIAL_FILE_NOT_REGULAR = 'CREDENTIAL_FILE_NOT_REGULAR';
+
 export function hostOAuthCredentialLockScope(): string {
   // Keychain reads may fall back from an account-specific lookup to any item
   // under this service, so requested accounts must share one lock scope.
@@ -57,18 +60,25 @@ export interface OAuthCredentials {
  * Returns undefined if no credentials are found.
  */
 export function readHostOAuthCredentials(): OAuthCredentials | undefined {
-  return readHostOAuthCredentialEntry()?.credentials;
+  // Read-only callers (init detection, presence checks) tolerate a symlinked
+  // credential file; only the rotating proxy path (the Entry reader) refuses it.
+  return readHostOAuthCredentialEntry(undefined, false)?.credentials;
 }
 
 /** Read credentials and the exact store item that supplied them. */
 export function readHostOAuthCredentialEntry(
   identity?: OAuthCredentialStoreIdentity,
+  requireRegularFile = true,
 ): OAuthCredentialEntry | undefined {
   if (process.platform === 'darwin') {
     return readFromKeychainEntry(identity);
   }
   if (identity && identity.kind !== 'file') {
     return undefined;
+  }
+  // Fail before a refresh token can be consumed that cannot be persisted.
+  if (requireRegularFile) {
+    assertCredentialFileRegular(CREDENTIAL_FILE);
   }
   const credentials = readFromCredentialFile();
   return credentials ? { credentials, identity: { kind: 'file' } } : undefined;
@@ -271,18 +281,55 @@ function writeToKeychain(creds: OAuthCredentials, account: string): void {
       { stdio: ['ignore', 'ignore', 'ignore'], timeout: 5000 },
     );
   } catch (err) {
+    // Never copy err.message: execFileSync errors embed the full argv, which
+    // contains the credential JSON passed via `-w`.
+    const detail = err as { code?: unknown; status?: unknown };
+    const parts: string[] = [];
+    if (typeof detail?.status === 'number') {
+      parts.push(`exit status ${detail.status}`);
+    }
+    if (typeof detail?.code === 'string') {
+      parts.push(`code ${detail.code}`);
+    }
     throw new Error(
-      `Failed to write OAuth credentials to Keychain: ${err instanceof Error ? err.message : String(err)}`,
+      `Failed to write OAuth credentials to Keychain${parts.length ? ` (${parts.join(', ')})` : ''}`,
     );
   }
 }
 
-function readCredentialFileRaw(): string | undefined {
-  if (!existsSync(CREDENTIAL_FILE)) {
+/**
+ * Refuse a symlinked / non-regular credential file. The atomic writer cannot
+ * persist a rotated token through a symlink, so reading it would consume the
+ * single-use refresh token and then fail to store the replacement.
+ */
+export function assertCredentialFileRegular(path: string): void {
+  let stat: ReturnType<typeof lstatSync>;
+  try {
+    stat = lstatSync(path);
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException)?.code === 'ENOENT') {
+      return;
+    }
+    throw error;
+  }
+  if (stat.isSymbolicLink() || !stat.isFile()) {
+    throw Object.assign(
+      new Error(
+        `OAuth credential file ${path} is a symlink or not a regular file; proxy mode cannot rotate it safely. Replace it with a regular file (or use auth.type: oauth/api-key).`,
+      ),
+      { code: CREDENTIAL_FILE_NOT_REGULAR },
+    );
+  }
+}
+
+function readCredentialFileRaw(
+  path: string = CREDENTIAL_FILE,
+): string | undefined {
+  if (!existsSync(path)) {
     return undefined;
   }
   try {
-    return readFileSync(CREDENTIAL_FILE, 'utf8').trim();
+    return readFileSync(path, 'utf8').trim();
   } catch {
     return undefined;
   }

@@ -11,6 +11,9 @@ export function loadProfileConfig(profileDir: string): ProfileConfig {
     throw new Error(`Profile not found: ${profilePath}`);
   }
   const raw = parseYaml(readFileSync(profilePath, 'utf8'));
+  if (raw === null || raw === undefined) {
+    throw new Error(`profile.yml is empty: ${profilePath}`);
+  }
   const profile = profileConfigSchema.parse(raw);
   // config.path is used as a raw filesystem path downstream; without this a
   // `~/...` value is treated as a relative path and silently yields no config.
@@ -90,6 +93,6 @@ export function loadProjectConfig(projectDir: string): ProjectConfig | null {
   if (!configPath) {
     return null;
   }
-  const raw = parseYaml(readFileSync(configPath, 'utf8'));
+  const raw = parseYaml(readFileSync(configPath, 'utf8')) ?? {};
   return projectConfigSchema.parse(raw);
 }

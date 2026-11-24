@@ -1,6 +1,10 @@
 import { spawnSync } from 'node:child_process';
 import { detectRuntime } from './detector.ts';
-import { prepareDockerArgs, withPrivateEnvFile } from './env-file.ts';
+import {
+  assertSafeInlineEnv,
+  prepareDockerArgs,
+  withPrivateEnvFile,
+} from './env-file.ts';
 
 // Bound on the synchronous forced-removal path used by a user-forced exit.
 const SYNC_REMOVE_TIMEOUT_MS = 5_000;
@@ -181,14 +185,15 @@ export async function dockerExec(
     return execute(args);
   }
 
-  return withPrivateEnvFile(extraEnv, async (plan) =>
-    execute(
+  return withPrivateEnvFile(extraEnv, async (plan) => {
+    assertSafeInlineEnv(env, plan.inlineValues);
+    return execute(
       prepareDockerArgs(args, plan.fileKeys, plan.filePath),
       // Line-break values cannot live in a line-based env-file; they ride in
       // the Docker CLI's own environment and stay out of argv.
       { ...env, ...plan.inlineValues },
-    ),
-  );
+    );
+  });
 }
 
 /**
@@ -236,12 +241,13 @@ export async function dockerSpawn(
     return execute(args);
   }
 
-  return withPrivateEnvFile(extraEnv, async (plan) =>
-    execute(
+  return withPrivateEnvFile(extraEnv, async (plan) => {
+    assertSafeInlineEnv(env, plan.inlineValues);
+    return execute(
       prepareDockerArgs(args, plan.fileKeys, plan.filePath),
       // Line-break values cannot live in a line-based env-file; they ride in
       // the Docker CLI's own environment and stay out of argv.
       { ...env, ...plan.inlineValues },
-    ),
-  );
+    );
+  });
 }
