@@ -15,7 +15,7 @@ review. Numbering is left stable (with gaps) so cross-references stay valid.
 Highest-leverage open items, in suggested order:
 
 1. **Container/runtime correctness** — R16 (image build-context).
-2. **Config/CLI & auth correctness** — R21, R23, R24, R27.
+2. **Config/CLI & auth correctness** — R21, R23, R27.
 3. **DRY / maintainability, performance, and test-coverage** backlogs (below).
 
 > **Addressed:** the trust-boundary trio (**R1–R3**) and dead-`claudeArgs`
@@ -86,16 +86,10 @@ now surfaces its exit code). Remaining open items:
 - **R16. `image build` and `run` build the same tag from different contexts.**
   `src/cli/commands/image/build.ts:66-68` uses `cwd`; `_setup.ts:163-167` uses
   `dirname(dockerfileAbs)`. `computeLocalImageTag` hashes Dockerfile content
-  only, so whichever builds first wins the tag and the other reuses a
-  divergently-built image; editing `entrypoint.sh` also never triggers a
-  rebuild on `run`. Fix: unify the context; include context-file digests in
-  the tag.
-
-### Auth / update
-
-- **R24.** `ccpod update` run via `bun run dev` replaces the user's `bun`
-  binary (`src/cli/commands/update.ts:45` uses `process.execPath`). Guard:
-  refuse when not a compiled `ccpod` build.
+  plus `entrypoint.sh` and the ccpod version (entrypoint edits and upgrades now
+  rebuild), so whichever command builds first still wins the tag and the other
+  reuses a divergently-built image. Fix: unify the context; include remaining
+  context-file digests in the tag.
 
 ### Git-sync / installer
 

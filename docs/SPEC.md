@@ -164,7 +164,7 @@ The `~/.claude/` directory has three distinct categories requiring different per
 
 | ID | Requirement |
 |---|---|
-| F-90 | `ccpod init` — interactive wizard, triggered automatically on first run or explicitly |
+| F-90 | `ccpod init` — interactive wizard, triggered automatically on first interactive run (non-interactive runs error instead) or explicitly |
 | F-91 | Wizard step: detect installed container runtime (Docker / Podman / OrbStack / Colima) |
 | F-92 | Wizard step: choose auth method (API key or OAuth login) and store credentials |
 | F-93 | Wizard step: choose config source for default profile (local dir, git repo, or start empty) |
@@ -289,7 +289,7 @@ ccpod ps --all                      Include stopped containers
 ccpod state clear [--profile <name>]         Delete state volume (reset history/memory)
 
 ccpod config show                   Resolved merged config (--json for machine output)
-ccpod config validate               Validate .ccpod.yml
+ccpod config validate               Validate .ccpod.yml, the profile and their merge
 ccpod config get <key>              Read a global ccpod setting (e.g. autoCheckUpdates)
 ccpod config set <key> <value>      Write a global ccpod setting
 

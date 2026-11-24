@@ -64,7 +64,7 @@ image:
 auth:
   type: api-key              # "api-key" | "oauth" | "proxy"
   keyEnv: ANTHROPIC_API_KEY  # env var to read key from
-  # keyFile: ~/.ccpod/credentials/default/api-key  # must be under ~/.ccpod
+  # keyFile: ~/.ccpod/credentials/default/api-key  # must be a regular file under ~/.ccpod (symlinks rejected)
 
 state: ephemeral             # "ephemeral" (default) | "persistent"
 
@@ -186,7 +186,7 @@ ccpod config get <key>           Get a global config value
 ccpod config set <key> <value>   Set a global config value
 ccpod config show                Print resolved merged config
 ccpod config show --explain      Include sources, ignored inputs and runtime errors
-ccpod config validate            Validate .ccpod.yml
+ccpod config validate            Validate .ccpod.yml, the profile and their merge
 
 ccpod update                     Update ccpod to the latest release
 ```

@@ -27,7 +27,7 @@ network:
 
 What happens:
 
-1. ccpod adds `--cap-add NET_ADMIN` to the container so the entrypoint can write iptables rules.
+1. ccpod adds `--cap-add NET_ADMIN` to the container so the entrypoint can write iptables rules, and `--security-opt no-new-privileges` so nothing can regain privileges after the firewall is set up.
 2. At container start, the entrypoint applies these OUTPUT rules **before** launching Claude:
    - `ACCEPT` loopback and established/related connections
    - `ACCEPT` DNS (UDP + TCP port 53) to the nameservers listed in `/etc/resolv.conf` only, not to any host

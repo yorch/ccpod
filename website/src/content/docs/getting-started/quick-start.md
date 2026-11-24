@@ -34,7 +34,7 @@ ccpod run
 
 The current directory is mounted at `/workspace` inside the container. Claude starts there. Exit the session and the container shuts down (state is wiped unless your profile sets `state: persistent`).
 
-> **Tip:** If you skip `ccpod init`, running `ccpod run` from any directory automatically launches the wizard when no `default` profile exists.
+> **Tip:** If you skip `ccpod init`, running `ccpod run` from any directory launches the wizard when no `default` profile exists and you are at an interactive terminal (non-interactive and headless runs error out and point you at `ccpod init`).
 
 ## 3. Use a different profile
 

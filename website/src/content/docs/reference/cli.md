@@ -1,11 +1,11 @@
 ---
 title: "CLI Reference: Every Command and Flag"
-description: Every ccpod command and flag: run, shell, exec, doctor, init, update, profile, plugins, image, config, ps, logs, down, prune, state.
+description: "Every ccpod command and flag: run, shell, exec, doctor, init, update, profile, plugins, image, config, ps, logs, down, prune, state."
 ---
 
 `ccpod` is a single binary. All commands accept `--help`.
 
-Profile selection is uniform: commands that act on a profile take `--profile <name>` (default: the project's `.ccpod.yml` `profile:`, else `default`), except the `ccpod profile …` management commands, which take the profile name as an argument. Passing a stray positional to a command that does not accept one is an error rather than being silently ignored. Confirmation prompts can be skipped with `--force` or `--yes` (`-y`) wherever they exist.
+Profile selection is uniform: commands that act on a profile take `--profile <name>` (default: the project's `.ccpod.yml` `profile:`, else `default`), except the `ccpod profile …` management commands, which take the profile name as an argument. Passing a stray positional to a command that does not accept one (for example `ccpod shell foo` or `ccpod exec ls`) is an error rather than being silently ignored. When a newer release exists, the update notice is printed to stderr (and only on a TTY), so piped stdout such as `ccpod config show --json | jq` stays clean. Confirmation prompts can be skipped with `--force` or `--yes` (`-y`) wherever they exist.
 
 ## `ccpod run`
 
@@ -25,7 +25,7 @@ ccpod run -- --dangerously-skip-permissions   # pass flags directly to claude
 
 ### Headless mode
 
-An inline prompt or `--file` starts a non-interactive run: ccpod reads the prompt (for `--file`, from the host, relative to the project directory — absolute paths and `..` are rejected, max 100,000 bytes) and runs `claude -p "<prompt>"`, streaming Claude's output to stdout. Flags after `--` are forwarded too, so `ccpod run --file task.md -- --output-format json` works for CI. Headless runs need working auth up front (an API key, a saved OAuth login, or host OAuth credentials for `auth.type: proxy`) because there is no prompt to recover from a missing one. `--file` and an inline prompt are mutually exclusive.
+An inline prompt or `--file` starts a non-interactive run: ccpod reads the prompt (for `--file`, from the host, relative to the project directory — absolute paths and `..` are rejected, symlinks are resolved and must stay inside the project, and the target must be a regular file; max 100,000 bytes) and runs `claude -p "<prompt>"`, streaming Claude's output to stdout. Flags after `--` are forwarded too, so `ccpod run --file task.md -- --output-format json` works for CI. If no `default` profile exists and the run is non-interactive (no TTY, or a headless prompt), ccpod errors with a pointer to `ccpod init` instead of launching the setup wizard. Headless runs need working auth up front (an API key, a saved OAuth login, or host OAuth credentials for `auth.type: proxy`) because there is no prompt to recover from a missing one. `--file` and an inline prompt are mutually exclusive.
 
 Everything after `--` is forwarded verbatim to the `claude` command inside the container and appended after any `claudeArgs` declared in the profile or project config. The prompt is only ever taken from arguments *before* `--`. Because ccpod cannot tell a flag's value from a prompt after `--`, an inline prompt cannot be combined with bare values after it (`ccpod run "fix it" -- --model opus` is rejected); use `--file` for the prompt in that case.
 
@@ -55,6 +55,8 @@ ccpod shell --no-state         # force ephemeral state
 ccpod shell --rebuild          # force image rebuild or repull
 ```
 
+`ccpod shell` takes no positional arguments; use `ccpod exec -- <command>` to run a command.
+
 If a container for this project/profile is already running (e.g. Claude is active), `ccpod shell` exec's into it with `docker exec -it` — a second shell alongside the running session. Otherwise it starts a separate `ccpod-<profile>-<hash>-shell` container (so `ccpod run` never attaches to a bash session). The shell container does not publish the project's ports.
 
 :::note
@@ -71,7 +73,7 @@ ccpod exec --profile team -- npm test
 ccpod exec -- cat /workspace/package.json | jq .name   # stdout stays clean for piping
 ```
 
-Everything after `--` is the command. It uses the same container selection as `ccpod shell` (exec into the running container, else a separate `-shell` container); flags are `--profile`, `--env`, `--rebuild`, and `--no-state`. Setup progress is printed to stderr so stdout contains only the command's output. The command runs as the `node` user. `--env`, `--no-state` and `--rebuild` only take effect when a new container is started; if ccpod attaches to one that is already running it warns that they were ignored.
+Everything after `--` is the command; anything before `--` that is not a flag (for example `ccpod exec ls`) is rejected rather than dropped. It uses the same container selection as `ccpod shell` (exec into the running container, else a separate `-shell` container); flags are `--profile`, `--env`, `--rebuild`, and `--no-state`. Setup progress is printed to stderr so stdout contains only the command's output. The command runs as the `node` user. `--env`, `--no-state` and `--rebuild` only take effect when a new container is started; if ccpod attaches to one that is already running it warns that they were ignored.
 
 ## `ccpod doctor`
 
@@ -105,7 +107,7 @@ Update ccpod to the latest release.
 ccpod update                   # download, verify (SHA-256) and replace the current binary
 ```
 
-Checks GitHub releases for the latest version. If permission denied, run with `sudo ccpod update`.
+Checks GitHub releases for the latest version. If permission denied, run with `sudo ccpod update`. It refuses to run unless ccpod is a compiled release binary (for example it will not overwrite the Bun runtime under `bun run dev`); update a source checkout with git instead. Release metadata and download requests have network timeouts.
 
 ## Profile commands
 
@@ -113,7 +115,7 @@ Checks GitHub releases for the latest version. If permission denied, run with `s
 ccpod profile create <name>         # interactive create
 ccpod profile list [--json]         # show all profiles
 ccpod profile edit <name>           # edit profile.yml in $EDITOR, validated before saving
-ccpod profile update <name>         # force-pull git config (resets sync lock)
+ccpod profile update <name>         # force-pull git config (resets sync lock; exits non-zero if the sync fails)
 ccpod profile delete <name>         # delete config, credentials, state and plugins volume
 ccpod profile install <source>      # install a profile from git, URL, file, or base64
 ccpod profile export <name>         # print base64-encoded profile for sharing
@@ -138,7 +140,7 @@ Installs a profile from any source — auto-detected:
 | `/path/...`, `./path/...`, `~/...` | Local file |
 | Anything else | Base64-encoded profile string |
 
-Git and URL sources ask for confirmation before fetching. After parsing, ccpod lists anything notable the profile enables — init commands, sidecar images, a `~/.ssh` mount, unrestricted network, `allowProject*` trust flags — and asks you to confirm before writing it. `--yes` (`-y`) skips both prompts. If a profile with the same name already exists, you're prompted to overwrite, rename, or cancel.
+Git and URL sources ask for confirmation before fetching. Sources beginning with `-` are rejected (they would be parsed as git options). After parsing, ccpod lists anything notable the profile enables — init commands, sidecar images, a non-default image or local Dockerfile, extra `claudeArgs`, plugins, published ports, `config.path`, the permissive permissions preset, restricted-network allow-lists, `auth.keyFile`, literal env vars, a `~/.ssh` mount, unrestricted network, `allowProject*` trust flags — and asks you to confirm before writing it. `--yes` (`-y`) skips both prompts. If a profile with the same name already exists, you're prompted to overwrite, rename, or cancel.
 
 ### `ccpod profile export <name>`
 
@@ -190,6 +192,8 @@ Build a local Docker image from the profile's Dockerfile. A relative `image.dock
 - `--tag <tag>` — custom image tag (overrides auto-generated `ccpod-local-<profile>-<hash>:latest`)
 - `--profile <name>` — target profile (defaults to current project's profile or `default`)
 
+The auto-generated tag hashes the Dockerfile, any `entrypoint.sh` next to it or in the build context, and the ccpod version, so profiles that build from a Dockerfile rebuild once after each ccpod upgrade (old `ccpod-local-*` tags are not pruned automatically). If `image.dockerfile` is set, `image.use` is ignored at run time and the tag is recomputed from the Dockerfile; `--apply` warns about this.
+
 After editing the Dockerfile, run `ccpod image build --apply` to build and activate it.
 
 ### `ccpod image pull`
@@ -224,7 +228,7 @@ ccpod logs --all --follow --profile team
 
 ### `ccpod down`
 
-Stops and removes the containers for the current project (matched by the `ccpod.project` label, which holds the project hash of the resolved project path; run it from the project directory). `--all` targets every project on this machine; `--profile <name>` narrows either form to one profile.
+Stops and removes the containers for the current project (matched by the `ccpod.project` label, which holds the project hash of the resolved project path; run it from the project directory). A container that is already gone is reported as such; any other stop/remove failure sets a non-zero exit code. `--all` targets every project on this machine; `--profile <name>` narrows either form to one profile.
 
 ### `ccpod prune`
 
@@ -253,7 +257,7 @@ Deletes the persistent state directory: `~/.ccpod/state/<profile>/` (or only the
 
 ```sh
 ccpod config show [--json] [--explain] [--profile <name>]   # print the effective merged config
-ccpod config validate [--profile <name>]        # validate .ccpod.yml + profile without running
+ccpod config validate [--profile <name>]        # validate .ccpod.yml + profile (and their merge) without running
 ccpod config get <key>                          # get a global config value
 ccpod config set <key> <value>                  # set a global config value
 ```
@@ -261,6 +265,10 @@ ccpod config set <key> <value>                  # set a global config value
 ### `ccpod config show`
 
 Prints the merged result for the current directory: auth, image, network, ports, services, init, plugins, claudeArgs, isolation, permissions, the `allowProject*` flags, and env (keys only), followed by a CLAUDE.md preview. `--json` emits JSON. `--explain` adds each value's source, merge/provenance details, project inputs ignored by policy, and any inputs runtime would reject; rejected inputs cause a non-zero exit rather than being presented as usable config. Env values are redacted and host env values are never resolved.
+
+### `ccpod config validate`
+
+Validates the profile and project schemas, then runs the same merge `ccpod run` performs, so errors that only appear after merging (bad port mappings, unknown `dependsOn`) are reported here and the command exits non-zero. An empty `.ccpod.yml` is accepted.
 
 ### `ccpod config get/set`
 

@@ -17,7 +17,7 @@ Implementation details for contributors and advanced users.
 | `simple-git` | Git operations for profile sync |
 | `chalk` | Terminal output colouring |
 
-Docker operations use the `docker` CLI via `Bun.spawn` — no Docker SDK dependency. Captured commands support optional kill-and-reap timeouts. Resolved env for `run`/`create` is transported with a private temporary env-file, never in the Docker client's environment or argv, then cleaned up after the child completes; values containing line breaks (which the line-based file format cannot carry) fall back to a bare `-e KEY` read from the Docker client's environment. Directories are PID-tagged and dead-owner leftovers from SIGKILL are swept on the next start.
+Docker operations use the `docker` CLI via `Bun.spawn` — no Docker SDK dependency. Captured commands support optional kill-and-reap timeouts. Resolved env for `run`/`create` is transported with a private temporary env-file, never in the Docker client's environment or argv, then cleaned up after the child completes; values containing line breaks (which the line-based file format cannot carry) fall back to a bare `-e KEY` read from the Docker client's environment. Because that puts the value in the Docker CLI's own environment, `assertSafeInlineEnv` (`src/runtime/env-file.ts`) refuses such values for any key that could steer the CLI itself (`HOME`, `PATH`, `TMPDIR`, `XDG_*`, `SSH_*`, `GIT_*`, `SSL_*`, `CURL_*`, `LD_*`, `DYLD_*`, `DOCKER_*`, `CCPOD_*`, `*_PROXY`, Go toolchain vars) or that would replace a different value already in that environment. This also covers sidecar env. Directories are PID-tagged and dead-owner leftovers from SIGKILL are swept on the next start.
 
 ## Core types
 
@@ -157,13 +157,13 @@ $PWD                 ──rw──►   /workspace/
 0. **Root `PATH` and `gosu`.** Root-side commands run with a fixed, root-owned `PATH`; `gosu` is resolved once under it. The image/profile `PATH` (`USER_PATH`) is only given to the `node` user, so nothing `node` can write is ever executed as root.
 1. **Host uid remap (Linux).** If `CCPOD_HOST_UID`/`CCPOD_HOST_GID` are set (ccpod sets them on native Linux), `node` is remapped to the host user's ids so bind-mounted dirs keep your ownership.
 2. **Seed config.** `/ccpod/config` (read-only) is copied into `~/.claude`.
-3. **Restore auth files** (`.credentials.json`, `.claude.json`) from `/ccpod/credentials` — skipped in proxy mode.
+3. **Restore auth files** (`.credentials.json`, `.claude.json`) from `/ccpod/credentials` — skipped in proxy mode. Symlinked or non-regular sources are refused, and symlinked destinations are replaced rather than followed. ccpod never copies these two files into `/ccpod/config` from a profile or project config dir (including `config.path: ~/.claude`); a warning is printed instead.
 4. **Plugins and state.** `~/.claude/plugins` and `projects/todos/statsig` become symlinks into `/ccpod/plugins` and `/ccpod/state`.
 5. **Ownership.** `chown -R node:node` on the Claude dir, `$HOME`, `/ccpod/plugins` and `/ccpod/state`. `/ccpod/credentials` is not chowned, but it is not root-only either: on Linux, step 1 makes `node` the host user's uid, and the host's `~/.ccpod/credentials/<profile>/` directory is bind-mounted read-write, so the container's `node` user can read and write it. Only the host-side checks in ccpod (for example the `auth.keyFile` containment check) keep one profile's credentials from being pointed at another's.
 6. **Init commands.** If `/ccpod/config/post-init.sh` exists (generated only from trust-gated `init:` commands) it runs as `node` in `/workspace`.
 7. **Delta plugin install** from `CCPOD_PLUGINS_TO_INSTALL`.
-8. **Network restriction** (`CCPOD_NETWORK_POLICY=restricted`, needs `NET_ADMIN`, applied after steps 6–7). Fails closed: loopback/established/default-deny rules for IPv4 and (when the kernel has IPv6) `ip6tables`; DNS only to the `/etc/resolv.conf` nameservers; declared hosts resolved to IPs; in proxy mode, only the auth proxy's single port on the host gateway (parsed from `ANTHROPIC_BASE_URL`).
-9. **Launch.** Shell mode (`CCPOD_SHELL_MODE=1`) `exec`s directly so bash gets TTY job control. Normal mode runs the command as a background job with signal forwarding, then copies the auth files back to `/ccpod/credentials` before exiting with the command's status.
+8. **Network restriction** (`CCPOD_NETWORK_POLICY=restricted`, needs `NET_ADMIN`, applied after steps 6–7; ccpod also starts the container with `--security-opt no-new-privileges` so setuid binaries cannot undo the firewall boundary). Fails closed: loopback/established/default-deny rules for IPv4 and (when the kernel has IPv6) `ip6tables`; DNS only to the `/etc/resolv.conf` nameservers; declared hosts resolved to IPs; in proxy mode, only the auth proxy's single port on the host gateway (parsed from `ANTHROPIC_BASE_URL`).
+9. **Launch.** Shell mode (`CCPOD_SHELL_MODE=1`) `exec`s directly so bash gets TTY job control. Normal mode runs the command as a background job with signal forwarding, then copies the auth files back to `/ccpod/credentials` before exiting with the command's status. The entrypoint waits for Claude to exit before copying credentials back and keeps stdin attached.
 
 **Credential persistence:** two auth files survive container removal via the bind-mounted credentials dir:
 
@@ -257,7 +257,7 @@ Over time, stopped containers, orphaned networks, and unreferenced plugin volume
 - **Stopped containers** — any ccpod-labeled container that is not `running`, `paused`, or `restarting` is removed. Use `--profile` to restrict to one profile.
 - **Orphaned networks** — `ccpod-net-*` networks with no attached endpoints are removed.
 - **Unreferenced plugin volumes** — `ccpod-plugins-<profile>` volumes that no container references and whose profile no longer exists on disk are removed. With `--profile`, the profile-exists check is skipped (the caller explicitly wants that profile's volume). Volume removal prompts for confirmation unless `--force` is given.
-- **Orphaned per-project state dirs** — `~/.ccpod/state/<profile>/<projectHash>/` directories with no remaining ccpod containers referencing that project hash are removed. Only applies to `stateIsolation: per-project` profiles. State dir removal prompts for confirmation unless `--force` is given.
+- **Orphaned per-project state dirs** — `~/.ccpod/state/<profile>/<projectHash>/` directories whose `.ccpod-project` marker names a project path that no longer exists are removed (container existence is not evidence; dirs without a marker are never auto-deleted). Only applies to `stateIsolation: per-project` profiles. State dir removal prompts for confirmation unless `--force` is given.
 
 `--dry-run` lists what would be removed without executing any `docker rm`/`network rm`/`volume rm`/`rm`. The `--profile` flag is validated with `PROFILE_NAME_REGEX` before any Docker command is constructed.
 
@@ -301,7 +301,7 @@ ccpod run [-- claude-args]
 │
 ├─ 4. Ensure image
 │     if dockerfile: {{profile_dir}} placeholder expanded to ~/.ccpod/profiles/<profile>/
-│                   tag = ccpod-local-<profile>-<sha256(dockerfile)>
+│                   tag = ccpod-local-<profile>-<hash(dockerfile + entrypoint.sh + ccpod version)>
 │                   context = dirname(resolved dockerfile); relative paths anchor at the profile dir
 │                   build if tag absent (or --rebuild)
 │     else: check locally; pull if absent

@@ -44,7 +44,7 @@ ccpod is a CLI built with [citty](https://github.com/unjs/citty) that orchestrat
 
 Both pass through Zod schemas in `src/config/schema.ts`. Invalid configs fail fast.
 
-If no profile is specified and the `default` profile doesn't exist, `ccpod run` automatically launches the setup wizard (`ccpod init`) before continuing.
+If no profile is specified and the `default` profile doesn't exist, an interactive `ccpod run` launches the setup wizard (`ccpod init`) before continuing. Non-interactive runs (no TTY, or a headless prompt/`--file`) fail with an error pointing at `ccpod init` instead.
 
 ### 2. Sync
 
@@ -91,7 +91,7 @@ The base image (`ghcr.io/yorch/ccpod`) ships an entrypoint that assembles `~/.cl
 
 Then it delta-installs any plugins listed in `CCPOD_PLUGINS_TO_INSTALL` (the full declared `plugins:` list from the profile — entrypoint skips dirs that already exist) and `exec`s the Claude binary.
 
-If `CCPOD_NETWORK_POLICY=restricted`, the entrypoint applies iptables OUTPUT rules (ACCEPT loopback/established, DNS to the `/etc/resolv.conf` nameservers only, the auth proxy port, and resolved allowed hosts, DROP all else) before launching Claude. The container must have `--cap-add NET_ADMIN` for this — ccpod adds it automatically when `network.policy: restricted`.
+If `CCPOD_NETWORK_POLICY=restricted`, the entrypoint applies iptables OUTPUT rules (ACCEPT loopback/established, DNS to the `/etc/resolv.conf` nameservers only, the auth proxy port, and resolved allowed hosts, DROP all else) before launching Claude. The container must have `--cap-add NET_ADMIN` for this — ccpod adds it automatically when `network.policy: restricted`, together with `--security-opt no-new-privileges`.
 
 ## Module map
 

@@ -21,7 +21,7 @@ Bug fixes:
 - `ccpod update` refuses to run from `bun run dev` and has network timeouts; `install.sh` stages downloads in a private temp directory.
 - `ccpod profile update` fails when the git sync fails; `down` exits non-zero on failures; `config get/set` ignore prototype keys; `config validate` runs the same merge as `run`; empty `.ccpod.yml` is accepted; extra positionals to `shell`/`exec` are rejected; no wizard is launched in non-interactive runs; the update notice goes to stderr (TTY only).
 
-Docs and CI: corrected network/DNS, storage, runtime-detection and migration docs, improved website contrast, reduced-motion and footer/table accessibility, and added least-privilege permissions to CI.
+Docs and CI: fixed the invalid demo cast (raw ESC bytes broke the homepage player), corrected network/DNS, storage, runtime-detection and migration docs, improved website contrast, reduced-motion and footer/table accessibility, and added least-privilege permissions to CI.
 
 Upgrade notes:
 - If you relied on `config.path: ~/.claude` to carry OAuth credentials into the container, they are no longer copied. Run `ccpod init` or set `auth.type` (`oauth`, `api-key` or `proxy`) on the profile.

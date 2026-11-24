@@ -26,7 +26,7 @@ Pre-built binaries are published for Linux and macOS on x86_64 and arm64.
 
 ## From source
 
-You need [Bun](https://bun.sh) 1.x.
+You need [Bun](https://bun.sh) 1.4 or newer.
 
 ```sh
 git clone https://github.com/yorch/ccpod.git

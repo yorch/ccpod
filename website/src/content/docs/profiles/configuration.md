@@ -82,7 +82,7 @@ services:
 | `use` | string | Image reference (e.g. `ghcr.io/yorch/ccpod:latest`) or the literal `build`. |
 | `dockerfile` | string | Optional. Setting it selects a build, whatever `use` says. With `use: build` and no `dockerfile`, defaults to `Dockerfile` in the profile directory. Absolute path, path relative to the **profile directory** (never the project — a cloned repo's own Dockerfile is not built), or `{{profile_dir}}/Dockerfile`. |
 
-When `use: build`, both `ccpod run` and `ccpod image build` use the same tag `ccpod-local-<profile>-<hash>:latest` (hash derived from Dockerfile contents). Running `ccpod image build` pre-builds the image so `ccpod run` reuses it without rebuilding. Override the tag with `--tag`. Force a rebuild with `ccpod run --rebuild`.
+When `use: build`, both `ccpod run` and `ccpod image build` use the same tag `ccpod-local-<profile>-<hash>:latest` (hash derived from the Dockerfile contents, any `entrypoint.sh` beside it or in the build context, and the ccpod version, so upgrading ccpod rebuilds once). Running `ccpod image build` pre-builds the image so `ccpod run` reuses it without rebuilding. Override the tag with `--tag`. Force a rebuild with `ccpod run --rebuild`.
 
 ### `auth` *(required)*
 
@@ -90,7 +90,7 @@ When `use: build`, both `ccpod run` and `ccpod image build` use the same tag `cc
 |---|---|---|
 | `type` | `api-key` \| `oauth` \| `proxy` | |
 | `keyEnv` | string | Env var name to read on the host (`api-key` only). |
-| `keyFile` | string | File on the host to read (`api-key` only). Must be a path under `~/.ccpod/` (no `..`, no escape via symlink); use `keyEnv` for keys stored elsewhere. |
+| `keyFile` | string | File on the host to read (`api-key` only). Must be a path under `~/.ccpod/` (no `..`; any symlink below `~/.ccpod/` and any non-regular file is rejected, because the credentials dir is writable from the container); use `keyEnv` for keys stored elsewhere. |
 
 For `oauth`, ccpod manages tokens in `~/.ccpod/credentials/<name>/`.
 
